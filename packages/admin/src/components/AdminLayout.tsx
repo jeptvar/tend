@@ -1,0 +1,162 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useRef } from "react";
+import { FormattedMessage, useIntl } from "react-intl";
+import { Link, Redirect, useLocation } from "wouter";
+import { api, errorText } from "../lib/api.ts";
+import { runBeforeSignOut, useHeldDrafts } from "../lib/held-drafts.ts";
+import { ME_KEY, type Me, useMe, useSetupStatus } from "../lib/queries.ts";
+import { CannotReachTend, Loading } from "./AuthLayout.tsx";
+import { useNavigationFocus } from "./focus.ts";
+
+/** Only shows its children to someone who's signed in, and sends everyone else on their way. */
+export function SignedIn({ children }: { children: (me: Me) => ReactNode }) {
+  const me = useMe();
+  const status = useSetupStatus();
+
+  if (me.isPending || status.isPending) return <Loading />;
+  // A background check failing, on a phone that lost signal for a moment, say, is no
+  // reason to replace a page that's working. Only a first answer is worth blocking on.
+  if ((me.isError && me.data === undefined) || (status.isError && !status.data)) {
+    return (
+      <CannotReachTend
+        error={me.error ?? status.error}
+        retrying={me.isFetching || status.isFetching}
+        onRetry={() => {
+          void me.refetch();
+          void status.refetch();
+        }}
+      />
+    );
+  }
+  if (!me.data) return <Redirect to={status.data?.needsSetup ? "/setup" : "/login"} replace />;
+  return children(me.data);
+}
+
+const NAV = [
+  { href: "/", id: "nav.overview" },
+  { href: "/posts", id: "nav.posts" },
+  { href: "/pages", id: "nav.pages" },
+];
+
+const navLinkClass =
+  "inline-flex min-h-11 items-center rounded px-2 hover:underline focus-visible:outline-3 focus-visible:outline-brand";
+
+export function AdminLayout({
+  me,
+  screen,
+  title,
+  focusHeading = true,
+  currentEntryId,
+  children,
+}: {
+  me: Me;
+  screen: string;
+  /** Replaces the `<screen>.title` message, for headings with a name in them. */
+  title?: string;
+  focusHeading?: boolean;
+  /** The entry open on this screen, whose unsaved text doesn't need a notice. */
+  currentEntryId?: string;
+  children: ReactNode;
+}) {
+  const intl = useIntl();
+  const queryClient = useQueryClient();
+  const [location] = useLocation();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useNavigationFocus(headingRef, { enabled: focusHeading });
+
+  const heldDrafts = useHeldDrafts(me.user.id, currentEntryId);
+
+  const signOut = useMutation({
+    mutationFn: async () => {
+      // Anything being edited is saved first. If that fails, this stops here and says so,
+      // with the person still signed in and their text still on the screen.
+      await runBeforeSignOut();
+      await api("/auth/logout", { method: "POST" });
+    },
+    onSuccess: () => queryClient.setQueryData(ME_KEY, null),
+  });
+
+  return (
+    <div className="min-h-dvh">
+      <title>{intl.formatMessage({ id: `${screen}.pageTitle` })}</title>
+      <header className="border-b border-ink/10">
+        <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2">
+          <nav aria-label={intl.formatMessage({ id: "nav.label" })}>
+            <ul className="-ml-2 flex flex-wrap items-center">
+              {NAV.map((item) => {
+                const current =
+                  item.href === "/" ? location === "/" : location.startsWith(item.href);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      aria-current={current ? "page" : undefined}
+                      className={`${navLinkClass} ${current ? "font-semibold" : "text-muted"}`}
+                    >
+                      <FormattedMessage id={item.id} />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+          <div className="-mr-2 flex flex-wrap items-center gap-x-1">
+            <span className="px-2 text-sm text-muted">
+              <FormattedMessage id="nav.signedInAs" values={{ name: me.user.name }} />
+            </span>
+            <a href="/" target="_blank" rel="noopener" className={`${navLinkClass} text-brand`}>
+              <FormattedMessage id="nav.viewSite" />
+            </a>
+            <button
+              type="button"
+              disabled={signOut.isPending}
+              onClick={() => signOut.mutate()}
+              className={`${navLinkClass} text-muted`}
+            >
+              <FormattedMessage id="nav.signOut" />
+            </button>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto max-w-3xl px-4 py-8">
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-3xl font-semibold tracking-tight break-words outline-none"
+        >
+          {title ?? <FormattedMessage id={`${screen}.title`} />}
+        </h1>
+        {/* Always mounted: screen readers can miss a live region added along with its text. */}
+        <p role="alert" className="mt-2 font-medium text-danger empty:sr-only">
+          {signOut.isError && errorText(signOut.error, intl.formatMessage({ id: "offline.body" }))}
+        </p>
+        {heldDrafts.length > 0 && (
+          <ul className="mt-4 grid gap-2">
+            {heldDrafts.map((held) => (
+              <li
+                key={held.id}
+                className="flex flex-wrap items-center justify-between gap-x-4 rounded-lg border border-danger px-3 py-1"
+              >
+                <span className="[overflow-wrap:anywhere]">
+                  <FormattedMessage
+                    id="held.notice"
+                    values={{
+                      title: held.draft.title || intl.formatMessage({ id: "list.untitled" }),
+                    }}
+                  />
+                </span>
+                <Link
+                  href={`/${held.type === "post" ? "posts" : "pages"}/${held.id}`}
+                  className={`${navLinkClass} text-brand underline`}
+                >
+                  <FormattedMessage id="held.open" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        {children}
+      </main>
+    </div>
+  );
+}

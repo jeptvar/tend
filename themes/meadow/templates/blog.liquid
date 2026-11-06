@@ -1,0 +1,9 @@
+{% layout "layout" %}
+{% block title %}Blog · {{ site.name }}{% endblock %}
+{% block content %}
+<div class="t-wrap">
+  <h1>Blog</h1>
+  {% for post in posts %}{% render "post-card", post: post %}{% else %}<p>There are no posts yet.</p>{% endfor %}
+  {% render "pagination", pagination: pagination %}
+</div>
+{% endblock %}

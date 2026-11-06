@@ -26,7 +26,7 @@ import {
   resetPasswordAndSignOutEverywhere,
 } from "./db/repo/users.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
-import { adminDir, appVersion, migrationsDir } from "./paths.ts";
+import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
 
 const HELP = `Tend ${appVersion}
@@ -207,6 +207,9 @@ async function start(): Promise<void> {
     setupPassword: config.setupPassword,
     secureCookies: config.secureCookies,
     trustProxy: config.trustProxy,
+    themeDir: defaultThemeDir,
+    pageCacheBytes: config.pageCacheBytes,
+    isPublic: config.isPublic,
   });
   const ports = portsToTry(config);
   listening = await listen(app.fetch, ports, config.hosts);

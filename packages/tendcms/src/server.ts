@@ -1,19 +1,26 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { extname, join, normalize, sep } from "node:path";
+import { join } from "node:path";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { createAdminRoutes } from "./api/admin/entries.ts";
 import { type AuthOptions, createAuthRoutes } from "./api/auth.ts";
 import { ApiError } from "./api/errors.ts";
 import { isForeignRequest } from "./auth/csrf.ts";
+import { createSite } from "./site/router.ts";
+import { contentTypeFor, resolveInside } from "./static-files.ts";
 
-export interface AppOptions extends AuthOptions {
+export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDir"> {
   version: string;
   adminDir: string;
   adminDevUrl: string | undefined;
   publicUrl: string | undefined;
+  themeDir: string;
+  pageCacheBytes: number;
 }
 
-const API_BODY_LIMIT_BYTES = 64 * 1024;
+const AUTH_BODY_LIMIT_BYTES = 64 * 1024;
+// Far more than any page should need, but small enough that it can't exhaust memory.
+const ADMIN_BODY_LIMIT_BYTES = 2 * 1024 * 1024;
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 // PLAN.md §12. The admin loads nothing from anywhere else, and no other site can frame it.
@@ -29,18 +36,6 @@ const ADMIN_CSP = [
   "frame-ancestors 'none'",
   "form-action 'self'",
 ].join("; ");
-
-const CONTENT_TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".ico": "image/x-icon",
-  ".woff2": "font/woff2",
-  ".txt": "text/plain; charset=utf-8",
-};
 
 // Shown when the admin hasn't been built yet (e.g. running the server alone from source).
 const ADMIN_NOT_BUILT = `<!doctype html>
@@ -65,6 +60,8 @@ export function createApp(options: AppOptions): Hono {
       c.res.headers.set("Content-Security-Policy", ADMIN_CSP);
       c.res.headers.set("Cross-Origin-Opener-Policy", "same-origin");
       c.res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    } else if (!c.req.path.startsWith("/api/")) {
+      c.res.headers.set("Content-Security-Policy", "frame-ancestors 'self'");
     }
   });
 
@@ -99,17 +96,36 @@ export function createApp(options: AppOptions): Hono {
     await next();
   });
 
-  app.use(
-    "/api/*",
-    bodyLimit({
-      maxSize: API_BODY_LIMIT_BYTES,
+  function limitBody(maxSize: number) {
+    return bodyLimit({
+      maxSize,
       onError: () => {
-        throw new ApiError(413, "too_large", "That request is too large.");
+        throw new ApiError(413, "too_large", "That's more than Tend can save in one go.", {
+          fix: "Split it into two.",
+        });
       },
-    }),
-  );
+    });
+  }
+  app.use("/api/auth/*", limitBody(AUTH_BODY_LIMIT_BYTES));
+  app.use("/api/admin/*", limitBody(ADMIN_BODY_LIMIT_BYTES));
 
-  app.route("/api/auth", createAuthRoutes(options));
+  const site = createSite({
+    orm: options.orm,
+    themeDir: options.themeDir,
+    pageCacheBytes: options.pageCacheBytes,
+  });
+  const onSiteChanged = (path?: string) => site.changed(path);
+
+  app.route("/api/auth", createAuthRoutes({ ...options, onSiteChanged }));
+  app.route(
+    "/api/admin",
+    createAdminRoutes({
+      orm: options.orm,
+      secureCookies: options.secureCookies,
+      now: options.now,
+      onSiteChanged,
+    }).app,
+  );
 
   app.all("/api/*", () => {
     throw new ApiError(404, "not_found", "There's nothing at this address.");
@@ -137,10 +153,6 @@ export function createApp(options: AppOptions): Hono {
     return c.json({ ok: true, version: options.version });
   });
 
-  // There's no public site yet, so the admin is the only place to go. It works out
-  // whether that means setup, signing in or the overview.
-  app.get("/", (c) => c.redirect("/admin/"));
-
   app.get("/admin", (c) => c.redirect("/admin/"));
   app.get("/admin/*", (c) => {
     if (options.adminDevUrl) {
@@ -150,6 +162,9 @@ export function createApp(options: AppOptions): Hono {
     return serveAdmin(options.adminDir, c.req.path);
   });
 
+  // Last, because the public site answers every address nothing above has claimed.
+  app.route("/", site.app);
+
   return app;
 }
 
@@ -158,24 +173,25 @@ function serveAdmin(adminDir: string, requestPath: string): Response {
   const indexPath = join(adminDir, "index.html");
   if (!existsSync(indexPath)) return html(ADMIN_NOT_BUILT);
 
+  const encoded = requestPath.slice("/admin/".length);
   let relative: string;
   try {
-    relative = decodeURIComponent(requestPath.slice("/admin/".length));
+    relative = decodeURIComponent(encoded);
   } catch {
     return new Response("Bad request", { status: 400 });
   }
-  const filePath = normalize(join(adminDir, relative));
-  const insideAdmin = filePath.startsWith(adminDir + sep);
+  const filePath = resolveInside(adminDir, encoded);
 
-  if (insideAdmin && existsSync(filePath) && statSync(filePath).isFile()) {
-    const headers: Record<string, string> = {
-      "Content-Type": CONTENT_TYPES[extname(filePath)] ?? "application/octet-stream",
-      // Vite puts content hashes in everything under assets/.
-      "Cache-Control": relative.startsWith("assets/")
-        ? "public, max-age=31536000, immutable"
-        : "no-cache",
-    };
-    return new Response(readFileSync(filePath), { headers });
+  if (filePath && existsSync(filePath) && statSync(filePath).isFile()) {
+    return new Response(readFileSync(filePath), {
+      headers: {
+        "Content-Type": contentTypeFor(filePath),
+        // Vite puts content hashes in everything under assets/.
+        "Cache-Control": relative.startsWith("assets/")
+          ? "public, max-age=31536000, immutable"
+          : "no-cache",
+      },
+    });
   }
   if (relative.startsWith("assets/")) return new Response("Not found", { status: 404 });
   return html(readFileSync(indexPath, "utf8"));

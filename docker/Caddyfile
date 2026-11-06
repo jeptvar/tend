@@ -1,0 +1,3 @@
+{$TEND_DOMAIN} {
+  reverse_proxy tend:3000
+}

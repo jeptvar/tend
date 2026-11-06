@@ -1,10 +1,7 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { ApiError, errorText, OFFLINE } from "../lib/api.ts";
-
-// Where focus last followed a navigation. Module-level so the first load, and
-// StrictMode's repeated effects, don't count as navigating.
-let lastPath: string | null = window.location.pathname;
+import { focusNextScreen, useNavigationFocus } from "./focus.ts";
 
 /** The centred page used by setup and sign-in. Messages come from `<screen>.title` and `.pageTitle`. */
 export function AuthLayout({
@@ -28,17 +25,7 @@ export function AuthLayout({
   const intl = useIntl();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // The link just used is gone from the page, so without this, focus falls back to
-  // the top of the document and screen readers announce nothing.
-  useEffect(() => {
-    if (focusOnMount) {
-      headingRef.current?.focus();
-      return;
-    }
-    if (window.location.pathname === lastPath) return;
-    lastPath = window.location.pathname;
-    if (focusHeading) headingRef.current?.focus();
-  }, [focusHeading, focusOnMount]);
+  useNavigationFocus(headingRef, { enabled: focusHeading, always: focusOnMount });
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center px-4 py-12">
@@ -89,12 +76,7 @@ export function CannotReachTend({
   const answered = error instanceof ApiError && error.code !== OFFLINE;
 
   // Whatever comes back next has to take focus, even at the same address.
-  useEffect(
-    () => () => {
-      lastPath = null;
-    },
-    [],
-  );
+  useEffect(() => focusNextScreen, []);
 
   return (
     <AuthLayout screen={answered ? "problem" : "offline"} focusOnMount>
@@ -114,7 +96,7 @@ export const primaryButtonClass =
   "min-h-11 rounded-lg bg-brand px-5 font-medium text-paper hover:bg-brand-strong focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60";
 
 export const secondaryButtonClass =
-  "min-h-11 rounded-lg border border-muted px-4 font-medium hover:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand";
+  "min-h-11 rounded-lg border border-muted px-4 font-medium enabled:hover:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60";
 
 export const textLinkClass =
   "-mx-2 inline-flex min-h-11 items-center px-2 text-brand underline-offset-4 hover:underline focus-visible:outline-3 focus-visible:outline-brand";

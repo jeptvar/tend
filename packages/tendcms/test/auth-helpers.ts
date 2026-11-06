@@ -5,7 +5,7 @@ import { afterEach } from "vitest";
 import { displaySetupCode } from "../src/auth/setup-code.ts";
 import { createOrm, type Orm, openDatabase, type SqliteDatabase } from "../src/db/client.ts";
 import { migrate } from "../src/db/migrate.ts";
-import { migrationsDir } from "../src/paths.ts";
+import { defaultThemeDir, migrationsDir } from "../src/paths.ts";
 import { type AppOptions, createApp } from "../src/server.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -58,6 +58,9 @@ export async function makeApp(overrides: Partial<AppOptions> = {}): Promise<Made
     setupPassword: undefined,
     secureCookies: false,
     trustProxy: 0,
+    themeDir: defaultThemeDir,
+    pageCacheBytes: 0,
+    isPublic: false,
     now: () => clock.time,
     ...overrides,
   });
@@ -114,13 +117,15 @@ export function browser(app: ReturnType<typeof createApp>) {
       request("GET", path, undefined, headers),
     post: (path: string, body?: unknown, headers?: Record<string, string>) =>
       request("POST", path, body, headers),
+    patch: (path: string, body?: unknown, headers?: Record<string, string>) =>
+      request("PATCH", path, body, headers),
   };
 }
 
 /** Runs setup and returns a browser that's signed in as the Owner. */
-export async function setUp(made: MadeApp) {
+export async function setUp(made: MadeApp, overrides: Record<string, unknown> = {}) {
   const owner = browser(made.app);
-  const reply = await owner.post("/api/auth/setup", { code: made.code, ...setupBody() });
+  const reply = await owner.post("/api/auth/setup", { code: made.code, ...setupBody(overrides) });
   if (reply.status !== 201) throw new Error(`Setup failed: ${JSON.stringify(await reply.json())}`);
   return owner;
 }

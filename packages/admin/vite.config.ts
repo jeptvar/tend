@@ -10,6 +10,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: { "/api": process.env.TEND_API_URL ?? "http://127.0.0.1:3000" },
+    // Everything that isn't the admin itself comes from Tend, so "View site" works here too.
+    proxy: { "^/(?!admin)": process.env.TEND_API_URL ?? "http://127.0.0.1:3000" },
   },
 });

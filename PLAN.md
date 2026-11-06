@@ -1247,6 +1247,7 @@ volumes: { tend-data: {}, caddy-data: {} }
 |---|---|---|
 | `PORT` | 3000; with npm, falls back through 3001–3010 when busy | Listen port |
 | `TEND_DATA_DIR` | `./data` (npm), `/data` (Docker) | The only folder with state |
+| `TEND_PLATFORM` | unset; the Docker image sets `docker` | Says Tend is in a container, because only Docker itself creates `/.dockerenv`: Podman and Kubernetes don't |
 | `TEND_HOST` | `127.0.0.1` and `::1` with npm; `0.0.0.0` on Docker, Railway, Render and Fly | The address to listen on. Mainly for testing on a phone over the local network, and only sensible once setup is protected by the setup code (M1) |
 | `TEND_PUBLIC_URL` | The provisional address until confirmed (J10); `RAILWAY_PUBLIC_DOMAIN` is used when present | Canonical URLs, cookie mode, HSTS |
 | `TEND_SETUP_CODE` | Generated and printed when needed. On Railway it is the **required template input** "Choose a setup password (you'll type it once)". | Protects first-run setup |
@@ -1487,7 +1488,7 @@ Only **`tendcms` and `create-tend`** (plus the two typo-guard placeholders) are 
 | **M9 1.0 "Bloom"** | Encrypted off-site backups, TOTP, Trusted Types, AVIF, admin translations, Node policy step, upgrade tooling, external accessibility audit, security review, usability round 3, launch | 93 | 140 | **2029-07-22 / 2030-04-07** | **2028-08-27** | Release gate green; Product Hunt |
 | **Total** | | **719** | **≈ 1,080** | | | |
 
-**Progress (2026-11-06): M1's setup and sign-in are done.** The three setup steps, sessions, sign-in, the setup code and `tendcms reset-password` work. Still to do in M1: the policy layer, posts and pages, Meadow rendering, the page cache and the Docker build. Choosing a starting point only records the choice until pages and themes exist, and the signed-in page is a placeholder until then.
+**Progress (2026-11-06): M1 is built, except for its human parts.** Setup, sign-in, the policy layer, posts and pages, Meadow, the page cache and the Docker files are done, and a post can be created and viewed through the real admin. Still to do for M1's exit: the 3 informal tests with real people, and re-planning from measured hours (no hours have been recorded yet). The Docker image hasn't been built yet, because there's no Docker on the development machine. The `docker` job in CI will be its first real run.
 
 Where the code differs from this plan, the code is right:
 - **Setup code:** derived from `secret.key` with HMAC instead of stored as a hash in `tokens`. It survives restarts, so an open tab keeps working, and `tendcms setup-code` can show it without writing anything. `tokens` arrives with invites and the recovery kit (M4).
@@ -1497,6 +1498,11 @@ Where the code differs from this plan, the code is right:
 - **Lockouts:** failures are forgotten after 24 hours, and `tendcms reset-password` lifts an account's lockout for 24 hours (`users.password_reset_at`), because a generated password can't be guessed. Without this, someone guessing could keep the Owner out for good until the recovery kit exists.
 - **Added to the API:** `POST /api/auth/setup/check-code`, so a wrong code is caught at the start of setup.
 - **Docs links:** error answers include one, but the screens don't show them until tendcms.dev exists (rule P13 in §4 still applies at v0.1).
+- **The editor in M1** is a plain text box that stores the real document format, so M2 only has to replace the box. It already keeps what's typed: unsaved text is held for the tab (in `sessionStorage`, until IndexedDB arrives in M2) until the server confirms it, leaving a screen saves it, sign-out waits for that save, and if a save fails the admin says so and offers the text again.
+- **Saving:** a repeat of the same words after a lost answer isn't treated as a conflict. Choosing **Use mine** keeps the other version as a `conflict` revision, and nothing appears in lists until it's been saved once, so pressing New post and going back leaves nothing behind.
+- **The menu** lists every published page, plus Blog once there are posts, until the real Site menu arrives in M3. Changing a published page's address leaves the old one returning 404 until redirects arrive in M3.
+- **Trash** has no permanent delete yet, and restoring always gives a draft, so going back on the site is a decision.
+- **Browser tests** arrived early, in M1 rather than M4, because the admin's worst bugs were only reachable through its screens. They run on Chromium only until the real editor arrives.
 
 **Rules:**
 - **Re-plan after every milestone, starting with M1.** Compare actual hours against planned hours, adjust the factor, and publish the updated date ranges in the devlog.
@@ -1673,7 +1679,7 @@ done
   - Publishing access → **Require two-factor authentication and disallow tokens**. This can only be set now that the packages exist.
 - [ ] **(you)** Message the maintainer of the npm package `tend` (from its npm page) to ask whether they would transfer the name. Don't depend on the answer.
 
-> **Status (2026-11-06): Days 2–5 are done, except the docs and pushing.** Repo, monorepo, server, admin shell and CI are in place and pass locally on macOS with Node 26. CI has not run yet, because nothing is pushed. **Still to do from this section:** every **(you)** step on Day 1, adding the fnm line to `~/.zshrc`, the ADRs, `docs/glossary.md`, `docs/principles.md`, `pnpm exec playwright install`, shadcn init (nothing needs it yet), and the first commit and push.
+> **Status (2026-11-06): Days 2–5 are done, except the docs and pushing.** Repo, monorepo, server, admin shell and CI are in place and pass locally on macOS with Node 26. CI has not run yet, because nothing is pushed. **Still to do from this section:** every **(you)** step on Day 1, the ADRs, `docs/glossary.md`, `docs/principles.md`, WebKit for the browser tests, shadcn init (nothing needs it yet), and the first push.
 >
 > **Where the code differs from the steps below, the code is right.** An engineering review found these problems with the steps as written:
 > - **Lock:** `data/.lock.db` held by the operating system, not `O_EXCL` on `data/.lock` (§13).

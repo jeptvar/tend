@@ -2,6 +2,7 @@ import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { clientIp, networkKey, rateLimitKey, storedIpPrefix } from "../auth/client-ip.ts";
+import { currentUser, deviceCookieName, sessionCookieName } from "../auth/current-user.ts";
 import {
   createDeviceCookie,
   DEVICE_COOKIE_MAX_AGE_SECONDS,
@@ -16,7 +17,7 @@ import {
   verifyPassword,
 } from "../auth/passwords.ts";
 import { AccountBackoff, TokenBuckets, WorkGate } from "../auth/ratelimit.ts";
-import { completeSetup, SetupClosedError } from "../auth/setup.ts";
+import { completeSetup, loadStarter, SetupClosedError } from "../auth/setup.ts";
 import { type SetupCodeSource, setupCodeMatches } from "../auth/setup-code.ts";
 import type { Orm } from "../db/client.ts";
 import {
@@ -24,7 +25,6 @@ import {
   createSessionIfPasswordUnchanged,
   deleteSession,
   deleteUserSessions,
-  findSessionUser,
 } from "../db/repo/sessions.ts";
 import { getSetting } from "../db/repo/settings.ts";
 import {
@@ -43,6 +43,10 @@ export interface AuthOptions extends SetupCodeSource {
   now?: () => number;
   /** How many made-up emails to remember. Only tests change this. */
   unknownEmailKeys?: number;
+  themeDir: string;
+  onSiteChanged: () => void;
+  /** Whether the site has a real public address. */
+  isPublic: boolean;
 }
 
 const SETUP_CODE_ATTEMPTS_PER_MINUTE = 5;
@@ -157,9 +161,8 @@ export function createAuthRoutes(options: AuthOptions): Hono {
   const now = options.now ?? Date.now;
   const clock = { now };
 
-  // __Host- makes browsers refuse the cookie unless it's Secure, host-only and on /.
-  const sessionCookie = secureCookies ? "__Host-tend_session" : "tend_session";
-  const deviceCookie = secureCookies ? "__Host-tend_device" : "tend_device";
+  const sessionCookie = sessionCookieName(secureCookies);
+  const deviceCookie = deviceCookieName(secureCookies);
   const cookieBase = { httpOnly: true, sameSite: "Lax", path: "/", secure: secureCookies } as const;
 
   const setupCodeAttempts = new TokenBuckets({
@@ -221,9 +224,12 @@ export function createAuthRoutes(options: AuthOptions): Hono {
   }
 
   async function requireUser(c: Context): Promise<User> {
-    const token = getCookie(c, sessionCookie);
-    const user = token ? await findSessionUser(orm, token, now()) : undefined;
-    if (!user) throw new ApiError(401, "not_signed_in", "You're not signed in.");
+    const user = await currentUser(c, orm, secureCookies, now());
+    if (!user) {
+      throw new ApiError(401, "not_signed_in", "You're not signed in.", {
+        fix: "Sign in again. What you've typed stays in this tab.",
+      });
+    }
     return user;
   }
 
@@ -291,6 +297,7 @@ export function createAuthRoutes(options: AuthOptions): Hono {
         site,
         owner: { name: owner.name, email: owner.email, passwordHash },
         starter,
+        starterEntries: loadStarter(options.themeDir, starter, site.name),
         now: now(),
       });
     } catch (error) {
@@ -298,6 +305,7 @@ export function createAuthRoutes(options: AuthOptions): Hono {
       throw error;
     }
 
+    options.onSiteChanged();
     await startSession(c, { id: userId, email: owner.email }, passwordHash);
     const user = await findUserByEmail(orm, owner.email);
     return c.json({ user: user && publicUser(user) }, 201);
@@ -395,6 +403,7 @@ export function createAuthRoutes(options: AuthOptions): Hono {
       user: publicUser(user),
       site: { name: site?.name ?? "", tagline: site?.tagline ?? "" },
       starter: setup?.starter ?? null,
+      siteIsPublic: options.isPublic,
     });
   });
 

@@ -1,0 +1,6 @@
+{% if pagination.page_count > 1 %}
+<nav class="t-pagination" aria-label="More posts">
+  {% if pagination.newer_url %}<a href="{{ pagination.newer_url }}">Newer posts</a>{% endif %}
+  {% if pagination.older_url %}<a href="{{ pagination.older_url }}">Older posts</a>{% endif %}
+</nav>
+{% endif %}

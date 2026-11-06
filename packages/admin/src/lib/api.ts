@@ -3,13 +3,23 @@ export class ApiError extends Error {
   readonly code: string;
   readonly field: string | undefined;
   readonly fix: string | undefined;
+  /** On an edit conflict, the version someone else saved. */
+  readonly current: unknown;
 
-  constructor(status: number, code: string, message: string, field?: string, fix?: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    field?: string,
+    fix?: string,
+    current?: unknown,
+  ) {
     super(message);
     this.status = status;
     this.code = code;
     this.field = field;
     this.fix = fix;
+    this.current = current;
   }
 }
 
@@ -25,7 +35,11 @@ function offline(): ApiError {
 
 export async function api<T>(
   path: string,
-  options: { method?: "GET" | "POST"; body?: unknown } = {},
+  options: {
+    method?: "GET" | "POST" | "PATCH";
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
   let response: Response;
@@ -33,12 +47,12 @@ export async function api<T>(
     response = await fetch(`/api${path}`, {
       method,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      ...(method === "POST"
-        ? {
-            headers: { "Content-Type": "application/json" },
+      ...(method === "GET"
+        ? {}
+        : {
+            headers: { "Content-Type": "application/json", ...options.headers },
             body: JSON.stringify(options.body ?? {}),
-          }
-        : {}),
+          }),
     });
   } catch {
     throw offline();
@@ -47,6 +61,7 @@ export async function api<T>(
   if (response.status === 204) return undefined as T;
   let data: {
     error?: { code: string; message: string; field?: string; fix?: string };
+    current?: unknown;
   } & T;
   try {
     data = await response.json();
@@ -57,7 +72,7 @@ export async function api<T>(
   if (!response.ok) {
     if (!data.error) throw offline();
     const { code, message, field, fix } = data.error;
-    throw new ApiError(response.status, code, message, field, fix);
+    throw new ApiError(response.status, code, message, field, fix, data.current);
   }
   return data;
 }

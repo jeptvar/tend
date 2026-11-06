@@ -68,9 +68,9 @@ describe("serving the admin", () => {
     expect((await app.request("/admin/%E0%A4%A")).status).toBe(400);
   });
 
-  test("/admin redirects to the app, and / to setup", async () => {
+  test("/admin redirects to the app, and / to setup until there's a site", async () => {
     expect((await app.request("/admin")).headers.get("location")).toBe("/admin/");
-    expect((await app.request("/")).headers.get("location")).toBe("/admin/");
+    expect((await app.request("/")).headers.get("location")).toBe("/admin/setup");
   });
 
   test("a folder that hasn't been built explains itself", async () => {
@@ -103,7 +103,7 @@ describe("serving the admin", () => {
 
     const health = await app.request("/healthz");
     expect(health.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(health.headers.get("content-security-policy")).toBeNull();
+    expect(health.headers.get("content-security-policy")).toBe("frame-ancestors 'self'");
   });
 
   test("/healthz is not cached and reports the version", async () => {

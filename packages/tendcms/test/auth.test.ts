@@ -53,6 +53,7 @@ describe("first-run setup", () => {
     expect(me.user.email).toBe(OWNER_EMAIL);
     expect(me.site).toEqual({ name: "Rise Bakery", tagline: "Fresh bread" });
     expect(me.starter).toBe("business");
+    expect(me.siteIsPublic).toBe(false);
 
     const site = made.db.prepare("SELECT value FROM settings WHERE key = 'site'").get() as {
       value: string;
