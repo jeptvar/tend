@@ -1,6 +1,6 @@
 // Boots the built package the way an installer would, from an empty folder, and
 // checks the things only the built output can get wrong: finding its migrations,
-// finding the admin, and serving the real files. Run after `pnpm build`.
+// finding the admin, serving the real files, and running setup. Run after `pnpm build`.
 // Zero dependencies and no shell, so it runs the same on every OS.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -63,6 +63,37 @@ try {
     script.headers.get("cache-control")?.includes("immutable"),
     "hashed assets are cached forever",
   );
+
+  // Sets up a real site, which proves the bundled server can load its native
+  // password and database modules, and finds its later migrations.
+  const code = output.match(/#code=(\S+)/)?.[1];
+  check(code !== undefined, "the printed link carries a setup code");
+  const password = "maple-river-candle-stone-orbit";
+  const setup = await fetch(`${base}/api/auth/setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code,
+      site: { name: "Smoke Test" },
+      owner: { name: "Smoke", email: "smoke@example.com", password },
+      starter: "blog",
+    }),
+  });
+  check(setup.status === 201, "setup creates the site and the owner");
+
+  const login = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "smoke@example.com", password }),
+  });
+  check(login.status === 200, "the owner can sign in");
+  const cookie = login.headers
+    .getSetCookie()
+    .map((line) => line.split(";")[0])
+    .join("; ");
+  const me = await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } });
+  const { site } = await me.json();
+  check(me.status === 200 && site.name === "Smoke Test", "the session and the site's name work");
 } catch (error) {
   failed = true;
   console.error(`\nSmoke test failed: ${error.message}\n\nTend's output:\n${output}`);

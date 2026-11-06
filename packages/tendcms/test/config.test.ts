@@ -61,6 +61,22 @@ describe("loadConfig", () => {
   test("hosting platforms listen on all addresses", () => {
     expect(loadConfig({ RENDER: "true" }).hosts).toEqual(["0.0.0.0"]);
   });
+
+  test("cookie mode follows the site's address, then the platform", () => {
+    expect(loadConfig({}).secureCookies).toBe(false);
+    expect(loadConfig({ RAILWAY_ENVIRONMENT: "x" }).secureCookies).toBe(true);
+    expect(loadConfig({ TEND_PUBLIC_URL: "https://example.com" }).secureCookies).toBe(true);
+    expect(loadConfig({ TEND_PUBLIC_URL: "http://example.com", RENDER: "1" }).secureCookies).toBe(
+      false,
+    );
+  });
+
+  test("only platforms that have a proxy trust one by default", () => {
+    expect(loadConfig({}).trustProxy).toBe(0);
+    expect(loadConfig({ FLY_APP_NAME: "x" }).trustProxy).toBe(1);
+    expect(loadConfig({ TEND_TRUST_PROXY: "2" }).trustProxy).toBe(2);
+    expect(loadConfig({ FLY_APP_NAME: "x", TEND_TRUST_PROXY: "0" }).trustProxy).toBe(0);
+  });
 });
 
 describe("explainDataFolderFailure", () => {
@@ -93,6 +109,15 @@ describe("explainDataFolderFailure", () => {
   test("anything else is passed on unchanged, not blamed on the folder", () => {
     const original = failure("ERR_SOMETHING_ELSE");
     expect(explainDataFolderFailure("/data", original)).toBe(original);
+  });
+});
+
+describe("explainDataFolderFailure, for the lock file", () => {
+  test("names a damaged lock file instead of blaming permissions", () => {
+    const error = Object.assign(new Error("not a database"), { code: "SQLITE_NOTADB" });
+    const explained = explainDataFolderFailure("/data", error) as Error;
+    expect(explained.message).toContain(".lock.db");
+    expect(explained.message).not.toContain("write access");
   });
 });
 

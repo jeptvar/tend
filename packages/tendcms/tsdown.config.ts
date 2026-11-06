@@ -10,7 +10,7 @@ export default defineConfig({
     // are devDependencies and get bundled (PLAN.md §7, P11). Anything else that
     // ends up in the bundle must be added here on purpose.
     neverBundle: ["better-sqlite3", "sharp", "@node-rs/argon2"],
-    onlyBundle: ["hono", "@hono/node-server", "drizzle-orm"],
+    onlyBundle: ["hono", "@hono/node-server", "drizzle-orm", "zod"],
   },
   copy: [{ from: "../admin/dist", to: "dist", rename: "admin" }],
 });

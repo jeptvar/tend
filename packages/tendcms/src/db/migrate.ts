@@ -99,11 +99,18 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
 
     // Only now: older copies must survive any number of failed updates.
     if (snapshotPath) pruneSnapshots(options.backupsDir, snapshotPath, log);
-    log(`Updated the database to version ${schemaVersion}.`);
+    // A brand new site has nothing to report: it wasn't updated from anything.
+    if (current > 0) log(`Updated the database to version ${schemaVersion}.`);
     return { applied: pending, schemaVersion, snapshotPath };
   } finally {
     db.close();
   }
+}
+
+/** True when a database is fully updated, for commands that run beside the server. */
+export function schemaIsCurrent(db: SqliteDatabase, migrationsDir: string): boolean {
+  const files = readdirSync(migrationsDir).filter((file) => file.endsWith(".sql"));
+  return readSchemaVersion(db) === files.length;
 }
 
 function applyInOneTransaction(
