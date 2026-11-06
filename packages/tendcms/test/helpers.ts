@@ -51,6 +51,9 @@ const HOST_VARIABLES = [
   "TEND_DATA_DIR",
   "TEND_HOST",
   "TEND_ADMIN_DEV_URL",
+  "TEND_PUBLIC_URL",
+  "TEND_TRUST_PROXY",
+  "TEND_SETUP_CODE",
 ];
 
 export function cleanEnv(env: Record<string, string>): NodeJS.ProcessEnv {

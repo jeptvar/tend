@@ -19,3 +19,5 @@ export function openDatabase(path: string): SqliteDatabase {
 export function createOrm(db: SqliteDatabase) {
   return drizzle({ client: db, schema });
 }
+
+export type Orm = ReturnType<typeof createOrm>;

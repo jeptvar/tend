@@ -18,11 +18,19 @@ Open http://localhost:3000/admin/setup. Development data lives in `./data` (git-
 |---|---|
 | `pnpm dev` | Runs the server from TypeScript (`node --watch`) and the admin's Vite dev server together |
 | `pnpm build` | Builds the admin, then bundles the server into `packages/tendcms/dist` |
-| `pnpm smoke` | Boots the built package from an empty folder and checks it serves the real admin |
-| `pnpm test` | Vitest: server boot, admin serving, data-folder lock, port handling, migrations |
+| `pnpm smoke` | Boots the built package from an empty folder, serves the real admin, then runs setup and signs in |
+| `pnpm test` | Vitest: setup, sign-in, sessions, request protection, admin serving, data-folder lock, port handling, migrations |
 | `pnpm lint` | Biome, plus a check that no migration contains a `PRAGMA` |
 | `pnpm typecheck` | `tsc -b` across the packages |
 | `pnpm db:generate <name>` | Generates a migration from `src/db/schema.ts` and strips drizzle's `PRAGMA` lines |
+
+The running server prints a setup link with a code in it. If you lose it, run this from the project folder with `TEND_DATA_DIR=./data`:
+
+```bash
+node packages/tendcms/src/cli.ts setup-code
+```
+
+To start over from setup, stop Tend and delete `./data`.
 
 ## Layout
 

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
   accessSync,
+  chmodSync,
   constants,
   existsSync,
   mkdirSync,
@@ -26,6 +27,14 @@ export interface Config {
   hosts: string[];
   /** Set by scripts/dev.mjs so /admin/* goes to the Vite dev server. */
   adminDevUrl: string | undefined;
+  /** TEND_PUBLIC_URL: the site's real address, when it's known up front. */
+  publicUrl: string | undefined;
+  /** How many proxies sit in front of Tend (TEND_TRUST_PROXY). */
+  trustProxy: number;
+  /** Whether the site is reached over https, which decides the cookie mode. */
+  secureCookies: boolean;
+  /** TEND_SETUP_CODE: a setup password chosen in a hosting template, replacing the code. */
+  setupPassword: string | undefined;
 }
 
 /** A problem the person running Tend has to fix; `message` is shown as-is. */
@@ -36,6 +45,9 @@ const MIN_NODE_MAJOR = 24;
 const DEFAULT_PORT = 3000;
 const FALLBACK_PORTS = 10;
 const SECRET_KEY_FORMAT = /^[0-9a-f]{64}\n?$/;
+const MIN_SETUP_PASSWORD_LENGTH = 8;
+// These hosts always terminate TLS in front of the app.
+const HTTPS_PLATFORMS: Platform[] = ["railway", "render", "fly"];
 
 /** Older Nodes crash without a message when the database addon loads, so check first. */
 export function checkNodeVersion(version: string = process.versions.node): void {
@@ -74,6 +86,45 @@ function parsePort(value: string | undefined): number | undefined {
   return port;
 }
 
+function parsePublicUrl(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ConfigError(
+      `TEND_PUBLIC_URL is set to "${value}", which isn't a web address. Use something like https://example.com.`,
+    );
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new ConfigError(
+      `TEND_PUBLIC_URL is set to "${value}". It needs to start with https://, for example https://example.com.`,
+    );
+  }
+  return url.origin;
+}
+
+function parseTrustProxy(value: string | undefined, platform: Platform): number {
+  if (value === undefined || value === "") return HTTPS_PLATFORMS.includes(platform) ? 1 : 0;
+  const hops = Number(value);
+  if (!Number.isInteger(hops) || hops < 0 || hops > 10) {
+    throw new ConfigError(
+      `TEND_TRUST_PROXY is set to "${value}". It should be how many proxies are in front of Tend, usually 0 or 1.`,
+    );
+  }
+  return hops;
+}
+
+function parseSetupPassword(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  if ([...value].length < MIN_SETUP_PASSWORD_LENGTH) {
+    throw new ConfigError(
+      `TEND_SETUP_CODE is too short. Choose a setup password of at least ${MIN_SETUP_PASSWORD_LENGTH} characters.`,
+    );
+  }
+  return value;
+}
+
 function resolveHosts(env: NodeJS.ProcessEnv, platform: Platform): string[] {
   if (env.TEND_HOST) return [env.TEND_HOST];
   // Until setup is protected by a setup code (M1), a local install only listens on
@@ -93,6 +144,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const platform = detectPlatform(env);
   const dataDir = resolve(env.TEND_DATA_DIR || "./data");
+  const publicUrl = parsePublicUrl(env.TEND_PUBLIC_URL);
   return {
     dataDir,
     dbPath: join(dataDir, "tend.db"),
@@ -103,6 +155,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: parsePort(env.PORT),
     hosts: resolveHosts(env, platform),
     adminDevUrl: env.TEND_ADMIN_DEV_URL || undefined,
+    publicUrl,
+    trustProxy: parseTrustProxy(env.TEND_TRUST_PROXY, platform),
+    // Follows the site's address, never request headers, which a client could fake.
+    secureCookies: publicUrl ? publicUrl.startsWith("https:") : HTTPS_PLATFORMS.includes(platform),
+    setupPassword: parseSetupPassword(env.TEND_SETUP_CODE),
   };
 }
 
@@ -165,6 +222,27 @@ export function prepareDataDir(config: Config): void {
 }
 
 /**
+ * Keeps other accounts on this computer out of the site's private files, including
+ * ones that were loosened by being copied or restored from an archive.
+ */
+export function tightenPrivateFiles(config: Config): void {
+  if (process.platform === "win32") return;
+  const files = [
+    config.secretKeyPath,
+    config.dbPath,
+    `${config.dbPath}-wal`,
+    `${config.dbPath}-shm`,
+  ];
+  for (const file of files) {
+    try {
+      chmodSync(file, 0o600);
+    } catch {
+      // It doesn't exist yet, or this account doesn't own it: nothing to do either way.
+    }
+  }
+}
+
+/**
  * Creates secret.key the first time, atomically, and checks it on every boot. A
  * damaged key is never replaced silently, because anything signed or encrypted
  * with the old one would stop working. Call this while holding the data folder lock.
@@ -185,4 +263,8 @@ export function ensureSecretKey(config: Config): void {
   fsyncFile(tmpPath);
   renameSync(tmpPath, path);
   fsyncDir(config.dataDir);
+}
+
+export function readSecretKey(config: Pick<Config, "secretKeyPath">): Buffer {
+  return Buffer.from(readFileSync(config.secretKeyPath, "utf8").trim(), "hex");
 }

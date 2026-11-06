@@ -1487,6 +1487,17 @@ Only **`tendcms` and `create-tend`** (plus the two typo-guard placeholders) are 
 | **M9 1.0 "Bloom"** | Encrypted off-site backups, TOTP, Trusted Types, AVIF, admin translations, Node policy step, upgrade tooling, external accessibility audit, security review, usability round 3, launch | 93 | 140 | **2029-07-22 / 2030-04-07** | **2028-08-27** | Release gate green; Product Hunt |
 | **Total** | | **719** | **≈ 1,080** | | | |
 
+**Progress (2026-11-06): M1's setup and sign-in are done.** The three setup steps, sessions, sign-in, the setup code and `tendcms reset-password` work. Still to do in M1: the policy layer, posts and pages, Meadow rendering, the page cache and the Docker build. Choosing a starting point only records the choice until pages and themes exist, and the signed-in page is a placeholder until then.
+
+Where the code differs from this plan, the code is right:
+- **Setup code:** derived from `secret.key` with HMAC instead of stored as a hash in `tokens`. It survives restarts, so an open tab keeps working, and `tendcms setup-code` can show it without writing anything. `tokens` arrives with invites and the recovery kit (M4).
+- **Common passwords:** a short list plus rules (sequences, repeats, letter swaps, the person's own name or email) rather than the 10,000-entry list in §12, because only passwords of 12 or more characters ever reach it. **Replace it with a filtered real list before v0.1.**
+- **Stricter than §12:** same-site requests are refused as well as cross-site ones. IPv6 has a /48 limit (120 sign-ins a minute) beside the /64 one. Sign-in also has a limit of 20 a minute per address, and at most 6 password checks run at once, with 2 more kept for known devices.
+- **Known devices:** one that fails 10 times counts as unknown for a while, so a cookie copied from a shared computer doesn't get endless guesses.
+- **Lockouts:** failures are forgotten after 24 hours, and `tendcms reset-password` lifts an account's lockout for 24 hours (`users.password_reset_at`), because a generated password can't be guessed. Without this, someone guessing could keep the Owner out for good until the recovery kit exists.
+- **Added to the API:** `POST /api/auth/setup/check-code`, so a wrong code is caught at the start of setup.
+- **Docs links:** error answers include one, but the screens don't show them until tendcms.dev exists (rule P13 in §4 still applies at v0.1).
+
 **Rules:**
 - **Re-plan after every milestone, starting with M1.** Compare actual hours against planned hours, adjust the factor, and publish the updated date ranges in the devlog.
 - Only one milestone is in progress at a time, and every milestone ends with a tagged release.
