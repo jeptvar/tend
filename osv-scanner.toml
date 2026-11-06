@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GHSA-67mh-4wv8-2f99"
+ignoreUntil = 2027-04-30
+reason = "esbuild <0.25 dev server, pulled in only by drizzle-kit (devDependency used to generate SQL). Never shipped or served."
