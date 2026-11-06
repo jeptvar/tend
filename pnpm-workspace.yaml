@@ -1,0 +1,11 @@
+packages:
+  - packages/*
+  - themes/*
+  - apps/*
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
+allowBuilds:
+  esbuild: false   # drizzle-kit's esbuild runs from its platform package; no install script needed
+savePrefix: ""
+engineStrict: true

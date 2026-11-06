@@ -1,0 +1,114 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, test } from "vitest";
+import {
+  type Config,
+  ConfigError,
+  checkNodeVersion,
+  ensureSecretKey,
+  explainDataFolderFailure,
+  loadConfig,
+  portsToTry,
+  prepareDataDir,
+} from "../src/config.ts";
+import { tempDir } from "./helpers.ts";
+
+function configIn(dataDir: string): Config {
+  return loadConfig({ TEND_DATA_DIR: dataDir });
+}
+
+describe("checkNodeVersion", () => {
+  test("refuses Node below 24 with a way forward", () => {
+    expect(() => checkNodeVersion("20.20.2")).toThrow(ConfigError);
+    expect(() => checkNodeVersion("23.11.0")).toThrow(/Node\.js 24 or newer.*23\.11\.0/);
+    expect(() => checkNodeVersion("23.11.0")).toThrow("https://tendcms.dev/install-node");
+  });
+
+  test.each(["24.0.0", "26.12.1", "30.1.0"])("accepts %s", (version) => {
+    expect(() => checkNodeVersion(version)).not.toThrow();
+  });
+});
+
+describe("portsToTry", () => {
+  test("uses exactly PORT when it's set", () => {
+    expect(portsToTry({ port: 4000, platform: "local" })).toEqual([4000]);
+    expect(portsToTry({ port: 4000, platform: "docker" })).toEqual([4000]);
+  });
+
+  test("falls back through 3001–3010 only when running locally", () => {
+    const local = portsToTry({ port: undefined, platform: "local" });
+    expect(local[0]).toBe(3000);
+    expect(local.at(-1)).toBe(3010);
+    expect(local).toHaveLength(11);
+    expect(portsToTry({ port: undefined, platform: "railway" })).toEqual([3000]);
+    expect(portsToTry({ port: undefined, platform: "docker" })).toEqual([3000]);
+  });
+
+  test("PORT=0 can ask the system again", () => {
+    expect(portsToTry({ port: 0, platform: "local" })).toEqual([0, 0, 0]);
+  });
+});
+
+describe("loadConfig", () => {
+  test.each(["abc", "-1", "70000", "3.5"])("rejects PORT=%s", (value) => {
+    expect(() => loadConfig({ PORT: value })).toThrow(/isn't a port number/);
+  });
+
+  test("TEND_HOST replaces the default addresses", () => {
+    expect(loadConfig({ TEND_HOST: "10.0.0.5" }).hosts).toEqual(["10.0.0.5"]);
+  });
+
+  test("hosting platforms listen on all addresses", () => {
+    expect(loadConfig({ RENDER: "true" }).hosts).toEqual(["0.0.0.0"]);
+  });
+});
+
+describe("explainDataFolderFailure", () => {
+  const failure = (code: string) => Object.assign(new Error(`${code} details`), { code });
+
+  test.each([
+    "EACCES",
+    "EROFS",
+    "ENOSPC",
+    "SQLITE_CANTOPEN",
+    "SQLITE_READONLY",
+    "SQLITE_IOERR_WRITE",
+  ])("%s is a problem with the folder", (code) => {
+    const explained = explainDataFolderFailure("/data", failure(code));
+    expect(explained).toBeInstanceOf(ConfigError);
+    expect((explained as Error).message).toContain("can't write to its data folder");
+  });
+
+  test.each(["ERR_DLOPEN_FAILED", "MODULE_NOT_FOUND"])(
+    "%s says the database component failed, with the reason",
+    (code) => {
+      const explained = explainDataFolderFailure("/data", failure(code)) as Error;
+      expect(explained).toBeInstanceOf(ConfigError);
+      expect(explained.message).toContain("database component couldn't load");
+      expect(explained.message).toContain(`${code} details`);
+      expect(explained.message).not.toContain("write access");
+    },
+  );
+
+  test("anything else is passed on unchanged, not blamed on the folder", () => {
+    const original = failure("ERR_SOMETHING_ELSE");
+    expect(explainDataFolderFailure("/data", original)).toBe(original);
+  });
+});
+
+describe("ensureSecretKey", () => {
+  test("creates a private 256-bit key once and never changes it", () => {
+    const config = configIn(tempDir());
+    prepareDataDir(config);
+    ensureSecretKey(config);
+    const key = readFileSync(config.secretKeyPath, "utf8");
+    expect(key).toMatch(/^[0-9a-f]{64}\n$/);
+    if (process.platform !== "win32") {
+      expect(statSync(config.secretKeyPath).mode & 0o777).toBe(0o600);
+    }
+    expect(existsSync(join(config.dataDir, "secret.key.tmp"))).toBe(false);
+
+    ensureSecretKey(config);
+    expect(readFileSync(config.secretKeyPath, "utf8")).toBe(key);
+  });
+});

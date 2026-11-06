@@ -1,0 +1,22 @@
+{
+  "setup.welcome.pageTitle": "Set up your site · Tend",
+  "setup.welcome.title": "Welcome to Tend",
+  "setup.welcome.intro": "Let's set up your website. It takes about five minutes.",
+  "setup.welcome.new": "Start a new site",
+  "setup.welcome.newHint": "Pick a starting design, then write your first page.",
+  "setup.welcome.backup": "Start from a backup",
+  "setup.welcome.backupHint": "Moving a site? Bring everything over from a Tend backup file.",
+  "setup.name.pageTitle": "Name your site · Tend",
+  "setup.name.step": "Step 1 of 3",
+  "setup.name.title": "Name your site",
+  "setup.name.label": "Site name",
+  "setup.name.hint": "Visitors see this at the top of every page. You can change it later.",
+  "setup.name.placeholder": "Rise Bakery",
+  "setup.name.required": "Type a name for your site. You can change it later.",
+  "setup.name.continue": "Continue",
+  "setup.name.next": "Next comes creating your account. That screen isn't built yet.",
+  "setup.backup.pageTitle": "Start from a backup · Tend",
+  "setup.backup.title": "Start from a backup",
+  "setup.backup.body": "Here you'll choose a Tend backup file and bring over your pages, photos and people. This screen isn't built yet.",
+  "common.back": "Back"
+}
