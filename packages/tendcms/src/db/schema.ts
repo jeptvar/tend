@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnySQLiteColumn,
   check,
   customType,
   index,
@@ -66,3 +67,74 @@ export const settings = sqliteTable("settings", {
   updatedAt: integer("updated_at").notNull(),
   updatedBy: text("updated_by"),
 });
+
+export const entries = sqliteTable(
+  "entries",
+  {
+    id: text("id").primaryKey(),
+    /** "post" or "page". The application checks this, because Collections add more at 1.1. */
+    type: text("type").notNull(),
+    status: text("status", { enum: ["draft", "scheduled", "published"] })
+      .notNull()
+      .default("draft"),
+    title: text("title").notNull().default(""),
+    /** The working address, which goes live at the next publish. */
+    slug: text("slug").notNull().default(""),
+    /** The address visitors can use now. Null when it isn't on the site. */
+    liveSlug: text("live_slug"),
+    isHome: integer("is_home").notNull().default(0),
+    /** The working copy: see EntryData in content/doc.ts. */
+    data: text("data", { mode: "json" }).notNull(),
+    /** 1 when the working copy has changes that aren't on the site yet. */
+    dirty: integer("dirty").notNull().default(0),
+    /** Goes up with every save, so two people can't silently overwrite each other. */
+    rev: integer("rev").notNull().default(1),
+    publishedRevId: text("published_rev_id").references((): AnySQLiteColumn => revisions.id, {
+      onDelete: "set null",
+    }),
+    publishAt: integer("publish_at"),
+    firstPublishedAt: integer("first_published_at"),
+    reviewRequestedAt: integer("review_requested_at"),
+    isExample: integer("is_example").notNull().default(0),
+    authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    trashedAt: integer("trashed_at"),
+  },
+  (t) => [
+    check("entries_status_check", sql`${t.status} IN ('draft', 'scheduled', 'published')`),
+    index("entries_listing").on(t.type, t.status, t.firstPublishedAt),
+    uniqueIndex("entries_live_address")
+      .on(t.type, t.liveSlug)
+      .where(sql`${t.liveSlug} IS NOT NULL`),
+    uniqueIndex("entries_single_home").on(t.isHome).where(sql`${t.isHome} = 1`),
+  ],
+);
+
+export const revisions = sqliteTable(
+  "revisions",
+  {
+    id: text("id").primaryKey(),
+    entryId: text("entry_id")
+      .notNull()
+      .references((): AnySQLiteColumn => entries.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: ["autosave", "publish", "restore", "before_discard", "conflict", "import"],
+    }).notNull(),
+    title: text("title").notNull(),
+    slug: text("slug").notNull(),
+    data: text("data", { mode: "json" }).notNull(),
+    /** Publish revisions only: what visitors see. */
+    html: text("html"),
+    text: text("text"),
+    authorId: text("author_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    check(
+      "revisions_kind_check",
+      sql`${t.kind} IN ('autosave', 'publish', 'restore', 'before_discard', 'conflict', 'import')`,
+    ),
+    index("revisions_by_entry").on(t.entryId, t.createdAt),
+  ],
+);

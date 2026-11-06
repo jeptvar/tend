@@ -1,0 +1,17 @@
+{
+  "entries": [
+    {
+      "type": "page",
+      "title": "{site}",
+      "slug": "home",
+      "isHome": true,
+      "body": "This is your homepage. Tell visitors what you do and why they'll be glad they came.\n\nEdit this text to make it your own, then publish your changes."
+    },
+    {
+      "type": "page",
+      "title": "Contact",
+      "slug": "contact",
+      "body": "Say how people can reach you: your address, phone number, email and opening hours."
+    }
+  ]
+}

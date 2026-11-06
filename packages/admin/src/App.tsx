@@ -1,5 +1,7 @@
 import { Redirect, Route, Router, Switch } from "wouter";
 import { SetupProvider } from "./lib/setup-state.tsx";
+import { PageEditor, PostEditor } from "./routes/Editor.tsx";
+import { PageList, PostList } from "./routes/Entries.tsx";
 import { ForgotPassword, Login } from "./routes/Login.tsx";
 import { Overview } from "./routes/Overview.tsx";
 import {
@@ -17,6 +19,10 @@ export function App() {
       <SetupProvider>
         <Switch>
           <Route path="/" component={Overview} />
+          <Route path="/posts" component={PostList} />
+          <Route path="/posts/:id" component={PostEditor} />
+          <Route path="/pages" component={PageList} />
+          <Route path="/pages/:id" component={PageEditor} />
           <Route path="/setup" component={SetupWelcome} />
           <Route path="/setup/code" component={SetupCode} />
           <Route path="/setup/name" component={SetupName} />

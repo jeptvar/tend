@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
+import { textToDoc } from "../content/doc.ts";
+import { type StarterEntry, seedStarterEntries } from "../content/entries.ts";
 import type { Orm } from "../db/client.ts";
 import type { SetupSettings, SiteSettings, Starter } from "../db/repo/settings.ts";
 import { settings, users } from "../db/schema.ts";
@@ -11,10 +15,20 @@ export interface CompleteSetupInput {
   site: { name: string; tagline: string; locale: string; timezone: string };
   owner: { name: string; email: string; passwordHash: string };
   starter: Starter;
+  starterEntries: StarterEntry[];
   now: number;
 }
 
-/** Creates the Owner and the site's settings together: setup either fully happens or doesn't. */
+/** Reads a starting point's example content from the theme, with the site's name filled in. */
+export function loadStarter(themeDir: string, starter: Starter, siteName: string): StarterEntry[] {
+  const file = readFileSync(join(themeDir, "starters", `${starter}.json`), "utf8");
+  const { entries } = JSON.parse(file) as { entries: StarterEntry[] };
+  // A function, because a plain replacement string gives "$&" and friends special meanings.
+  const named = (text: string) => text.replaceAll("{site}", () => siteName);
+  return entries.map((entry) => ({ ...entry, title: named(entry.title), body: named(entry.body) }));
+}
+
+/** Creates the Owner, the site's settings and its first content together: all of it or none. */
 export function completeSetup(orm: Orm, input: CompleteSetupInput): string {
   const userId = uuidv7(input.now);
   const site: SiteSettings = {
@@ -50,6 +64,12 @@ export function completeSetup(orm: Orm, input: CompleteSetupInput): string {
           { key: "setup", value: setup, updatedAt: input.now, updatedBy: userId },
         ])
         .run();
+      seedStarterEntries(tx, {
+        entries: input.starterEntries,
+        toDoc: textToDoc,
+        authorId: userId,
+        now: input.now,
+      });
     },
     { behavior: "immediate" },
   );

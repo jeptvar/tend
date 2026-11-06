@@ -35,6 +35,10 @@ export interface Config {
   secureCookies: boolean;
   /** TEND_SETUP_CODE: a setup password chosen in a hosting template, replacing the code. */
   setupPassword: string | undefined;
+  /** Whether the site has a real public address, so "online" is a true thing to say. */
+  isPublic: boolean;
+  /** Off on a local site, so edits to a template show on refresh. */
+  pageCacheBytes: number;
 }
 
 /** A problem the person running Tend has to fix; `message` is shown as-is. */
@@ -46,6 +50,7 @@ const DEFAULT_PORT = 3000;
 const FALLBACK_PORTS = 10;
 const SECRET_KEY_FORMAT = /^[0-9a-f]{64}\n?$/;
 const MIN_SETUP_PASSWORD_LENGTH = 8;
+const DEFAULT_PAGE_CACHE_MB = 32;
 // These hosts always terminate TLS in front of the app.
 const HTTPS_PLATFORMS: Platform[] = ["railway", "render", "fly"];
 
@@ -63,7 +68,9 @@ export function detectPlatform(env: NodeJS.ProcessEnv): Platform {
   if (env.RAILWAY_ENVIRONMENT || env.RAILWAY_PROJECT_ID) return "railway";
   if (env.RENDER) return "render";
   if (env.FLY_APP_NAME) return "fly";
-  if (existsSync("/.dockerenv")) return "docker";
+  // The image sets TEND_PLATFORM, because only Docker itself creates /.dockerenv: Podman
+  // and Kubernetes don't, and there Tend would listen only on its own loopback.
+  if (env.TEND_PLATFORM === "docker" || existsSync("/.dockerenv")) return "docker";
   return "local";
 }
 
@@ -115,6 +122,28 @@ function parseTrustProxy(value: string | undefined, platform: Platform): number 
   return hops;
 }
 
+function isLocalAddress(url: string): boolean {
+  const { hostname } = new URL(url);
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
+function parsePageCacheBytes(
+  value: string | undefined,
+  publicUrl: string | undefined,
+  platform: Platform,
+): number {
+  const local = publicUrl ? isLocalAddress(publicUrl) : platform === "local";
+  if (local) return 0;
+  if (value === undefined || value === "") return DEFAULT_PAGE_CACHE_MB * 1024 * 1024;
+  const megabytes = Number(value);
+  if (!Number.isFinite(megabytes) || megabytes < 0) {
+    throw new ConfigError(
+      `TEND_CACHE_MB is set to "${value}". It should be a number of megabytes, like ${DEFAULT_PAGE_CACHE_MB}, or 0 to turn the page cache off.`,
+    );
+  }
+  return Math.floor(megabytes * 1024 * 1024);
+}
+
 function parseSetupPassword(value: string | undefined): string | undefined {
   if (!value) return undefined;
   if ([...value].length < MIN_SETUP_PASSWORD_LENGTH) {
@@ -160,6 +189,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     // Follows the site's address, never request headers, which a client could fake.
     secureCookies: publicUrl ? publicUrl.startsWith("https:") : HTTPS_PLATFORMS.includes(platform),
     setupPassword: parseSetupPassword(env.TEND_SETUP_CODE),
+    pageCacheBytes: parsePageCacheBytes(env.TEND_CACHE_MB, publicUrl, platform),
+    isPublic: publicUrl ? !isLocalAddress(publicUrl) : HTTPS_PLATFORMS.includes(platform),
   };
 }
 

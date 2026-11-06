@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "type": "page",
+      "title": "{site}",
+      "slug": "home",
+      "isHome": true,
+      "body": ""
+    }
+  ]
+}

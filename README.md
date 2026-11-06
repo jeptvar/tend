@@ -20,6 +20,7 @@ Open http://localhost:3000/admin/setup. Development data lives in `./data` (git-
 | `pnpm build` | Builds the admin, then bundles the server into `packages/tendcms/dist` |
 | `pnpm smoke` | Boots the built package from an empty folder, serves the real admin, then runs setup and signs in |
 | `pnpm test` | Vitest: setup, sign-in, sessions, request protection, admin serving, data-folder lock, port handling, migrations |
+| `pnpm e2e` | Playwright: real browser tests of the admin and the public site, with accessibility scans. Needs `pnpm build` first, and once: `pnpm exec playwright install chromium` |
 | `pnpm lint` | Biome, plus a check that no migration contains a `PRAGMA` |
 | `pnpm typecheck` | `tsc -b` across the packages |
 | `pnpm db:generate <name>` | Generates a migration from `src/db/schema.ts` and strips drizzle's `PRAGMA` lines |
@@ -38,6 +39,9 @@ To start over from setup, stop Tend and delete `./data`.
 packages/
   tendcms/     the published package: server, CLI, migrations (bundled by tsdown)
   admin/       React admin (Vite); copied into tendcms/dist/admin at build time
+themes/meadow/ the public site's templates, styles and starting points
+e2e/           Playwright browser tests
+docker/        image, compose file and Caddy config
 scripts/       dev runner and migration helpers (zero dependencies)
 ```
 

@@ -1,5 +1,6 @@
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { ApiError, api } from "./api.ts";
+import type { Doc } from "./doc.ts";
 
 export interface SetupStatus {
   needsSetup: boolean;
@@ -10,10 +11,43 @@ export interface Me {
   user: { id: string; name: string; email: string; role: string; isOwner: boolean };
   site: { name: string; tagline: string };
   starter: "blog" | "business" | "blank" | null;
+  siteIsPublic: boolean;
+}
+
+export type EntryType = "post" | "page";
+
+export interface EntrySummary {
+  id: string;
+  type: EntryType;
+  status: "draft" | "scheduled" | "published";
+  title: string;
+  slug: string;
+  isHome: boolean;
+  isExample: boolean;
+  dirty: boolean;
+  rev: number;
+  /** Where visitors can see it right now, if they can. */
+  url: string | null;
+  firstPublishedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  trashedAt: number | null;
+}
+
+export interface EntryFull extends EntrySummary {
+  data: { doc: Doc };
 }
 
 export const SETUP_STATUS_KEY = ["setup-status"];
 export const ME_KEY = ["me"];
+
+export function entriesKey(type: EntryType, trashed: boolean) {
+  return ["entries", type, trashed ? "trash" : "all"];
+}
+
+export function entryKey(id: string) {
+  return ["entry", id];
+}
 
 export function useSetupStatus() {
   return useQuery({

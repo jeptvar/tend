@@ -27,3 +27,10 @@ export const appVersion: string = JSON.parse(
 export const migrationsDir = join(packageRoot, "migrations");
 
 export const adminDir = join(packageRoot, "dist", "admin");
+
+// Beside the code when built; in the repo's themes folder when running from source, so
+// editing a template doesn't need a build.
+const runningFromSource = fileURLToPath(import.meta.url).endsWith(".ts");
+export const defaultThemeDir = runningFromSource
+  ? join(packageRoot, "..", "..", "themes", "meadow")
+  : join(packageRoot, "dist", "themes", "meadow");

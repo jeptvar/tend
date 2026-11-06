@@ -94,6 +94,18 @@ try {
   const me = await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } });
   const { site } = await me.json();
   check(me.status === 200 && site.name === "Smoke Test", "the session and the site's name work");
+
+  // The theme ships inside the package, so this proves it was bundled and can render.
+  const home = await fetch(`${base}/`);
+  const homeHtml = await home.text();
+  check(home.status === 200 && homeHtml.includes("Smoke Test"), "the public site renders");
+  check(!homeHtml.includes("<script"), "public pages have no JavaScript");
+  const css = homeHtml.match(/\/assets\/[^"]+\.css/)?.[0];
+  check((await fetch(`${base}${css}`)).status === 200, "the theme's stylesheet is served");
+  check(
+    (await fetch(`${base}/blog/welcome`)).status === 200,
+    "the starter's first post is published",
+  );
 } catch (error) {
   failed = true;
   console.error(`\nSmoke test failed: ${error.message}\n\nTend's output:\n${output}`);

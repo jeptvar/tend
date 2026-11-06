@@ -1,0 +1,28 @@
+# Runs Tend behind Caddy, which handles HTTPS. Set TEND_DOMAIN in .env first, and point
+# your domain's A record at this server before starting, so Caddy can get a certificate.
+#   docker compose up -d
+#   docker compose exec tend tendcms setup-code
+services:
+  tend:
+    image: ghcr.io/tendcms/tend:0
+    restart: unless-stopped
+    init: true
+    environment:
+      TEND_PUBLIC_URL: https://${TEND_DOMAIN}
+      TEND_TRUST_PROXY: "1"
+    volumes:
+      - tend-data:/data
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      TEND_DOMAIN: ${TEND_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+volumes:
+  tend-data: {}
+  caddy-data: {}

@@ -24,4 +24,6 @@
 body {
   background: var(--color-paper);
   color: var(--color-ink);
+  /* A pasted address or long name has to wrap, not push the page sideways on a phone. */
+  overflow-wrap: anywhere;
 }

@@ -58,6 +58,21 @@ describe("loadConfig", () => {
     expect(loadConfig({ TEND_HOST: "10.0.0.5" }).hosts).toEqual(["10.0.0.5"]);
   });
 
+  test("the image says it's in a container, because not every runtime leaves a sign", () => {
+    const config = loadConfig({ TEND_PLATFORM: "docker" });
+    expect(config.platform).toBe("docker");
+    expect(config.hosts).toEqual(["0.0.0.0"]);
+    expect(config.pageCacheBytes).toBeGreaterThan(0);
+    expect(loadConfig({ TEND_PLATFORM: "docker", RENDER: "1" }).platform).toBe("render");
+  });
+
+  test("the site only counts as public with a real address", () => {
+    expect(loadConfig({ TEND_PUBLIC_URL: "https://example.com" }).isPublic).toBe(true);
+    expect(loadConfig({ TEND_PUBLIC_URL: "http://localhost:3000" }).isPublic).toBe(false);
+    expect(loadConfig({ RAILWAY_ENVIRONMENT: "x" }).isPublic).toBe(true);
+    expect(loadConfig({ TEND_PLATFORM: "docker" }).isPublic).toBe(false);
+  });
+
   test("hosting platforms listen on all addresses", () => {
     expect(loadConfig({ RENDER: "true" }).hosts).toEqual(["0.0.0.0"]);
   });

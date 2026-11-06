@@ -1,0 +1,14 @@
+<header class="t-header">
+  <div class="t-wrap t-header-inner">
+    <a class="t-brand" href="/">{{ site.name }}</a>
+    {% if menus.main.size > 0 %}
+    <nav aria-label="Main">
+      <ul class="t-menu">
+        {% for item in menus.main %}
+        <li><a href="{{ item.url }}"{% if item.url == request.path %} aria-current="page"{% endif %}>{{ item.title }}</a></li>
+        {% endfor %}
+      </ul>
+    </nav>
+    {% endif %}
+  </div>
+</header>
