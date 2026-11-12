@@ -156,8 +156,124 @@ h2 {
   margin-block: 0 0.5em;
 }
 
-.t-body p {
+.t-body p,
+.t-body ul,
+.t-body ol,
+.t-body blockquote,
+.t-body pre {
   margin-block: 0 1em;
+}
+
+.t-body li > p {
+  margin-block: 0 0.25em;
+}
+
+.t-body h2,
+.t-body h3,
+.t-body h4 {
+  margin-block: 1.5em 0.5em;
+  font-family: var(--tend-font-heading);
+  line-height: 1.25;
+}
+
+.t-body h3 {
+  font-size: 1.25rem;
+}
+
+.t-body h4 {
+  font-size: 1.125rem;
+}
+
+.t-body blockquote {
+  margin-inline: 0;
+  padding-inline-start: 1em;
+  border-inline-start: 3px solid var(--tend-line);
+  color: var(--tend-muted);
+}
+
+.t-body code {
+  padding: 0.1em 0.25em;
+  border-radius: 0.25em;
+  background: color-mix(in srgb, var(--tend-ink) 8%, transparent);
+  font-size: 0.95em;
+}
+
+.t-body pre {
+  overflow-x: auto;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--tend-ink) 8%, transparent);
+}
+
+.t-body pre code {
+  padding: 0;
+  background: none;
+}
+
+.t-body hr {
+  margin-block: 2em;
+  border: 0;
+  border-top: 1px solid var(--tend-line);
+}
+
+.t-button-row {
+  margin-block: 1.5em;
+}
+
+.t-button {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 2.75rem;
+  overflow-wrap: anywhere;
+  padding: 0.25rem 1.25rem;
+  border-radius: 0.5rem;
+  background: var(--tend-accent);
+  color: var(--tend-paper);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.t-button:hover {
+  text-decoration: underline;
+}
+
+.t-intro {
+  margin-block: 0 2em;
+  padding: 2rem 1.5rem;
+  border-radius: 0.75rem;
+  font-size: 1.25rem;
+}
+
+.t-intro h2 {
+  margin-block-start: 0;
+  font-size: 2rem;
+}
+
+.t-tone-none {
+  padding-inline: 0;
+}
+
+.t-tone-muted {
+  background: color-mix(in srgb, var(--tend-ink) 6%, transparent);
+}
+
+.t-tone-accent {
+  background: var(--tend-accent);
+  color: var(--tend-paper);
+}
+
+.t-tone-accent a {
+  color: inherit;
+}
+
+.t-tone-accent .t-button {
+  background: var(--tend-paper);
+  color: var(--tend-accent);
+}
+
+.t-align-center {
+  text-align: center;
 }
 
 .t-pagination {

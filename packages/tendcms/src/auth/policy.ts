@@ -8,7 +8,8 @@ export type Action =
   | "entry:read"
   | "entry:update"
   | "entry:publish"
-  | "entry:trash";
+  | "entry:trash"
+  | "entry:delete";
 
 export interface Subject {
   authorId: string | null;
@@ -24,6 +25,8 @@ export function can(actor: Actor | null | undefined, action: Action, subject?: S
   switch (actor.role) {
     case "admin":
     case "editor":
+      // Deleting forever can't be undone, so it's only for whoever runs the site.
+      if (action === "entry:delete") return actor.role === "admin";
       return (
         action === "entry:list" ||
         action === "entry:create" ||

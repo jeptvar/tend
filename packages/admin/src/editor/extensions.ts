@@ -1,0 +1,55 @@
+import { type Extensions, textblockTypeInputRule } from "@tiptap/core";
+import { Document } from "@tiptap/extension-document";
+import { Heading } from "@tiptap/extension-heading";
+import { Placeholder } from "@tiptap/extensions";
+import StarterKit from "@tiptap/starter-kit";
+import { isAllowedHref } from "../lib/doc.ts";
+import { ButtonNode, type ButtonOptions, SectionNode, type SectionOptions } from "./nodes.tsx";
+import { SlashMenu, type SlashOptions } from "./slash.ts";
+
+const LEVELS = [2, 3, 4] as const;
+
+// The page's title is the only top-level heading, so "# " makes the biggest one there can be.
+const TendHeading = Heading.extend({
+  addInputRules() {
+    return [
+      ...(this.parent?.() ?? []),
+      textblockTypeInputRule({
+        find: /^#\s$/,
+        type: this.type,
+        getAttributes: { level: LEVELS[0] },
+      }),
+    ];
+  },
+});
+
+/** Exactly what the server allows, and nothing else: it can't be typed or pasted in here. */
+export function editorExtensions(options: {
+  allowSections: boolean;
+  placeholder: string;
+  onEditButton: ButtonOptions["onEdit"];
+  onSectionRemoved: SectionOptions["onRemoved"];
+  slash: SlashOptions;
+}): Extensions {
+  return [
+    StarterKit.configure({
+      document: false,
+      heading: false,
+      link: {
+        openOnClick: false,
+        // Clicking inside linked words places the cursor, so a typo in them can be fixed.
+        enableClickSelection: false,
+        isAllowedUri: (url) => isAllowedHref(url ?? ""),
+        HTMLAttributes: { target: null, rel: null, class: null },
+      },
+    }),
+    Document.extend({ content: options.allowSections ? "(block | section)+" : "block+" }),
+    TendHeading.configure({ levels: [...LEVELS] }),
+    Placeholder.configure({ placeholder: options.placeholder }),
+    ButtonNode.configure({ onEdit: options.onEditButton }),
+    ...(options.allowSections
+      ? [SectionNode.configure({ onRemoved: options.onSectionRemoved })]
+      : []),
+    SlashMenu.configure(options.slash),
+  ];
+}

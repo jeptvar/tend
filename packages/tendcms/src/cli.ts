@@ -16,6 +16,7 @@ import {
   readSecretKey,
   tightenPrivateFiles,
 } from "./config.ts";
+import { cleanUp } from "./content/entries.ts";
 import { createOrm, openDatabase, type SqliteDatabase } from "./db/client.ts";
 import { acquireLock, type Lock, LockError } from "./db/lock.ts";
 import { MigrationError, migrate, schemaIsCurrent } from "./db/migrate.ts";
@@ -159,6 +160,8 @@ async function resetPassword(email: string | undefined): Promise<void> {
   }
 }
 
+const HOUR_MS = 60 * 60 * 1000;
+
 async function start(): Promise<void> {
   const config = loadConfig();
   const lock = takeDataFolder(config);
@@ -211,6 +214,18 @@ async function start(): Promise<void> {
     pageCacheBytes: config.pageCacheBytes,
     isPublic: config.isPublic,
   });
+  // The Trash and automatic history only keep things for so long. Not being able to tidy
+  // up is no reason to stop serving the site.
+  const tidyUp = () => {
+    try {
+      cleanUp(orm, Date.now());
+    } catch (error) {
+      console.error(`Couldn't tidy up old drafts: ${(error as Error).message}`);
+    }
+  };
+  tidyUp();
+  setInterval(tidyUp, HOUR_MS).unref();
+
   const ports = portsToTry(config);
   listening = await listen(app.fetch, ports, config.hosts);
   const { port } = listening;

@@ -1,7 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { entryPath, isReservedPageAddress, slugify } from "../src/content/address.ts";
-import { type Doc, docSchema, textToDoc } from "../src/content/doc.ts";
-import { renderDoc, summarize } from "../src/content/render-doc.ts";
+import { type Doc, linkedEntryIds, parseDoc, textToDoc } from "../src/content/doc.ts";
+import {
+  leadText,
+  placeholderIds,
+  renderDoc,
+  resolvePlaceholders,
+  summarize,
+} from "../src/content/render-doc.ts";
 import { browser, type MadeApp, makeApp, setUp } from "./auth-helpers.ts";
 
 const ENTRIES = "/api/admin/entries";
@@ -92,21 +98,405 @@ describe("summarize", () => {
   });
 });
 
-describe("docSchema", () => {
+function refuses(doc: unknown, allowSections = true): boolean {
+  try {
+    parseDoc(doc, { allowSections });
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+function text(value: string, marks?: unknown[]) {
+  return { type: "text", text: value, ...(marks ? { marks } : {}) };
+}
+
+function inDoc(...content: unknown[]) {
+  return { type: "doc", content };
+}
+
+function linked(href: string) {
+  return inDoc({ type: "paragraph", content: [text("x", [{ type: "link", attrs: { href } }])] });
+}
+
+const NESTED_TOO_FAR = (() => {
+  let node: unknown = { type: "paragraph" };
+  for (let depth = 0; depth < 50; depth++) node = { type: "blockquote", content: [node] };
+  return inDoc(node);
+})();
+
+describe("parseDoc", () => {
   test.each([
-    ["an unknown block", { type: "doc", content: [{ type: "script" }] }],
-    [
-      "an unknown inline node",
-      { type: "doc", content: [{ type: "paragraph", content: [{ type: "html" }] }] },
-    ],
-    ["an extra property", { type: "doc", content: [{ type: "paragraph", onclick: "x" }] }],
-    [
-      "an empty text node",
-      { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "" }] }] },
-    ],
+    ["an unknown block", inDoc({ type: "script" })],
+    ["an unknown inline node", inDoc({ type: "paragraph", content: [{ type: "html" }] })],
+    ["an empty text node", inDoc({ type: "paragraph", content: [{ type: "text", text: "" }] })],
     ["the wrong root", { type: "paragraph" }],
+    [
+      "a heading level visitors' pages already use",
+      inDoc({ type: "heading", attrs: { level: 1 } }),
+    ],
+    ["a heading level past the limit", inDoc({ type: "heading", attrs: { level: 5 } })],
+    ["an unknown mark", inDoc({ type: "paragraph", content: [text("x", [{ type: "font" }])] })],
+    [
+      "a marked-up code block",
+      inDoc({ type: "codeBlock", content: [text("x", [{ type: "bold" }])] }),
+    ],
+    [
+      "a list holding something else",
+      inDoc({ type: "bulletList", content: [{ type: "paragraph" }] }),
+    ],
+    ["a button with no words", inDoc({ type: "button", attrs: { href: "/x" } })],
+    ["a section of an unknown kind", inDoc({ type: "section", attrs: { kind: "x" }, content: [] })],
+    [
+      "a section inside something",
+      inDoc({
+        type: "blockquote",
+        content: [{ type: "section", attrs: { kind: "intro" }, content: [] }],
+      }),
+    ],
+    ["something nested absurdly deep", NESTED_TOO_FAR],
   ])("refuses %s", (_, doc) => {
-    expect(docSchema.safeParse(doc).success).toBe(false);
+    expect(refuses(doc)).toBe(true);
+  });
+
+  test("refuses too many nodes before doing much work", () => {
+    expect(
+      refuses(inDoc(...Array.from({ length: 100_001 }, () => ({ type: "horizontalRule" })))),
+    ).toBe(true);
+  });
+
+  test("sections are only for pages", () => {
+    const section = inDoc({ type: "section", attrs: { kind: "intro" }, content: [] });
+    expect(refuses(section, true)).toBe(false);
+    expect(refuses(section, false)).toBe(true);
+  });
+
+  test.each([
+    "https://example.com/a?b=c#d",
+    "http://example.com",
+    "mailto:hello@example.com",
+    "tel:+15551234567",
+    "/about",
+    "#section",
+    "about",
+    "entry:0190b5d0-0000-7000-8000-000000000000",
+  ])("allows a link to %s", (href) => {
+    expect(refuses(linked(href))).toBe(false);
+  });
+
+  test("keeps one of each mark, because two links on the same words would nest", () => {
+    const parsed = parseDoc(
+      inDoc({
+        type: "paragraph",
+        content: [
+          text("two", [
+            { type: "link", attrs: { href: "/first" } },
+            { type: "link", attrs: { href: "/second" } },
+            { type: "bold" },
+            { type: "bold" },
+          ]),
+        ],
+      }),
+      { allowSections: false },
+    );
+    expect(parsed.content).toEqual([
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "two",
+            marks: [{ type: "link", attrs: { href: "/first" } }, { type: "bold" }],
+          },
+        ],
+      },
+    ]);
+    expect(renderDoc(parsed).html).toBe('<p><a href="/first"><strong>two</strong></a></p>');
+  });
+
+  test.each([
+    ["javascript", "javascript:alert(1)"],
+    ["disguised javascript", "  JaVaScRiPt:alert(1)"],
+    ["javascript split with a tab", "java\tscript:alert(1)"],
+    ["data", "data:text/html,<script>alert(1)</script>"],
+    ["a file", "file:///etc/passwd"],
+    ["a host with a space in it", "https://my bakery.com"],
+  ])("a link to %s loses the link and keeps its words, so nothing else stops saving", (_, href) => {
+    const parsed = parseDoc(linked(href), { allowSections: false });
+    expect(parsed.content).toEqual([{ type: "paragraph", content: [{ type: "text", text: "x" }] }]);
+  });
+
+  test("a button going somewhere unsafe keeps its words and goes nowhere", () => {
+    const parsed = parseDoc(
+      inDoc({ type: "button", attrs: { href: "javascript:alert(1)", label: "Go" } }),
+      { allowSections: false },
+    );
+    expect(parsed.content).toEqual([{ type: "button", attrs: { href: "", label: "Go" } }]);
+  });
+
+  test("a second link that isn't allowed is dropped too", () => {
+    const parsed = parseDoc(
+      inDoc({
+        type: "paragraph",
+        content: [
+          text("x", [
+            { type: "link", attrs: { href: "javascript:alert(1)" } },
+            { type: "link", attrs: { href: "/fine" } },
+          ]),
+        ],
+      }),
+      { allowSections: false },
+    );
+    expect(parsed.content[0]).toEqual({
+      type: "paragraph",
+      content: [{ type: "text", text: "x", marks: [{ type: "link", attrs: { href: "/fine" } }] }],
+    });
+  });
+
+  test("keeps only what's allowed, so editor extras never reach the database", () => {
+    const parsed = parseDoc(
+      inDoc(
+        { type: "paragraph", onclick: "x", attrs: { style: "x" }, content: [text("a")] },
+        {
+          type: "paragraph",
+          content: [
+            {
+              ...text("b"),
+              onclick: "x",
+              marks: [
+                { type: "bold", attrs: { style: "x" } },
+                { type: "link", attrs: { href: "/x", target: "_blank", rel: "x", class: "y" } },
+              ],
+            },
+          ],
+        },
+        { type: "codeBlock", attrs: { language: "js" }, content: [text("c")] },
+        { type: "orderedList", attrs: { start: 1, type: null }, content: [] },
+        { type: "orderedList", attrs: { start: 3, type: null }, content: [] },
+        {
+          type: "section",
+          attrs: { kind: "intro", preset: "<b>", tone: "loud", align: "up", extra: 1 },
+          content: [],
+        },
+      ),
+      { allowSections: true },
+    );
+    expect(parsed.content).toEqual([
+      { type: "paragraph", content: [{ type: "text", text: "a" }] },
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "b",
+            marks: [{ type: "bold" }, { type: "link", attrs: { href: "/x" } }],
+          },
+        ],
+      },
+      { type: "codeBlock", content: [{ type: "text", text: "c" }] },
+      { type: "orderedList", content: [] },
+      { type: "orderedList", attrs: { start: 3 }, content: [] },
+      {
+        type: "section",
+        attrs: { kind: "intro", preset: "1", tone: "none", align: "left" },
+        content: [],
+      },
+    ]);
+  });
+});
+
+const ID_A = "0190b5d0-0000-7000-8000-00000000000a";
+
+describe("rendering every kind of content", () => {
+  const everything = inDoc(
+    { type: "heading", attrs: { level: 2 }, content: [text("Two")] },
+    { type: "heading", attrs: { level: 3 }, content: [text("Three")] },
+    { type: "heading", attrs: { level: 4 }, content: [text("Four")] },
+    {
+      type: "paragraph",
+      content: [
+        text("b", [{ type: "bold" }]),
+        text("i", [{ type: "italic" }]),
+        text("u", [{ type: "underline" }]),
+        text("s", [{ type: "strike" }]),
+        text("c", [{ type: "code" }]),
+        text("l", [
+          { type: "bold" },
+          { type: "link", attrs: { href: "https://a.example/?x=1&y=2" } },
+        ]),
+      ],
+    },
+    {
+      type: "bulletList",
+      content: [{ type: "listItem", content: [{ type: "paragraph", content: [text("one")] }] }],
+    },
+    {
+      type: "orderedList",
+      attrs: { start: 4 },
+      content: [{ type: "listItem", content: [{ type: "paragraph", content: [text("two")] }] }],
+    },
+    { type: "blockquote", content: [{ type: "paragraph", content: [text("said")] }] },
+    { type: "codeBlock", content: [text("<x> & y")] },
+    { type: "horizontalRule" },
+    { type: "button", attrs: { href: "/go", label: "Go <now>" } },
+    {
+      type: "section",
+      attrs: { kind: "intro", preset: "1", tone: "muted", align: "center" },
+      content: [{ type: "paragraph", content: [text("Hi")] }],
+    },
+  );
+
+  test("each one comes out as the right safe HTML", () => {
+    const { html, text: plain } = renderDoc(parseDoc(everything, { allowSections: true }));
+    for (const part of [
+      "<h2>Two</h2>",
+      "<h3>Three</h3>",
+      "<h4>Four</h4>",
+      "<strong>b</strong>",
+      "<em>i</em>",
+      "<u>u</u>",
+      "<s>s</s>",
+      "<code>c</code>",
+      '<a href="https://a.example/?x=1&amp;y=2"><strong>l</strong></a>',
+      "<ul><li><p>one</p></li></ul>",
+      '<ol start="4"><li><p>two</p></li></ol>',
+      "<blockquote><p>said</p></blockquote>",
+      "<pre><code>&lt;x&gt; &amp; y</code></pre>",
+      "<hr>",
+      '<a class="t-button" href="/go">Go &lt;now&gt;</a>',
+      '<section class="t-intro t-tone-muted t-align-center" data-preset="1"><p>Hi</p></section>',
+    ]) {
+      expect(html).toContain(part);
+    }
+    expect(plain).toContain("said");
+    expect(plain).toContain("Go <now>");
+  });
+
+  test("the automatic summary is the first paragraph, whatever comes before it", () => {
+    const doc = parseDoc(
+      inDoc(
+        { type: "heading", attrs: { level: 2 }, content: [text("Why we bake")] },
+        { type: "codeBlock" },
+        { type: "button", attrs: { href: "/x", label: "Buy now" } },
+        {
+          type: "bulletList",
+          content: [{ type: "listItem", content: [{ type: "paragraph", content: [text("One")] }] }],
+        },
+        { type: "paragraph" },
+        { type: "paragraph", content: [text("Because "), text("bread", [{ type: "bold" }])] },
+      ),
+      { allowSections: false },
+    );
+    expect(leadText(doc)).toBe("Because bread");
+    const intro = parseDoc(
+      inDoc({
+        type: "section",
+        attrs: { kind: "intro" },
+        content: [
+          { type: "heading", attrs: { level: 2 }, content: [text("Welcome")] },
+          { type: "paragraph", content: [text("Fresh every morning")] },
+        ],
+      }),
+      { allowSections: true },
+    );
+    expect(leadText(intro)).toBe("Fresh every morning");
+    expect(leadText(inDoc() as Doc)).toBe("");
+  });
+
+  test("an empty code block doesn't appear on the page", () => {
+    expect(
+      renderDoc(inDoc({ type: "codeBlock" }, { type: "codeBlock", content: [text("  ")] }) as Doc)
+        .html,
+    ).toBe("");
+  });
+
+  test("empty bullets, quotes and sections don't appear on the page", () => {
+    const empty = { type: "paragraph" };
+    const { html } = renderDoc(
+      parseDoc(
+        inDoc(
+          { type: "bulletList", content: [{ type: "listItem", content: [empty] }] },
+          {
+            type: "bulletList",
+            content: [
+              { type: "listItem", content: [empty] },
+              { type: "listItem", content: [{ type: "paragraph", content: [text("Real")] }] },
+            ],
+          },
+          { type: "orderedList", content: [{ type: "listItem", content: [empty] }] },
+          { type: "blockquote", content: [empty] },
+          { type: "section", attrs: { kind: "intro" }, content: [empty] },
+        ),
+        { allowSections: true },
+      ),
+    );
+    expect(html).toBe("<ul><li><p>Real</p></li></ul>");
+  });
+
+  test("anything unsafe that reaches the database still can't get on the page", () => {
+    const hostile = inDoc(
+      {
+        type: "paragraph",
+        content: [text("x", [{ type: "link", attrs: { href: "javascript:alert(1)" } }])],
+      },
+      { type: "button", attrs: { href: "javascript:alert(1)", label: "y" } },
+      { type: "section", attrs: { kind: "evil" }, content: [] },
+      {
+        type: "section",
+        attrs: { kind: "intro", tone: '"><script>', align: '"><script>', preset: '"><script>' },
+        content: [{ type: "paragraph", content: [text("Words")] }],
+      },
+    ) as Doc;
+    const { html } = renderDoc(hostile);
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("<script");
+  });
+
+  test("links to other pages are stored as placeholders and resolved when shown", () => {
+    const doc = parseDoc(
+      inDoc(
+        {
+          type: "paragraph",
+          content: [text("see <this>", [{ type: "link", attrs: { href: `entry:${ID_A}` } }])],
+        },
+        { type: "button", attrs: { href: `entry:${ID_A}`, label: "Go" } },
+      ),
+      { allowSections: false },
+    );
+    const { html } = renderDoc(doc);
+    expect(html).toContain(`href="tend:entry:${ID_A}"`);
+    expect(placeholderIds(html)).toEqual([ID_A]);
+    expect(linkedEntryIds(doc)).toEqual([ID_A]);
+
+    const live = resolvePlaceholders(html, new Map([[ID_A, "/about"]]));
+    expect(live).toContain('<a href="/about">see &lt;this&gt;</a>');
+    expect(live).toContain('<a class="t-button" href="/about">Go</a>');
+    expect(live).not.toContain("tend:entry");
+
+    const gone = resolvePlaceholders(html, new Map());
+    expect(gone).toContain("<p>see &lt;this&gt;</p>");
+    expect(gone).not.toContain("<a");
+  });
+
+  test("text that merely looks like a placeholder stays text", () => {
+    const { html } = renderDoc(
+      inDoc({
+        type: "paragraph",
+        content: [text(`<a href="tend:entry:${ID_A}">x</a>`)],
+      }) as Doc,
+    );
+    expect(placeholderIds(html)).toEqual([]);
+    expect(resolvePlaceholders(html, new Map([[ID_A, "/evil"]]))).toBe(html);
+  });
+
+  test("a hostile address for a linked page is escaped", () => {
+    const { html } = renderDoc(
+      inDoc({
+        type: "paragraph",
+        content: [text("x", [{ type: "link", attrs: { href: `entry:${ID_A}` } }])],
+      }) as Doc,
+    );
+    expect(resolvePlaceholders(html, new Map([[ID_A, '"><script>']]))).not.toContain("<script");
   });
 });
 
@@ -290,7 +680,12 @@ describe("the entries API", () => {
     const before = made.db.prepare("SELECT count(*) AS n FROM revisions").get();
     await save(owner, entry.id, 1, { title: "One" });
     await save(owner, entry.id, 2, { title: "Two" });
-    expect(made.db.prepare("SELECT count(*) AS n FROM revisions").get()).toEqual(before);
+    await save(owner, entry.id, 3, { title: "Three" });
+    await save(owner, entry.id, 4, { title: "Four" });
+    // At most one automatic version per ten minutes.
+    expect(made.db.prepare("SELECT count(*) AS n FROM revisions").get()).toEqual({
+      n: (before as { n: number }).n + 1,
+    });
   });
 
   test("something that's never been saved stays out of the lists", async () => {
@@ -375,11 +770,16 @@ describe("the entries API", () => {
   });
 
   test.each(["admin", "api", "blog", "assets"])(
-    "a page can't take the address /%s",
+    "a page can't go on the site at /%s, but the words are still saved",
     async (slug) => {
       const { owner } = await signedIn();
       const page = await newEntry(owner, "page");
-      const reply = await save(owner, page.id, 1, { title: "T", slug });
+      const saved = await save(owner, page.id, 1, { title: "T", slug, doc: paragraph("Words") });
+      expect(saved.status).toBe(200);
+      const body = await saved.json();
+      expect(body.data.doc).toEqual(paragraph("Words"));
+      expect(body.address.problem.message).toContain(`/${slug}`);
+      const reply = await publish(owner, page.id, 2);
       expect(reply.status).toBe(400);
       expect((await reply.json()).error.code).toBe("address_reserved");
     },

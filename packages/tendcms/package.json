@@ -32,9 +32,6 @@
   "devDependencies": {
     "@hono/node-server": "2.1.5",
     "@tendcms/admin": "workspace:*",
-    "@tiptap/core": "3.32.0",
-    "@tiptap/pm": "3.32.0",
-    "@tiptap/static-renderer": "3.32.0",
     "@types/better-sqlite3": "9.6.0",
     "drizzle-kit": "0.31.11",
     "drizzle-orm": "0.45.4",

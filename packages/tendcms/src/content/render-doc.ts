@@ -1,4 +1,4 @@
-import type { Doc } from "./doc.ts";
+import { type BlockNode, type Doc, type InlineNode, isAllowedHref, type Mark } from "./doc.ts";
 
 const ESCAPES: Record<string, string> = {
   "&": "&amp;",
@@ -15,39 +15,196 @@ function escapeHtml(text: string): string {
 export interface RenderedDoc {
   /** Safe to print as it is: everything people typed has been escaped. */
   html: string;
-  /** Plain text, with a blank line between paragraphs. */
+  /** Plain text, with a blank line between blocks. */
   text: string;
 }
 
+// In stored HTML, links to other entries are placeholders, resolved when a page is rendered,
+// so moving or unpublishing a page updates everything that links to it (PLAN.md §8).
+const ENTRY_PREFIX = "entry:";
+const PLACEHOLDER_PREFIX = "tend:entry:";
+
+function hrefAttribute(href: string): string {
+  return href.startsWith(ENTRY_PREFIX)
+    ? `${PLACEHOLDER_PREFIX}${href.slice(ENTRY_PREFIX.length)}`
+    : escapeHtml(href);
+}
+
+const MARK_TAGS: Record<string, string> = {
+  bold: "strong",
+  italic: "em",
+  underline: "u",
+  strike: "s",
+  code: "code",
+};
+
+function applyMarks(html: string, marks: Mark[] | undefined): string {
+  // Links go on the outside, so the tags always nest properly.
+  const ordered = [...(marks ?? [])].sort(
+    (a, b) => Number(a.type === "link") - Number(b.type === "link"),
+  );
+  let result = html;
+  for (const mark of ordered) {
+    if (mark.type === "link") {
+      if (isAllowedHref(mark.attrs.href)) {
+        result = `<a href="${hrefAttribute(mark.attrs.href)}">${result}</a>`;
+      }
+    } else {
+      const tag = MARK_TAGS[mark.type];
+      if (tag) result = `<${tag}>${result}</${tag}>`;
+    }
+  }
+  return result;
+}
+
+function renderInline(nodes: InlineNode[] | undefined): { html: string; text: string } {
+  let html = "";
+  let text = "";
+  for (const node of nodes ?? []) {
+    if (node.type === "text") {
+      html += applyMarks(escapeHtml(node.text), node.marks);
+      text += node.text;
+    } else if (node.type === "hardBreak") {
+      html += "<br>";
+      text += "\n";
+    }
+  }
+  return { html, text };
+}
+
+const SECTION_CLASSES: Record<string, string> = {
+  intro: "t-intro",
+  pictureText: "t-picture-text",
+  contact: "t-contact",
+};
+
 /**
- * Turns a document into the HTML visitors get. Stored documents are validated when
- * saved, but this still only knows the node types it can make safe. Anything else is
- * dropped, so a bad row in the database can't put markup on the page.
+ * Turns a document into the HTML visitors get. Stored documents are validated when saved,
+ * but this still only knows the node types it can make safe. Anything else is dropped, so
+ * a bad row in the database can't put markup on the page.
  */
-export function renderDoc(doc: Doc): RenderedDoc {
+function renderBlocks(blocks: readonly BlockNode[] | undefined, out: RenderedDoc): void {
   const html: string[] = [];
   const text: string[] = [];
-  for (const block of doc.content) {
-    if (block.type !== "paragraph") continue;
-    let blockHtml = "";
-    let blockText = "";
-    for (const node of block.content ?? []) {
-      if (node.type === "text") {
-        blockHtml += escapeHtml(node.text);
-        blockText += node.text;
-      } else if (node.type === "hardBreak") {
-        blockHtml += "<br>";
-        blockText += "\n";
+
+  const child = (nodes: readonly BlockNode[] | undefined) => {
+    const inner: RenderedDoc = { html: "", text: "" };
+    renderBlocks(nodes, inner);
+    if (inner.text) text.push(inner.text);
+    return inner.html;
+  };
+
+  for (const block of blocks ?? []) {
+    switch (block.type) {
+      case "paragraph": {
+        const inline = renderInline(block.content);
+        if (inline.text.trim() === "") break;
+        html.push(`<p>${inline.html}</p>`);
+        text.push(inline.text);
+        break;
+      }
+      case "heading": {
+        const level = [2, 3, 4].includes(block.attrs?.level) ? block.attrs.level : 2;
+        const inline = renderInline(block.content);
+        if (inline.text.trim() === "") break;
+        html.push(`<h${level}>${inline.html}</h${level}>`);
+        text.push(inline.text);
+        break;
+      }
+      case "bulletList":
+      case "orderedList": {
+        // An empty bullet is just a stray line left over from editing.
+        const items = (block.content ?? [])
+          .map((item) => child(item.content))
+          .filter((inner) => inner !== "")
+          .map((inner) => `<li>${inner}</li>`)
+          .join("");
+        if (items === "") break;
+        if (block.type === "bulletList") {
+          html.push(`<ul>${items}</ul>`);
+        } else {
+          const start = block.attrs?.start;
+          html.push(
+            Number.isSafeInteger(start) && start !== 1
+              ? `<ol start="${start}">${items}</ol>`
+              : `<ol>${items}</ol>`,
+          );
+        }
+        break;
+      }
+      case "blockquote": {
+        const inner = child(block.content);
+        if (inner !== "") html.push(`<blockquote>${inner}</blockquote>`);
+        break;
+      }
+      case "codeBlock": {
+        const code = (block.content ?? []).map((node) => node.text ?? "").join("");
+        if (code.trim() === "") break;
+        html.push(`<pre><code>${escapeHtml(code)}</code></pre>`);
+        text.push(code);
+        break;
+      }
+      case "horizontalRule":
+        html.push("<hr>");
+        break;
+      case "button": {
+        const { href, label } = block.attrs ?? { href: "", label: "" };
+        if (!label || !isAllowedHref(href)) break;
+        html.push(
+          `<p class="t-button-row"><a class="t-button" href="${hrefAttribute(href)}">${escapeHtml(label)}</a></p>`,
+        );
+        text.push(label);
+        break;
+      }
+      case "section": {
+        const { kind, tone, align, preset } = block.attrs ?? {};
+        const name = SECTION_CLASSES[kind];
+        if (!name) break;
+        const classes = [
+          name,
+          `t-tone-${escapeHtml(tone ?? "none")}`,
+          `t-align-${escapeHtml(align ?? "left")}`,
+        ];
+        const inner = child(block.content);
+        if (inner === "") break;
+        html.push(
+          `<section class="${classes.join(" ")}" data-preset="${escapeHtml(preset ?? "1")}">${inner}</section>`,
+        );
+        break;
       }
     }
-    if (blockText.trim() === "") continue;
-    html.push(`<p>${blockHtml}</p>`);
-    text.push(blockText);
   }
-  return { html: html.join("\n"), text: text.join("\n\n") };
+  out.html = html.join("\n");
+  out.text = text.join("\n\n");
+}
+
+export function renderDoc(doc: Doc): RenderedDoc {
+  const out: RenderedDoc = { html: "", text: "" };
+  renderBlocks(doc.content, out);
+  return out;
 }
 
 const SUMMARY_LENGTH = 160;
+
+/**
+ * The words of the first paragraph, which is what an automatic summary is made from: not a
+ * heading, a button or a list that happens to come first. A Big intro's words count.
+ */
+export function leadText(doc: Doc): string {
+  const find = (blocks: readonly BlockNode[] | undefined): string => {
+    for (const block of blocks ?? []) {
+      if (block.type === "paragraph") {
+        const words = renderInline(block.content).text.trim();
+        if (words) return words;
+      } else if (block.type === "section") {
+        const words = find(block.content);
+        if (words) return words;
+      }
+    }
+    return "";
+  };
+  return find(doc.content);
+}
 
 /** The start of the first paragraph, cut at a word. */
 export function summarize(text: string): string {
@@ -56,4 +213,26 @@ export function summarize(text: string): string {
   const cut = [...first].slice(0, SUMMARY_LENGTH).join("");
   const lastSpace = cut.lastIndexOf(" ");
   return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+const PLACEHOLDER_LINK = /<a( class="t-button")? href="tend:entry:([0-9a-f-]{36})">(.*?)<\/a>/gs;
+
+/** The entries a piece of stored HTML links to. */
+export function placeholderIds(html: string): string[] {
+  return [...new Set([...html.matchAll(PLACEHOLDER_LINK)].map((match) => match[2] as string))];
+}
+
+/**
+ * Turns placeholders into real addresses. A link to something that isn't on the site right
+ * now becomes plain text, so visitors never hit a dead end. Only markup this renderer wrote
+ * can match, because everything typed has already been escaped.
+ */
+export function resolvePlaceholders(html: string, paths: ReadonlyMap<string, string>): string {
+  return html.replace(
+    PLACEHOLDER_LINK,
+    (_, classAttribute: string | undefined, id: string, inner: string) => {
+      const path = paths.get(id);
+      return path ? `<a${classAttribute ?? ""} href="${escapeHtml(path)}">${inner}</a>` : inner;
+    },
+  );
 }

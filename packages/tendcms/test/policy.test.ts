@@ -12,6 +12,7 @@ const ALL_ACTIONS: Action[] = [
   "entry:update",
   "entry:publish",
   "entry:trash",
+  "entry:delete",
 ];
 
 function actor(role: Actor["role"], id = "me"): Actor {
@@ -27,9 +28,15 @@ describe("can", () => {
   });
 
   test.each(["admin", "editor"] as const)("%s can work on any content", (role) => {
-    for (const action of ALL_ACTIONS) {
+    for (const action of ALL_ACTIONS.filter((name) => name !== "entry:delete")) {
       expect(can(actor(role), action, { authorId: "someone-else" })).toBe(true);
     }
+  });
+
+  test("only an admin can delete something forever", () => {
+    expect(can(actor("admin"), "entry:delete", { authorId: "me" })).toBe(true);
+    expect(can(actor("editor"), "entry:delete", { authorId: "me" })).toBe(false);
+    expect(can(actor("writer"), "entry:delete", { authorId: "me" })).toBe(false);
   });
 
   test("a writer can only work on their own, and can't publish", () => {
@@ -101,11 +108,26 @@ describe("every admin route", () => {
       const made = await makeApp();
       const owner = await setUp(made);
       const created = await (await owner.post("/api/admin/entries", { type: "post" })).json();
-      const url = `/api/admin${policy.path.replace(":id", created.id)}${
+      await owner.patch(
+        `/api/admin/entries/${created.id}`,
+        { title: "Something" },
+        { "If-Match": "1" },
+      );
+      const published = await owner.post(
+        `/api/admin/entries/${created.id}/publish`,
+        {},
+        { "If-Match": "2" },
+      );
+      expect(published.status).toBe(200);
+      const versions = await (await owner.get(`/api/admin/entries/${created.id}/revisions`)).json();
+      const url = `/api/admin${policy.path
+        .replace(":id", created.id)
+        .replace(":rid", versions.revisions[0].id)}${
         policy.method === "GET" && !policy.hasSubject ? "?type=post" : ""
       }`;
       const request = (client: ReturnType<typeof browser>) => {
         if (policy.method === "GET") return client.get(url);
+        if (policy.method === "DELETE") return client.delete(url);
         const headers = { "If-Match": String(created.rev) };
         if (policy.method === "PATCH") return client.patch(url, { title: "Edited" }, headers);
         return client.post(url, { type: "post" }, headers);

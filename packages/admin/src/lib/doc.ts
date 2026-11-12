@@ -1,36 +1,179 @@
-// The plain text box stands in for the real editor until it arrives, so this converts
-// between what's typed and the document format the server stores.
+// The document format the server stores (PLAN.md §8, and content/doc.ts on the server).
+// The editor adds extras of its own, like a link's target, and the server refuses anything
+// it doesn't allow. So everything is put in this one tidy form before it's compared or sent.
 
-export type DocNode = { type: "text"; text: string } | { type: "hardBreak" };
-export interface Doc {
-  type: "doc";
-  content: { type: "paragraph"; content?: DocNode[] }[];
+export interface DocMark {
+  type: string;
+  attrs?: Record<string, unknown>;
 }
 
-/** Blank lines separate paragraphs, and a single line break stays a line break. */
-export function textToDoc(text: string): Doc {
-  const content = text
-    .replace(/\r\n?/g, "\n")
-    .split(/\n[^\S\n]*\n\s*/)
-    .map((block) => block.trim())
-    .filter((block) => block !== "")
-    .map((block) => {
-      const lines = block.split("\n").map((line) => line.trim());
+export interface DocNode {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: DocNode[];
+  marks?: DocMark[];
+  text?: string;
+}
+
+export interface Doc {
+  type: "doc";
+  content: DocNode[];
+}
+
+const ENTRY_LINK = /^entry:[0-9a-f-]{36}$/;
+const ALLOWED_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+
+/** The same rule as the server. A link it would refuse must never stop a whole save. */
+export function isAllowedHref(href: string): boolean {
+  if (href === "" || href.length > 2048) return false;
+  if (ENTRY_LINK.test(href)) return true;
+  try {
+    const url = new URL(href, "https://relative.invalid/");
+    // Browsers quietly turn a space in a web address's name into %20. The server refuses
+    // such an address, so the link would only be thrown away there.
+    return ALLOWED_PROTOCOLS.has(url.protocol) && !url.hostname.includes("%");
+  } catch {
+    return false;
+  }
+}
+
+const SIMPLE_MARKS = new Set(["bold", "italic", "underline", "strike", "code"]);
+const BUTTON_LABEL_LIMIT = 200;
+const SECTION_KINDS = new Set(["intro", "pictureText", "contact"]);
+const SECTION_TONES = new Set(["none", "muted", "accent"]);
+const SECTION_ALIGNS = new Set(["left", "center"]);
+
+/** What the server would refuse must be tidied here. Pasted HTML can set anything at all. */
+function oneOf(value: unknown, allowed: Set<string>, fallback: string): string {
+  return typeof value === "string" && allowed.has(value) ? value : fallback;
+}
+
+function cleanMarks(marks: DocMark[] | undefined): DocMark[] | undefined {
+  const cleaned = (marks ?? []).flatMap((mark): DocMark[] => {
+    if (SIMPLE_MARKS.has(mark.type)) return [{ type: mark.type }];
+    if (mark.type === "link" && typeof mark.attrs?.href === "string") {
+      const href = mark.attrs.href.trim();
+      return isAllowedHref(href) ? [{ type: "link", attrs: { href } }] : [];
+    }
+    return [];
+  });
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+function cleanNode(node: DocNode): DocNode | null {
+  const content = () => node.content?.flatMap((child) => cleanNode(child) ?? []);
+  const withContent = (base: DocNode): DocNode => {
+    const children = content();
+    return children ? { ...base, content: children } : base;
+  };
+  switch (node.type) {
+    case "paragraph":
+    case "blockquote":
+    case "bulletList":
+    case "listItem":
+    case "codeBlock":
+      return withContent({ type: node.type });
+    case "heading":
+      return withContent({ type: "heading", attrs: { level: node.attrs?.level } });
+    case "orderedList": {
+      const start = node.attrs?.start;
+      return withContent(
+        Number.isSafeInteger(start) && start !== 1
+          ? { type: "orderedList", attrs: { start } }
+          : { type: "orderedList" },
+      );
+    }
+    case "horizontalRule":
+      return { type: "horizontalRule" };
+    case "button": {
+      const href = typeof node.attrs?.href === "string" ? node.attrs.href.trim() : "";
       return {
-        type: "paragraph" as const,
-        content: lines.flatMap((line, index): DocNode[] => [
-          ...(index > 0 ? [{ type: "hardBreak" as const }] : []),
-          ...(line ? [{ type: "text" as const, text: line }] : []),
-        ]),
+        type: "button",
+        attrs: {
+          href: isAllowedHref(href) ? href : "",
+          label:
+            typeof node.attrs?.label === "string"
+              ? node.attrs.label.slice(0, BUTTON_LABEL_LIMIT)
+              : "",
+        },
       };
-    });
+    }
+    case "section":
+      return withContent({
+        type: "section",
+        attrs: {
+          kind: oneOf(node.attrs?.kind, SECTION_KINDS, "intro"),
+          preset:
+            typeof node.attrs?.preset === "string" && /^[a-z0-9-]{1,32}$/.test(node.attrs.preset)
+              ? node.attrs.preset
+              : "1",
+          tone: oneOf(node.attrs?.tone, SECTION_TONES, "none"),
+          align: oneOf(node.attrs?.align, SECTION_ALIGNS, "left"),
+        },
+      });
+    case "text": {
+      if (!node.text) return null;
+      const marks = cleanMarks(node.marks);
+      return { type: "text", text: node.text, ...(marks ? { marks } : {}) };
+    }
+    case "hardBreak": {
+      const marks = cleanMarks(node.marks);
+      return { type: "hardBreak", ...(marks ? { marks } : {}) };
+    }
+    default:
+      return null;
+  }
+}
+
+function isEmptyParagraph(node: DocNode | undefined): boolean {
+  return node?.type === "paragraph" && (node.content ?? []).length === 0;
+}
+
+/** The tidy form. The empty lines the editor always keeps at the end aren't part of what's written. */
+export function cleanDoc(doc: { content?: DocNode[] }): Doc {
+  const content = (doc.content ?? []).flatMap((node) => cleanNode(node) ?? []);
+  while (isEmptyParagraph(content.at(-1))) content.pop();
   return { type: "doc", content };
 }
 
+export function sameDoc(a: Doc, b: Doc): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function nodeText(node: DocNode): string {
+  if (node.type === "hardBreak") return "\n";
+  if (node.type === "button") return String(node.attrs?.label ?? "");
+  return node.text ?? (node.content ?? []).map(nodeText).join("");
+}
+
+const CONTAINERS = new Set(["bulletList", "orderedList", "listItem", "blockquote", "section"]);
+
+function blocksText(nodes: DocNode[]): string[] {
+  return nodes.flatMap((node) =>
+    CONTAINERS.has(node.type) ? blocksText(node.content ?? []) : [nodeText(node)],
+  );
+}
+
+/** The first paragraph's words: the server's rule for an automatic summary. */
+export function leadText(doc: Doc): string {
+  const find = (nodes: DocNode[]): string => {
+    for (const node of nodes) {
+      if (node.type === "paragraph") {
+        const words = nodeText(node).trim();
+        if (words) return words;
+      } else if (node.type === "section") {
+        const words = find(node.content ?? []);
+        if (words) return words;
+      }
+    }
+    return "";
+  };
+  return find(doc.content);
+}
+
+/** The words alone: what to show when comparing versions, or for a summary. */
 export function docToText(doc: Doc): string {
-  return doc.content
-    .map((block) =>
-      (block.content ?? []).map((node) => (node.type === "text" ? node.text : "\n")).join(""),
-    )
+  return blocksText(doc.content)
+    .filter((block) => block !== "")
     .join("\n\n");
 }

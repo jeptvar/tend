@@ -2,17 +2,25 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { relative } from "node:path";
 import { type Context, Hono } from "hono";
 import { entryPath } from "../content/address.ts";
+import type { Doc, EntryData } from "../content/doc.ts";
 import {
   countLivePosts,
   findLiveEntry,
   findLiveHome,
   findLiveHomeSlug,
+  findLivePaths,
   type LiveEntry,
   type LiveSummary,
   listLivePosts,
   listMenuPages,
 } from "../content/entries.ts";
-import { summarize } from "../content/render-doc.ts";
+import {
+  leadText,
+  placeholderIds,
+  renderDoc,
+  resolvePlaceholders,
+  summarize,
+} from "../content/render-doc.ts";
 import type { Orm } from "../db/client.ts";
 import { getSetting, type SiteSettings } from "../db/repo/settings.ts";
 import { ownerExists } from "../db/repo/users.ts";
@@ -31,6 +39,18 @@ export interface Site {
   app: Hono;
   /** Purges the page cache after a change, then refills the pages most likely to be asked for. */
   changed(path?: string): void;
+  /** How something would look on the site, whether or not it's published. Never cached. */
+  preview(input: PreviewInput): Promise<string>;
+}
+
+export interface PreviewInput {
+  type: string;
+  isHome: number;
+  title: string;
+  slug: string;
+  data: EntryData;
+  firstPublishedAt: number | null;
+  now: number;
 }
 
 const POSTS_PER_PAGE = 10;
@@ -97,14 +117,20 @@ export function createSite(options: SiteOptions): Site {
   function summaryJson(entry: LiveSummary) {
     return {
       title: entry.title,
-      summary: entry.summary ?? summarize(entry.text),
+      summary: entry.summary ?? summarize(entry.lead),
       url: entryPath({ ...entry, isHome: 0 }),
       published_at: entry.firstPublishedAt,
     };
   }
 
-  function liveJson(entry: LiveEntry) {
-    return { ...summaryJson(entry), url: entryPath(entry), html: entry.html };
+  /** Links to other pages become real addresses here, so they can never go stale. */
+  async function liveJson(entry: LiveEntry) {
+    const paths = await findLivePaths(orm, placeholderIds(entry.html));
+    return {
+      ...summaryJson(entry),
+      url: entryPath(entry),
+      html: resolvePlaceholders(entry.html, paths),
+    };
   }
 
   /** What every template gets: the site, its menu, and which address this is. */
@@ -151,7 +177,7 @@ export function createSite(options: SiteOptions): Site {
     if (home && page > 1) throw new NotFound();
     const base = await baseContext("/");
     const context = home
-      ? { ...base, page: liveJson(home) }
+      ? { ...base, page: await liveJson(home) }
       : { ...base, ...(await postsContext(page, "/")) };
     return { status: 200, html: await theme.render("home", context) };
   }
@@ -166,7 +192,7 @@ export function createSite(options: SiteOptions): Site {
     if (type === "page" && (await findLiveHomeSlug(orm)) === slug) throw new MovedToHome();
     const entry = await findLiveEntry(orm, type, slug);
     if (!entry) throw new NotFound();
-    const live = liveJson(entry);
+    const live = await liveJson(entry);
     const context = {
       ...(await baseContext(entryPath(entry))),
       ...(type === "post" ? { post: live } : { page: live }),
@@ -310,5 +336,34 @@ export function createSite(options: SiteOptions): Site {
     });
   }
 
-  return { app, changed };
+  async function preview(input: PreviewInput): Promise<string> {
+    const doc: Doc = input.data.doc;
+    const { html, text } = renderDoc(doc);
+    const slug = input.slug || "preview";
+    const live = await liveJson({
+      type: input.type,
+      title: input.title,
+      slug,
+      text,
+      lead: leadText(doc),
+      summary: input.data.summary,
+      firstPublishedAt: input.firstPublishedAt ?? input.now,
+      isHome: input.isHome,
+      html,
+    });
+    const path = entryPath({ type: input.type, isHome: input.isHome, slug });
+    const context = {
+      ...(await baseContext(path)),
+      ...(input.type === "post" ? { post: live } : { page: live }),
+    };
+    const rendered = await theme.render(input.isHome === 1 ? "home" : input.type, context);
+    // Links in a preview do nothing rather than wandering off to the real site, because
+    // the frame showing this isn't allowed to open a new window.
+    const head = '<meta name="robots" content="noindex"><base target="_blank">';
+    return /<head[^>]*>/i.test(rendered)
+      ? rendered.replace(/<head[^>]*>/i, (tag) => `${tag}${head}`)
+      : `${head}${rendered}`;
+  }
+
+  return { app, changed, preview };
 }

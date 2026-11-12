@@ -4,6 +4,7 @@
   --color-brand: #1f6f4a;
   --color-brand-strong: #17573a;
   --color-paper: #faf8f3;
+  --color-surface: #ffffff;
   --color-ink: #1d2420;
   --color-muted: #5b655f;
   --color-danger: #a8321f;
@@ -15,6 +16,7 @@
     --color-brand: #5fbf8f;
     --color-brand-strong: #7fd3a8;
     --color-paper: #141a17;
+    --color-surface: #1b2320;
     --color-ink: #e9eeeb;
     --color-muted: #a3aea8;
     --color-danger: #f2a79a;
@@ -26,4 +28,105 @@ body {
   color: var(--color-ink);
   /* A pasted address or long name has to wrap, not push the page sideways on a phone. */
   overflow-wrap: anywhere;
+}
+
+/* The words being written: close to how they'll look, without pretending to be the theme. */
+.tend-prose {
+  font-size: 1.125rem;
+  line-height: 1.6;
+  /* A pasted address has to wrap here too, whatever the editor's own styles ask for. */
+  overflow-wrap: anywhere;
+}
+
+.tend-prose > * + *,
+.tend-prose [data-node-view-content] > div > * + * {
+  margin-top: 0.75em;
+}
+
+.tend-prose h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.tend-prose h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.tend-prose h4 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.tend-prose ul {
+  list-style: disc;
+  padding-inline-start: 1.5em;
+}
+
+.tend-prose ol {
+  list-style: decimal;
+  padding-inline-start: 1.5em;
+}
+
+.tend-prose blockquote {
+  border-inline-start: 3px solid var(--color-muted);
+  padding-inline-start: 1em;
+}
+
+.tend-prose pre {
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--color-ink) 8%, transparent);
+  padding: 0.75rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.95rem;
+}
+
+.tend-prose code {
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--color-ink) 8%, transparent);
+  padding: 0.1em 0.25em;
+  font-family: ui-monospace, monospace;
+  font-size: 0.95em;
+}
+
+.tend-prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.tend-prose a {
+  color: var(--color-brand);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.tend-prose hr {
+  margin-block: 1.5em;
+  border-top: 1px solid var(--color-muted);
+}
+
+/* Shows where the cursor is when it's on a whole button or divider, not in any words. */
+.tend-prose .ProseMirror-selectednode {
+  border-radius: 0.5rem;
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* Something focused shouldn't end up hidden behind the bar that stays at the top. */
+@media (min-width: 768px) {
+  html:has(.tend-sticky) {
+    scroll-padding-block: 8rem 5rem;
+  }
+}
+
+/* The hint in an empty editor. */
+.tend-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: inline-start;
+  height: 0;
+  color: var(--color-muted);
+  pointer-events: none;
 }
