@@ -1,4 +1,4 @@
-import { type QueryClient, useQuery } from "@tanstack/react-query";
+import { type InfiniteData, type QueryClient, useQuery } from "@tanstack/react-query";
 import { ApiError, api } from "./api.ts";
 import type { Doc } from "./doc.ts";
 
@@ -35,7 +35,44 @@ export interface EntrySummary {
 }
 
 export interface EntryFull extends EntrySummary {
-  data: { doc: Doc };
+  data: { doc: Doc; summary: string | null };
+  /** Who saved it last, so a conflict can say who changed it. */
+  updatedBy: { id: string; name: string | null } | null;
+  /** What the address would be if this were published now. */
+  address: { path: string; problem: { message: string; fix: string | null } | null };
+}
+
+export interface LinkTarget {
+  id: string;
+  type: EntryType;
+  title: string;
+  /** Where visitors reach it. Null when it isn't on the site right now. */
+  url: string | null;
+}
+
+export type RevisionKind =
+  | "autosave"
+  | "publish"
+  | "restore"
+  | "before_discard"
+  | "conflict"
+  | "import";
+
+export interface RevisionSummary {
+  id: string;
+  kind: RevisionKind;
+  title: string;
+  authorName: string | null;
+  createdAt: number;
+  isLive: boolean;
+}
+
+export interface RevisionDetail {
+  id: string;
+  kind: RevisionKind;
+  title: string;
+  createdAt: number;
+  previewHtml: string;
 }
 
 export const SETUP_STATUS_KEY = ["setup-status"];
@@ -43,6 +80,16 @@ export const ME_KEY = ["me"];
 
 export function entriesKey(type: EntryType, trashed: boolean) {
   return ["entries", type, trashed ? "trash" : "all"];
+}
+
+/** The list screen's own pages of entries, kept apart because they have a different shape. */
+export function entryListKey(type: EntryType, trashed: boolean) {
+  return [...entriesKey(type, trashed), "list"];
+}
+
+export interface EntryPage {
+  entries: EntrySummary[];
+  nextCursor: string | null;
 }
 
 export function entryKey(id: string) {
@@ -81,4 +128,20 @@ export async function confirmSignedIn(
   const me = await fetchMe();
   if (!me) throw new ApiError(0, "cookie_refused", refusedText);
   queryClient.setQueryData(ME_KEY, me);
+}
+
+/** Takes a row out of the list straight away, ahead of the list being fetched again. */
+export function withoutEntry(
+  data: InfiniteData<EntryPage> | undefined,
+  id: string,
+): InfiniteData<EntryPage> | undefined {
+  return (
+    data && {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        entries: page.entries.filter((row) => row.id !== id),
+      })),
+    }
+  );
 }

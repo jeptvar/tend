@@ -119,6 +119,8 @@ export function browser(app: ReturnType<typeof createApp>) {
       request("POST", path, body, headers),
     patch: (path: string, body?: unknown, headers?: Record<string, string>) =>
       request("PATCH", path, body, headers),
+    delete: (path: string, headers?: Record<string, string>) =>
+      request("DELETE", path, undefined, headers),
   };
 }
 

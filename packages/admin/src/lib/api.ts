@@ -36,7 +36,7 @@ function offline(): ApiError {
 export async function api<T>(
   path: string,
   options: {
-    method?: "GET" | "POST" | "PATCH";
+    method?: "GET" | "POST" | "PATCH" | "DELETE";
     body?: unknown;
     headers?: Record<string, string>;
   } = {},

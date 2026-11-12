@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useLocation } from "wouter";
 import { api, errorText } from "../lib/api.ts";
-import { runBeforeSignOut, useHeldDrafts } from "../lib/held-drafts.ts";
-import { ME_KEY, type Me, useMe, useSetupStatus } from "../lib/queries.ts";
+import { runBeforeSignOut, useHeldDrafts, useKeptOnDevice } from "../lib/held-drafts.ts";
+import { ME_KEY, type Me, SETUP_STATUS_KEY, useMe, useSetupStatus } from "../lib/queries.ts";
 import { CannotReachTend, Loading } from "./AuthLayout.tsx";
 import { useNavigationFocus } from "./focus.ts";
 
@@ -31,6 +31,8 @@ export function SignedIn({ children }: { children: (me: Me) => ReactNode }) {
   if (!me.data) return <Redirect to={status.data?.needsSetup ? "/setup" : "/login"} replace />;
   return children(me.data);
 }
+
+const EDITOR_PRELOAD_MS = 1500;
 
 const NAV = [
   { href: "/", id: "nav.overview" },
@@ -65,6 +67,16 @@ export function AdminLayout({
   useNavigationFocus(headingRef, { enabled: focusHeading });
 
   const heldDrafts = useHeldDrafts(me.user.id, currentEntryId);
+  const onDevice = useKeptOnDevice();
+
+  // Fetched ahead of time, so opening something is quick, and still possible if the
+  // connection drops or Tend stops in the meantime.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      import("../routes/Editor.tsx").catch(() => {});
+    }, EDITOR_PRELOAD_MS);
+    return () => clearTimeout(timer);
+  }, []);
 
   const signOut = useMutation({
     mutationFn: async () => {
@@ -73,7 +85,14 @@ export function AdminLayout({
       await runBeforeSignOut();
       await api("/auth/logout", { method: "POST" });
     },
-    onSuccess: () => queryClient.setQueryData(ME_KEY, null),
+    onSuccess: () => {
+      // Lists and titles shouldn't still be here for whoever signs in next on this computer.
+      queryClient.removeQueries({
+        predicate: ({ queryKey }) =>
+          queryKey[0] !== ME_KEY[0] && queryKey[0] !== SETUP_STATUS_KEY[0],
+      });
+      queryClient.setQueryData(ME_KEY, null);
+    },
   });
 
   return (
@@ -134,12 +153,12 @@ export function AdminLayout({
           <ul className="mt-4 grid gap-2">
             {heldDrafts.map((held) => (
               <li
-                key={held.id}
+                key={held.key}
                 className="flex flex-wrap items-center justify-between gap-x-4 rounded-lg border border-danger px-3 py-1"
               >
                 <span className="[overflow-wrap:anywhere]">
                   <FormattedMessage
-                    id="held.notice"
+                    id={onDevice ? "held.notice" : "held.noticeTab"}
                     values={{
                       title: held.draft.title || intl.formatMessage({ id: "list.untitled" }),
                     }}

@@ -124,6 +124,7 @@ export function createApp(options: AppOptions): Hono {
       secureCookies: options.secureCookies,
       now: options.now,
       onSiteChanged,
+      preview: (input) => site.preview(input),
     }).app,
   );
 

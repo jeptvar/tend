@@ -1,5 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useId, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, useLocation } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
@@ -8,14 +13,38 @@ import {
   secondaryButtonClass,
   textLinkClass,
 } from "../components/AuthLayout.tsx";
+import { Dialog } from "../components/Dialog.tsx";
+import { showToast } from "../components/Toast.tsx";
 import { api, errorText } from "../lib/api.ts";
+import { releaseAllDrafts } from "../lib/held-drafts.ts";
 import {
+  type EntryPage,
   type EntrySummary,
   type EntryType,
   entriesKey,
   entryKey,
+  entryListKey,
   type Me,
+  withoutEntry,
 } from "../lib/queries.ts";
+
+const TRASH_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+
+function focusHeading(): void {
+  document.querySelector<HTMLElement>("main h1")?.focus();
+}
+
+/**
+ * After a row goes, focus goes to the one that took its place, so someone working down a long
+ * list doesn't keep landing back at the top.
+ */
+function focusRowAt(index: number): void {
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-entry-row]")];
+  const row = rows[Math.min(index, rows.length - 1)];
+  const target = row?.querySelector<HTMLElement>("button, a");
+  if (target) target.focus();
+  else focusHeading();
+}
 
 /** What someone needs to know about an entry at a glance, in plain words (PLAN.md P15). */
 function StatusLabel({ entry }: { entry: EntrySummary }) {
@@ -34,28 +63,29 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
   const [view, setView] = useState<"all" | "trash">("all");
   const trashed = view === "trash";
   const path = listPath(type);
-  const statusRef = useRef<HTMLParagraphElement>(null);
+  const canDeleteForever = me.user.role === "admin";
+  const [confirmDelete, setConfirmDelete] = useState<{
+    entry: EntrySummary;
+    index: number;
+  } | null>(null);
+  const confirmHeadingId = useId();
 
-  const [justTrashed, setJustTrashed] = useState<{ id: string; wasPublished: boolean } | null>(
-    null,
-  );
-  const [restored, setRestored] = useState<{ wasPublished: boolean } | null>(null);
-
-  // Set by the editor when it moves something to the Trash, so it can be undone from here.
-  // Read after mounting, because screen readers can miss a live region that arrives with
-  // its text.
-  useEffect(() => {
-    const trashedInEditor = window.history.state?.trashed;
-    if (trashedInEditor) setJustTrashed(trashedInEditor);
-  }, []);
-
-  const list = useQuery({
-    queryKey: entriesKey(type, trashed),
-    queryFn: () =>
-      api<{ entries: EntrySummary[]; nextCursor: string | null }>(
-        `/admin/entries?type=${type}${trashed ? "&view=trash" : ""}`,
+  const list = useInfiniteQuery({
+    queryKey: entryListKey(type, trashed),
+    initialPageParam: "0",
+    getNextPageParam: (page: EntryPage) => page.nextCursor,
+    queryFn: ({ pageParam }) =>
+      api<EntryPage>(
+        `/admin/entries?type=${type}${trashed ? "&view=trash" : ""}&cursor=${pageParam}`,
       ),
   });
+  const rows = list.data?.pages.flatMap((page) => page.entries);
+
+  function removeRow(id: string): void {
+    queryClient.setQueryData<InfiniteData<EntryPage>>(entryListKey(type, trashed), (data) =>
+      withoutEntry(data, id),
+    );
+  }
 
   function refreshLists() {
     void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
@@ -74,16 +104,35 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
   }
 
   const restore = useMutation({
-    mutationFn: (target: { id: string; wasPublished: boolean }) =>
+    mutationFn: (target: { id: string; wasPublished: boolean; index: number }) =>
       api(`/admin/entries/${target.id}/restore`, { method: "POST" }),
     onSuccess: (_, target) => {
       queryClient.removeQueries({ queryKey: entryKey(target.id) });
+      removeRow(target.id);
       refreshLists();
-      setJustTrashed(null);
-      setRestored({ wasPublished: target.wasPublished });
-      window.history.replaceState(null, "");
-      // The button just pressed has gone, so focus goes to the message that replaced it.
-      statusRef.current?.focus();
+      showToast({
+        message: intl.formatMessage({
+          id: target.wasPublished ? "list.restored" : "list.restoredDraft",
+        }),
+      });
+      // The row and its button have gone, and focus shouldn't go with them.
+      requestAnimationFrame(() => focusRowAt(target.index));
+    },
+  });
+
+  const deleteForever = useMutation({
+    mutationFn: (target: { entry: EntrySummary; index: number }) =>
+      api(`/admin/entries/${target.entry.id}`, { method: "DELETE" }),
+    onSuccess: (_, { entry: target, index }) => {
+      queryClient.removeQueries({ queryKey: entryKey(target.id) });
+      removeRow(target.id);
+      // Whoever deleted this has decided about any copies of their own, too.
+      releaseAllDrafts(target.id, me.user.id);
+      refreshLists();
+      setConfirmDelete(null);
+      showToast({ message: intl.formatMessage({ id: "list.deletedForever" }) });
+      // After the dialog's closed: it hands focus back to a button that's about to go.
+      requestAnimationFrame(() => requestAnimationFrame(() => focusRowAt(index)));
     },
   });
 
@@ -98,10 +147,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
               key={option}
               type="button"
               aria-pressed={view === option}
-              onClick={() => {
-                setView(option);
-                setRestored(null);
-              }}
+              onClick={() => setView(option)}
               className={`min-h-11 min-w-11 rounded px-2 text-center hover:underline focus-visible:outline-3 focus-visible:outline-brand ${view === option ? "font-semibold" : "text-muted"}`}
             >
               <FormattedMessage id={option === "all" ? "list.all" : "list.trash"} />
@@ -119,31 +165,6 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
       </div>
 
       {/* Always mounted: screen readers can miss a live region added along with its text. */}
-      <p
-        ref={statusRef}
-        tabIndex={-1}
-        role="status"
-        className="mt-4 flex flex-wrap items-center gap-3 outline-none empty:sr-only"
-      >
-        {justTrashed && (
-          <>
-            <FormattedMessage
-              id={justTrashed.wasPublished ? "list.movedToTrash" : "list.movedDraftToTrash"}
-            />
-            <button
-              type="button"
-              disabled={restore.isPending}
-              onClick={() => restore.mutate(justTrashed)}
-              className={secondaryButtonClass}
-            >
-              <FormattedMessage id="list.undo" />
-            </button>
-          </>
-        )}
-        {restored && (
-          <FormattedMessage id={restored.wasPublished ? "list.restored" : "list.restoredDraft"} />
-        )}
-      </p>
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
         {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}
       </p>
@@ -166,16 +187,17 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
         </div>
       )}
 
-      {list.data?.entries.length === 0 && (
+      {rows?.length === 0 && (
         <p className="mt-8 text-muted">
           <FormattedMessage id={trashed ? "list.emptyTrash" : `list.empty.${type}`} />
         </p>
       )}
 
       <ul className="mt-6 divide-y divide-ink/10 border-y border-ink/10 empty:hidden">
-        {list.data?.entries.map((entry) => (
+        {rows?.map((entry, index) => (
           <li
             key={entry.id}
+            data-entry-row=""
             className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3"
           >
             <div className="min-w-0">
@@ -202,18 +224,48 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
                 {" · "}
                 <FormattedDate value={entry.updatedAt} dateStyle="medium" />
               </p>
+              {trashed && entry.trashedAt !== null && (
+                <p className="text-sm text-muted">
+                  <FormattedMessage
+                    id="list.deletesOn"
+                    values={{
+                      date: intl.formatDate(entry.trashedAt + TRASH_KEEP_MS, {
+                        dateStyle: "medium",
+                      }),
+                    }}
+                  />
+                </p>
+              )}
             </div>
             {trashed && (
-              <button
-                type="button"
-                disabled={restore.isPending}
-                onClick={() =>
-                  restore.mutate({ id: entry.id, wasPublished: entry.firstPublishedAt !== null })
-                }
-                className={secondaryButtonClass}
-              >
-                <FormattedMessage id="list.restore" />
-              </button>
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={restore.isPending}
+                  onClick={() =>
+                    restore.mutate({
+                      id: entry.id,
+                      wasPublished: entry.firstPublishedAt !== null,
+                      index,
+                    })
+                  }
+                  className={secondaryButtonClass}
+                >
+                  <FormattedMessage id="list.restore" />
+                </button>
+                {canDeleteForever && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      deleteForever.reset();
+                      setConfirmDelete({ entry, index });
+                    }}
+                    className={secondaryButtonClass}
+                  >
+                    <FormattedMessage id="list.deleteForever" />
+                  </button>
+                )}
+              </div>
             )}
             {!trashed && entry.url && (
               <a href={entry.url} target="_blank" rel="noopener" className={textLinkClass}>
@@ -223,10 +275,57 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
           </li>
         ))}
       </ul>
-      {list.data?.nextCursor && (
-        <p className="mt-4 text-sm text-muted">
-          <FormattedMessage id="list.more" />
-        </p>
+      {list.hasNextPage && (
+        <div className="mt-4">
+          <button
+            type="button"
+            aria-disabled={list.isFetchingNextPage}
+            onClick={() => {
+              if (!list.isFetchingNextPage) void list.fetchNextPage();
+            }}
+            className={`${secondaryButtonClass} aria-disabled:opacity-60`}
+          >
+            <FormattedMessage id={list.isFetchingNextPage ? "common.loading" : "list.showMore"} />
+          </button>
+        </div>
+      )}
+      {confirmDelete && (
+        <Dialog labelledBy={confirmHeadingId} onClose={() => setConfirmDelete(null)}>
+          <div className="grid gap-4">
+            <h2 id={confirmHeadingId} className="text-xl font-semibold">
+              <FormattedMessage
+                id="list.confirmDelete"
+                values={{
+                  title: confirmDelete.entry.title || intl.formatMessage({ id: "list.untitled" }),
+                }}
+              />
+            </h2>
+            <p>
+              <FormattedMessage id="list.confirmDeleteBody" />
+            </p>
+            <p role="alert" className="font-medium text-danger empty:sr-only">
+              {deleteForever.error &&
+                errorText(deleteForever.error, intl.formatMessage({ id: "offline.body" }))}
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className={primaryButtonClass}
+                onClick={() => setConfirmDelete(null)}
+              >
+                <FormattedMessage id="list.keepIt" />
+              </button>
+              <button
+                type="button"
+                disabled={deleteForever.isPending}
+                onClick={() => deleteForever.mutate(confirmDelete)}
+                className={secondaryButtonClass}
+              >
+                <FormattedMessage id="list.deleteForever" />
+              </button>
+            </div>
+          </div>
+        </Dialog>
       )}
     </AdminLayout>
   );

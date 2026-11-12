@@ -19,6 +19,10 @@ export interface Site {
   /** The setup link Tend printed, with the code in it. */
   link: string;
   code: string;
+  /** Stops Tend with no warning at all, like a crash or a power cut. */
+  crash(): Promise<void>;
+  /** Starts it again on the same address and data, after a crash. */
+  restart(): Promise<void>;
 }
 
 export interface Entry {
@@ -29,13 +33,15 @@ export interface Entry {
   dirty: boolean;
 }
 
-function startServer(dataDir: string): Promise<{ child: ChildProcess; site: Site }> {
+type Running = Omit<Site, "crash" | "restart">;
+
+function startServer(dataDir: string, port = "0"): Promise<{ child: ChildProcess; site: Running }> {
   if (!existsSync(CLI)) throw new Error(`${CLI} doesn't exist. Run pnpm build first.`);
   const child = spawn(process.execPath, [CLI, "start"], {
     cwd: dataDir,
     env: {
       ...process.env,
-      PORT: "0",
+      PORT: port,
       TEND_DATA_DIR: join(dataDir, "data"),
       TEND_ADMIN_DEV_URL: "",
     },
@@ -59,16 +65,30 @@ function startServer(dataDir: string): Promise<{ child: ChildProcess; site: Site
   });
 }
 
+function stopped(child: ChildProcess, signal: NodeJS.Signals): Promise<unknown> {
+  child.removeAllListeners("exit");
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill(signal);
+  return exited;
+}
+
 export const test = base.extend<{ site: Site; signedIn: Site }>({
   // biome-ignore lint/correctness/noEmptyPattern: Playwright reads this argument's shape
   site: async ({}, use) => {
     const dataDir = mkdtempSync(join(tmpdir(), "tend-e2e-"));
-    const { child, site } = await startServer(dataDir);
-    await use(site);
-    child.removeAllListeners("exit");
-    const exited = new Promise((resolve) => child.once("exit", resolve));
-    child.kill("SIGTERM");
-    await exited;
+    const first = await startServer(dataDir);
+    let { child } = first;
+    await use({
+      ...first.site,
+      crash: async () => {
+        await stopped(child, "SIGKILL");
+      },
+      restart: async () => {
+        const again = await startServer(dataDir, new URL(first.site.base).port);
+        child = again.child;
+      },
+    });
+    await stopped(child, "SIGTERM");
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   },
 
@@ -121,12 +141,15 @@ export async function readEntry(page: Page, site: Site, id: string) {
   return (await page.request.get(`${site.base}/api/admin/entries/${id}`)).json();
 }
 
-export function bodyText(entry: {
-  data: { doc: { content: { content?: { text?: string }[] }[] } };
-}): string {
-  return entry.data.doc.content
-    .map((block) => (block.content ?? []).map((node) => node.text ?? "\n").join(""))
-    .join("\n\n");
+interface TextNode {
+  text?: string;
+  content?: TextNode[];
+}
+
+export function bodyText(entry: { data: { doc: { content: TextNode[] } } }): string {
+  const inline = (node: TextNode): string =>
+    node.content ? node.content.map(inline).join("") : (node.text ?? "\n");
+  return entry.data.doc.content.map(inline).join("\n\n");
 }
 
 export async function signIn(page: Page, site: Site, path = "/admin/login"): Promise<void> {

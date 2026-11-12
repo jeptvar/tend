@@ -5,6 +5,7 @@ import {
   customType,
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -97,6 +98,12 @@ export const entries = sqliteTable(
     reviewRequestedAt: integer("review_requested_at"),
     isExample: integer("is_example").notNull().default(0),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
+    /** Who saved it last, so a conflict can say who changed it. */
+    updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+    /** The editor window that saved it last, so its own earlier saves are never a conflict. */
+    editSession: text("edit_session"),
+    /** That window's count of what it's sent, so a late, older request can't undo a newer one. */
+    editSeq: integer("edit_seq"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     trashedAt: integer("trashed_at"),
@@ -108,6 +115,7 @@ export const entries = sqliteTable(
       .on(t.type, t.liveSlug)
       .where(sql`${t.liveSlug} IS NOT NULL`),
     uniqueIndex("entries_single_home").on(t.isHome).where(sql`${t.isHome} = 1`),
+    index("entries_trashed").on(t.trashedAt),
   ],
 );
 
@@ -136,5 +144,24 @@ export const revisions = sqliteTable(
       sql`${t.kind} IN ('autosave', 'publish', 'restore', 'before_discard', 'conflict', 'import')`,
     ),
     index("revisions_by_entry").on(t.entryId, t.createdAt),
+  ],
+);
+
+/** What each working copy and live version links to. See PLAN.md §8. */
+export const refs = sqliteTable(
+  "refs",
+  {
+    entryId: text("entry_id")
+      .notNull()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    scope: text("scope", { enum: ["working", "live"] }).notNull(),
+    kind: text("kind", { enum: ["media", "entry"] }).notNull(),
+    refId: text("ref_id").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.entryId, t.scope, t.kind, t.refId] }),
+    check("refs_scope_check", sql`${t.scope} IN ('working', 'live')`),
+    check("refs_kind_check", sql`${t.kind} IN ('media', 'entry')`),
+    index("refs_by_target").on(t.kind, t.refId),
   ],
 );
