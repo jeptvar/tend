@@ -27,6 +27,8 @@ import {
   resetPasswordAndSignOutEverywhere,
 } from "./db/repo/users.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
+import { cleanUpMedia } from "./media/library.ts";
+import { MediaStore } from "./media/store.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
 
@@ -211,17 +213,25 @@ async function start(): Promise<void> {
     secureCookies: config.secureCookies,
     trustProxy: config.trustProxy,
     themeDir: defaultThemeDir,
+    uploadsDir: config.uploadsDir,
     pageCacheBytes: config.pageCacheBytes,
+    watchTheme: true,
+    siteUrl: config.siteUrl,
     isPublic: config.isPublic,
   });
   // The Trash and automatic history only keep things for so long. Not being able to tidy
   // up is no reason to stop serving the site.
+  const files = new MediaStore(config.uploadsDir);
   const tidyUp = () => {
     try {
       cleanUp(orm, Date.now());
     } catch (error) {
       console.error(`Couldn't tidy up old drafts: ${(error as Error).message}`);
     }
+    // Media's Trash after 30 days, except what a published page still shows.
+    cleanUpMedia(orm, files, Date.now()).catch((error: Error) =>
+      console.error(`Couldn't empty Media's Trash: ${error.message}`),
+    );
   };
   tidyUp();
   setInterval(tidyUp, HOUR_MS).unref();

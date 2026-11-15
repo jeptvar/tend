@@ -6,7 +6,14 @@ export interface InsertItem {
   keywords: string;
   pagesOnly?: boolean;
   /** Whether it worked. Some things can't go where the cursor is, like a quote in a bullet. */
-  run: (editor: Editor, helpers: { askForButton: () => void }) => boolean;
+  run: (
+    editor: Editor,
+    helpers: {
+      askForButton: () => void;
+      /** Asks for a picture, then puts it in, or hands it to `use` when given. */
+      askForImage: (use?: (mediaId: string) => void) => void;
+    },
+  ) => boolean;
 }
 
 /** Steps out of any lists and quotes, so a big block doesn't leave an empty line behind. */
@@ -19,7 +26,7 @@ function liftOutOfContainers(editor: Editor): void {
 }
 
 /** Puts a big block after the top-level one the cursor's in, replacing it if that's empty. */
-function insertAtTopLevel(editor: Editor, content: Record<string, unknown>): boolean {
+export function insertAtTopLevel(editor: Editor, content: Record<string, unknown>): boolean {
   liftOutOfContainers(editor);
   const { $from } = editor.state.selection;
   const block = $from.node(1);
@@ -57,6 +64,14 @@ export const INSERT_ITEMS: InsertItem[] = [
     id: "heading4",
     keywords: "small heading title header h4",
     run: (editor) => editor.chain().focus().setHeading({ level: 4 }).run(),
+  },
+  {
+    id: "image",
+    keywords: "image picture photo photograph upload media img",
+    run: (_editor, { askForImage }) => {
+      askForImage();
+      return true;
+    },
   },
   {
     id: "bulletList",
@@ -99,6 +114,37 @@ export const INSERT_ITEMS: InsertItem[] = [
       insertAtTopLevel(editor, {
         type: "section",
         attrs: { kind: "intro", preset: "1", tone: "none", align: "left" },
+        content: [{ type: "heading", attrs: { level: 2 } }, { type: "paragraph" }],
+      }),
+  },
+  {
+    id: "pictureText",
+    keywords: "picture text image photo side beside section columns",
+    pagesOnly: true,
+    // The picture comes first, so the section never sits there with nothing in it.
+    run: (editor, { askForImage }) => {
+      askForImage((mediaId) =>
+        insertAtTopLevel(editor, {
+          type: "section",
+          attrs: { kind: "pictureText", preset: "1", tone: "none", align: "left" },
+          content: [
+            { type: "image", attrs: { mediaId } },
+            { type: "heading", attrs: { level: 2 } },
+            { type: "paragraph" },
+          ],
+        }),
+      );
+      return true;
+    },
+  },
+  {
+    id: "contact",
+    keywords: "contact hours opening address phone email map location business visit find",
+    pagesOnly: true,
+    run: (editor) =>
+      insertAtTopLevel(editor, {
+        type: "section",
+        attrs: { kind: "contact", preset: "1", tone: "none", align: "left" },
         content: [{ type: "heading", attrs: { level: 2 } }, { type: "paragraph" }],
       }),
   },

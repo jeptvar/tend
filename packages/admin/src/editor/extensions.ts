@@ -4,6 +4,7 @@ import { Heading } from "@tiptap/extension-heading";
 import { Placeholder } from "@tiptap/extensions";
 import StarterKit from "@tiptap/starter-kit";
 import { isAllowedHref } from "../lib/doc.ts";
+import { ImageNode, type ImageOptions } from "./ImageNode.tsx";
 import { ButtonNode, type ButtonOptions, SectionNode, type SectionOptions } from "./nodes.tsx";
 import { SlashMenu, type SlashOptions } from "./slash.ts";
 
@@ -28,7 +29,10 @@ export function editorExtensions(options: {
   allowSections: boolean;
   placeholder: string;
   onEditButton: ButtonOptions["onEdit"];
+  onDescribeImage: ImageOptions["onDescribe"];
+  onUploaded: ImageOptions["onUploaded"];
   onSectionRemoved: SectionOptions["onRemoved"];
+  canEditBusiness: boolean;
   slash: SlashOptions;
 }): Extensions {
   return [
@@ -47,8 +51,14 @@ export function editorExtensions(options: {
     TendHeading.configure({ levels: [...LEVELS] }),
     Placeholder.configure({ placeholder: options.placeholder }),
     ButtonNode.configure({ onEdit: options.onEditButton }),
+    ImageNode.configure({ onDescribe: options.onDescribeImage, onUploaded: options.onUploaded }),
     ...(options.allowSections
-      ? [SectionNode.configure({ onRemoved: options.onSectionRemoved })]
+      ? [
+          SectionNode.configure({
+            onRemoved: options.onSectionRemoved,
+            canEditBusiness: options.canEditBusiness,
+          }),
+        ]
       : []),
     SlashMenu.configure(options.slash),
   ];

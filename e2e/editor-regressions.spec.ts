@@ -256,17 +256,29 @@ test.describe("two tabs", () => {
     await page.close();
     await second.close();
 
+    // Each tab's words are either on the server, or kept on this device and offered. A tab
+    // closing makes one last save, which can get through, since the test's offline routing
+    // goes with the tab. Either way, neither is lost.
+    const words = ["First tab's words", "Second tab's words"];
     const third = await context.newPage();
     await third.goto(`${signedIn.base}/admin/posts/${post.id}`);
     await expect(third.getByText("hadn't reached the server")).toBeVisible();
-    const offered = await body(third).textContent();
-    expect(["First tab's words", "Second tab's words"]).toContain(offered);
+    const offered = (await body(third).textContent()) ?? "";
+    expect(words).toContain(offered);
+    const onServer = bodyText(await readEntry(third, signedIn, post.id));
     await third.getByRole("button", { name: "Go back to the saved version" }).click();
     await third.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    // The other one hasn't been lost: it's offered next.
-    await expect(third.getByText("hadn't reached the server")).toBeVisible();
-    expect(await body(third).textContent()).not.toBe(offered);
-    expect(["First tab's words", "Second tab's words"]).toContain(await body(third).textContent());
+    await expect(body(third)).toBeVisible();
+    if (words.includes(onServer)) {
+      // One got through as its tab closed, so only the other was left to offer.
+      expect(onServer).not.toBe(offered);
+      await expect(body(third)).toHaveText(onServer);
+    } else {
+      // The other one hasn't been lost: it's offered next.
+      await expect(third.getByText("hadn't reached the server")).toBeVisible();
+      expect(await body(third).textContent()).not.toBe(offered);
+      expect(words).toContain(await body(third).textContent());
+    }
   });
 
   test("just opening a draft left behind and going back doesn't save it", async ({
@@ -311,7 +323,7 @@ test.describe("a copy on this device with nowhere to go", () => {
     await expect(page.getByText("Words that outlive it")).toBeVisible();
     await page.getByRole("button", { name: "Keep them as a new draft" }).click();
     await expect(body(page)).toHaveText("Words that outlive it");
-    await expect(page.getByLabel("Title")).toHaveValue("Doomed");
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Doomed");
     await expect(page).not.toHaveURL(new RegExp(post.id));
     await expect(saveStatus(page)).toHaveText("Saved");
     await postsLink(page).click();
@@ -425,10 +437,10 @@ test.describe("a copy on this device with nowhere to go", () => {
       }
       await route.fallback();
     });
-    await page.getByLabel("Title").fill("Tidied   ");
+    await page.getByLabel("Title", { exact: true }).fill("Tidied   ");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
     await page.reload();
-    await expect(page.getByLabel("Title")).toHaveValue("Tidied");
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Tidied");
     await expect(page.getByText("hadn't reached the server")).toHaveCount(0);
   });
 
@@ -505,7 +517,7 @@ test.describe("conflicts", () => {
     await page.unroute(SAVE_PATH);
 
     await page.getByRole("button", { name: "Use the newest version" }).click();
-    await expect(page.getByLabel("Title")).toHaveValue("Their title");
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Their title");
 
     const { revisions } = await (
       await page.request.get(`${signedIn.base}/api/admin/entries/${post.id}/revisions`)
@@ -695,7 +707,7 @@ test.describe("undo", () => {
     await openSettings(page);
     await page.getByRole("button", { name: "Move to Trash" }).click();
     await expect(body(page)).not.toBeEditable();
-    await expect(page.getByLabel("Title")).not.toBeEditable();
+    await expect(page.getByLabel("Title", { exact: true })).not.toBeEditable();
   });
 });
 
@@ -839,9 +851,13 @@ test.describe("what the editor can say about itself", () => {
     await page.getByRole("button", { name: "Publish post" }).click();
     await page.getByRole("button", { name: "Publish post now" }).click();
     await page.getByRole("button", { name: "Copy link" }).click();
-    await expect(page.getByRole("dialog").getByRole("status")).toHaveText(
-      /Copied|Couldn't copy that/,
-    );
+    // The dialog also holds a place for toasts, so this looks for its own answer.
+    await expect(
+      page
+        .getByRole("dialog")
+        .getByRole("status")
+        .filter({ hasText: /Copied|Couldn't copy that/ }),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Copy link" })).toBeVisible();
   });
 
@@ -1026,7 +1042,7 @@ test.describe("links and buttons", () => {
     await openPost(page, signedIn, post.id);
     await paste(page, '<table><tr><td>Cell</td></tr></table><img src="https://example.com/x.png">');
     await expect(page.getByText("A table was turned into text")).toBeVisible();
-    await expect(page.getByText("Pictures can't be added yet")).toBeVisible();
+    await expect(page.getByText("Pictures from another website were left out")).toBeVisible();
   });
 });
 
@@ -1056,7 +1072,7 @@ test.describe('the "/" menu and Insert', () => {
     await body(page).click();
     await page.keyboard.type("/");
     await expect(page.getByRole("listbox")).toBeVisible();
-    await page.getByLabel("Title").click();
+    await page.getByLabel("Title", { exact: true }).click();
     await expect(page.getByRole("listbox")).toHaveCount(0);
     await expect(body(page)).not.toHaveAttribute("aria-activedescendant", /./);
   });

@@ -11,7 +11,8 @@
       "type": "page",
       "title": "Contact",
       "slug": "contact",
-      "body": "Say how people can reach you: your address, phone number, email and opening hours."
+      "body": "We'd love to hear from you. Here's how to reach us, and when we're open.",
+      "contact": true
     }
   ]
 }

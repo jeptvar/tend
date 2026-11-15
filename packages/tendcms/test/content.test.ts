@@ -821,7 +821,10 @@ describe("the entries API", () => {
     expect((await made.app.request("/blog/old")).status).toBe(200);
     expect((await made.app.request("/blog/new")).status).toBe(404);
     await publish(owner, entry.id, 4);
-    expect((await made.app.request("/blog/old")).status).toBe(404);
+    // The old address leads to the new one, so links and bookmarks keep working.
+    const old = await made.app.request("/blog/old");
+    expect(old.status).toBe(301);
+    expect(old.headers.get("location")).toBe("/blog/new");
     expect((await made.app.request("/blog/new")).status).toBe(200);
   });
 

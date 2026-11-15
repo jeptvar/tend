@@ -19,6 +19,7 @@ import {
 import { AccountBackoff, TokenBuckets, WorkGate } from "../auth/ratelimit.ts";
 import { completeSetup, loadStarter, SetupClosedError } from "../auth/setup.ts";
 import { type SetupCodeSource, setupCodeMatches } from "../auth/setup-code.ts";
+import { isLocale } from "../content/settings.ts";
 import type { Orm } from "../db/client.ts";
 import {
   ABSOLUTE_MS,
@@ -68,14 +69,6 @@ function isTimeZone(value: string): boolean {
   try {
     new Intl.DateTimeFormat("en", { timeZone: value });
     return true;
-  } catch {
-    return false;
-  }
-}
-
-function isLocale(value: string): boolean {
-  try {
-    return Intl.getCanonicalLocales(value).length === 1;
   } catch {
     return false;
   }

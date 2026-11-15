@@ -104,6 +104,8 @@ export interface RemovedSection {
 export interface SectionOptions {
   /** Says it's gone and offers Undo, since this can take a lot of words with it. */
   onRemoved: (removed: RemovedSection) => void;
+  /** Whether this person can change the business details a Contact & hours section shows. */
+  canEditBusiness: boolean;
 }
 
 function SectionView({
@@ -115,8 +117,14 @@ function SectionView({
   getPos,
 }: NodeViewProps) {
   const intl = useIntl();
-  const { tone, align } = node.attrs as { tone: string; align: string };
+  const { kind, tone, align, preset } = node.attrs as {
+    kind: string;
+    tone: string;
+    align: string;
+    preset: string;
+  };
   const editable = useIsEditable(editor);
+  const options = extension.options as SectionOptions;
   return (
     <NodeViewWrapper
       className={`my-4 rounded-lg border border-dashed border-muted p-4 ${
@@ -125,10 +133,31 @@ function SectionView({
     >
       <div contentEditable={false} className="mb-3 flex flex-wrap items-center gap-2">
         <span className="me-auto text-sm font-medium text-muted">
-          <FormattedMessage id="editor.sectionIntro" />
+          <FormattedMessage
+            id={
+              kind === "pictureText"
+                ? "editor.sectionPictureText"
+                : kind === "contact"
+                  ? "editor.sectionContact"
+                  : "editor.sectionIntro"
+            }
+          />
         </span>
         {editable && (
           <>
+            {kind === "pictureText" && (
+              <label className="flex items-center gap-1 text-sm">
+                <FormattedMessage id="editor.sectionPicture" />
+                <select
+                  className={controlClass}
+                  value={preset === "2" ? "2" : "1"}
+                  onChange={(event) => updateAttributes({ preset: event.target.value })}
+                >
+                  <option value="1">{intl.formatMessage({ id: "editor.pictureLeft" })}</option>
+                  <option value="2">{intl.formatMessage({ id: "editor.pictureRight" })}</option>
+                </select>
+              </label>
+            )}
             <label className="flex items-center gap-1 text-sm">
               <FormattedMessage id="editor.sectionTone" />
               <select
@@ -175,11 +204,31 @@ function SectionView({
         )}
       </div>
       <NodeViewContent className={align === "center" ? "text-center" : ""} />
+      {kind === "contact" && (
+        <div
+          contentEditable={false}
+          className="mt-3 rounded border border-ink/15 bg-paper p-3 text-sm"
+        >
+          <p>
+            <FormattedMessage id="editor.contactDetails" />
+          </p>
+          {options.canEditBusiness && (
+            <a
+              href="/admin/settings/business"
+              target="_blank"
+              rel="noopener"
+              className="text-brand underline"
+            >
+              <FormattedMessage id="editor.contactEdit" />
+            </a>
+          )}
+        </div>
+      )}
     </NodeViewWrapper>
   );
 }
 
-/** A page's sections. Only "Big intro" can be added for now: the others need photos. */
+/** A page's sections: Big intro, Picture and text, and Contact & hours. */
 export const SectionNode = Node.create<SectionOptions>({
   name: "section",
   // Ahead of the usual Backspace and Delete, which don't know about it. See below.
@@ -193,7 +242,7 @@ export const SectionNode = Node.create<SectionOptions>({
   selectable: false,
 
   addOptions() {
-    return { onRemoved: () => {} };
+    return { onRemoved: () => {}, canEditBusiness: false };
   },
 
   // A section is a box of its own, so Backspace and Delete at its edge don't pull the words on

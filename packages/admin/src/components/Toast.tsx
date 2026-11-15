@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useIntl } from "react-intl";
 import { secondaryButtonClass } from "./AuthLayout.tsx";
 
@@ -37,18 +37,53 @@ export function dismissToast(id: number): void {
 }
 
 /**
+ * Open dialogs, newest last. A modal dialog makes everything outside it unreachable, and
+ * covers it, so while one is open its toasts show inside the newest one instead.
+ */
+let dialogs: number[] = [];
+let nextDialog = 1;
+const dialogListeners = new Set<() => void>();
+
+function setDialogs(next: number[]): void {
+  dialogs = next;
+  for (const listener of dialogListeners) listener();
+}
+
+function subscribeDialogs(listener: () => void): () => void {
+  dialogListeners.add(listener);
+  return () => dialogListeners.delete(listener);
+}
+
+/** Inside every dialog: shows toasts there while it's the newest one open. */
+export function DialogToasts() {
+  const [id] = useState(() => nextDialog++);
+  useLayoutEffect(() => {
+    setDialogs([...dialogs, id]);
+    return () => setDialogs(dialogs.filter((other) => other !== id));
+  }, [id]);
+  const newest = useSyncExternalStore(subscribeDialogs, () => dialogs.at(-1));
+  return <ToastRegion hidden={newest !== id} />;
+}
+
+/**
  * Lasts 8 seconds, and pauses while the pointer or keyboard focus is on it (PLAN.md §6).
  * It's mounted once, for good, because screen readers can miss a live region that arrives
  * along with its text.
  */
 export function Toaster() {
-  const toast = useSyncExternalStore(
+  const dialogOpen = useSyncExternalStore(subscribeDialogs, () => dialogs.length > 0);
+  return <ToastRegion hidden={dialogOpen} />;
+}
+
+function ToastRegion({ hidden }: { hidden: boolean }) {
+  const shown = useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     () => current,
   );
+  const toast = hidden ? null : shown;
   const intl = useIntl();
   const [hovered, setHovered] = useState(false);
   /** Where focus was before it came into the toast, such as the middle of someone's writing. */

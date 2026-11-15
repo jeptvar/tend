@@ -1,0 +1,24 @@
+{%- comment -%}
+  A page's own words, with the business details filled into each Contact & hours section
+  here, where the section's own heading can be seen. Their headings go one level under it,
+  or straight under the page's title when there's none, so someone moving from heading to
+  heading never finds a level missing. Only Tend writes these tags: anything typed on a page
+  has been escaped.
+{%- endcomment -%}
+{%- assign parts = html | split: "<tend-business></tend-business>" -%}
+{%- for part in parts -%}
+  {{- part | raw -}}
+  {%- unless forloop.last -%}
+    {%- assign own = part | split: "<section " | last -%}
+    {%- if own contains "<h2" -%}
+      {%- assign level = 3 -%}
+    {%- elsif own contains "<h3" -%}
+      {%- assign level = 4 -%}
+    {%- elsif own contains "<h4" -%}
+      {%- assign level = 5 -%}
+    {%- else -%}
+      {%- assign level = 2 -%}
+    {%- endif -%}
+    {%- render "business", business: business, level: level -%}
+  {%- endunless -%}
+{%- endfor -%}

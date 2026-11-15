@@ -94,6 +94,35 @@ describe("loadConfig", () => {
   });
 });
 
+describe("the site's own address", () => {
+  test("comes from TEND_PUBLIC_URL first, then from what the hosting platform says", () => {
+    expect(loadConfig({ TEND_PUBLIC_URL: "https://rise.example" }).siteUrl).toBe(
+      "https://rise.example",
+    );
+    expect(
+      loadConfig({
+        RAILWAY_ENVIRONMENT: "production",
+        RAILWAY_PUBLIC_DOMAIN: "rise.up.railway.app",
+      }).siteUrl,
+    ).toBe("https://rise.up.railway.app");
+    expect(
+      loadConfig({ RENDER: "true", RENDER_EXTERNAL_URL: "https://rise.onrender.com" }).siteUrl,
+    ).toBe("https://rise.onrender.com");
+    expect(loadConfig({ FLY_APP_NAME: "rise" }).siteUrl).toBe("https://rise.fly.dev");
+    expect(
+      loadConfig({
+        TEND_PUBLIC_URL: "https://rise.example",
+        RAILWAY_PUBLIC_DOMAIN: "rise.up.railway.app",
+      }).siteUrl,
+    ).toBe("https://rise.example");
+  });
+
+  test("is unknown for a plain run, so pages name the address they're asked for", () => {
+    expect(loadConfig({}).siteUrl).toBeUndefined();
+    expect(loadConfig({ RAILWAY_PUBLIC_DOMAIN: "not a host/" }).siteUrl).toBeUndefined();
+  });
+});
+
 describe("explainDataFolderFailure", () => {
   const failure = (code: string) => Object.assign(new Error(`${code} details`), { code });
 

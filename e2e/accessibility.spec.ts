@@ -1,6 +1,6 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { createEntry, expect, type Site, test } from "./fixtures.ts";
+import { createEntry, expect, photo, type Site, test, upload } from "./fixtures.ts";
 
 async function expectNoViolations(
   page: Page,
@@ -80,8 +80,53 @@ function section(tone: string) {
   };
 }
 
+/** Pictures, Picture and text, and Contact & hours with the business details filled in. */
+async function pictureContent(page: Page, site: Site) {
+  const wide = await upload(page, site, await photo(page, 1600, 900), "wide.jpg");
+  const square = await upload(page, site, await photo(page, 800, 800, "#2a6f97"), "square.jpg");
+  await page.request.patch(`${site.base}/api/admin/media/${wide.id}`, {
+    data: { alt: "The shop from the street", credit: "Photo: Sam Lee" },
+  });
+  await page.request.patch(`${site.base}/api/admin/media/${square.id}`, {
+    data: { decorative: true },
+  });
+  await page.request.put(`${site.base}/api/admin/settings/business`, {
+    data: {
+      address: "1 Main Street\nSpringfield",
+      phone: "+1 555 010 0200",
+      email: "hello@example.com",
+      mapUrl: "https://maps.example.com/shop",
+      hours: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => ({
+        day,
+        closed: day === "sun",
+        opens: "08:00",
+        closes: "17:00",
+      })),
+      hoursNote: "Closed on public holidays",
+    },
+  });
+  return [
+    { type: "image", attrs: { mediaId: wide.id, caption: "Our first morning", size: "wide" } },
+    {
+      type: "section",
+      attrs: { kind: "pictureText", preset: "1", tone: "muted", align: "left" },
+      content: [
+        { type: "image", attrs: { mediaId: square.id } },
+        { type: "heading", attrs: { level: 2 }, content: [text("Baked here")] },
+        { type: "paragraph", content: [text("Everything comes out of our own oven.")] },
+      ],
+    },
+    {
+      type: "section",
+      attrs: { kind: "contact", preset: "1", tone: "none", align: "left" },
+      content: [{ type: "heading", attrs: { level: 2 }, content: [text("Visit us")] }],
+    },
+  ];
+}
+
 /** A published page holding every kind of content, for checking how it all reads. */
 async function richPage(page: Page, site: Site, publish = true) {
+  const pictures = await pictureContent(page, site);
   const entry = await createEntry(page, site, { type: "page", title: "Everything" });
   const saved = await (
     await page.request.patch(`${site.base}/api/admin/entries/${entry.id}`, {
@@ -89,7 +134,13 @@ async function richPage(page: Page, site: Site, publish = true) {
       data: {
         doc: {
           type: "doc",
-          content: [section("none"), section("muted"), section("accent"), ...EVERYTHING],
+          content: [
+            section("none"),
+            section("muted"),
+            section("accent"),
+            ...pictures,
+            ...EVERYTHING,
+          ],
         },
       },
     })
@@ -105,11 +156,19 @@ async function richPage(page: Page, site: Site, publish = true) {
 
 async function adminScreens(page: Page, site: Site): Promise<[string, string][]> {
   const post = await createEntry(page, site, { title: "A post", publish: true });
+  await upload(page, site, await photo(page, 900, 600), "In the library.jpg");
   return [
     ["overview", "/admin/"],
     ["posts", "/admin/posts"],
     ["pages", "/admin/pages"],
     ["editor", `/admin/posts/${post.id}`],
+    ["media", "/admin/media"],
+    ["site menu", "/admin/menu"],
+    ["design", "/admin/design"],
+    ["settings: general", "/admin/settings/general"],
+    ["settings: business details", "/admin/settings/business"],
+    ["settings: search and social", "/admin/settings/search"],
+    ["settings: advanced", "/admin/settings/advanced"],
   ];
 }
 
@@ -270,10 +329,71 @@ for (const colorScheme of ["light", "dark"] as const) {
         body: "Some words.",
         publish: true,
       });
-      for (const path of ["/", "/contact", "/blog", post.url as string, "/does-not-exist"]) {
+      const tag = await (
+        await page.request.post(`${signedIn.base}/api/admin/tags`, { data: { name: "News" } })
+      ).json();
+      const tagged = await createEntry(page, signedIn, { title: "Tagged", body: "Words." });
+      await page.request.patch(`${signedIn.base}/api/admin/entries/${tagged.id}`, {
+        headers: { "If-Match": String(tagged.rev) },
+        data: { tagIds: [tag.id] },
+      });
+      await page.request.post(`${signedIn.base}/api/admin/entries/${tagged.id}/publish`, {
+        headers: { "If-Match": String(tagged.rev + 1) },
+        data: {},
+      });
+      const pictures = await richPage(page, signedIn);
+      for (const path of [
+        "/",
+        "/contact",
+        "/blog",
+        post.url as string,
+        pictures.url as string,
+        "/tag/news",
+        "/does-not-exist",
+      ]) {
         await page.goto(`${signedIn.base}${path}`);
         await expectNoViolations(page, path);
       }
+    });
+
+    test("the Coming soon page has no accessibility violations", async ({
+      page,
+      signedIn,
+      browser,
+    }) => {
+      await page.request.put(`${signedIn.base}/api/admin/settings/visibility`, {
+        data: { mode: "coming_soon" },
+      });
+      const stranger = await (await browser.newContext({ colorScheme })).newPage();
+      await stranger.goto(`${signedIn.base}/`);
+      await expect(stranger.getByText("This site is coming soon.")).toBeVisible();
+      await expectNoViolations(stranger, "coming soon");
+    });
+
+    test("Media's details and the picture dialogs have no accessibility violations", async ({
+      page,
+      signedIn,
+    }) => {
+      await upload(page, signedIn, await photo(page, 900, 600), "Counter.jpg");
+      await page.goto(`${signedIn.base}/admin/media`);
+      await page.getByRole("button", { name: /Counter\.jpg/ }).click();
+      await expect(page.getByRole("dialog", { name: "Counter.jpg" })).toBeVisible();
+      await expectNoViolations(page, "media details");
+      await page.getByRole("button", { name: "Close" }).click();
+
+      const post = await createEntry(page, signedIn, { title: "Pictures", body: "" });
+      await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
+      await page.getByRole("button", { name: "Insert +" }).click();
+      await page.getByRole("menuitem", { name: "Image" }).click();
+      await expect(page.getByRole("dialog", { name: "Add an image" })).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await expectNoViolations(page, "image picker");
+      await page
+        .getByRole("dialog", { name: "Add an image" })
+        .getByRole("button", { name: /Counter/ })
+        .click();
+      await expect(page.getByRole("dialog", { name: "Describe this image" })).toBeVisible();
+      await expectNoViolations(page, "describe this image");
     });
   });
 }
@@ -295,16 +415,26 @@ test.describe("at phone widths", () => {
       title: UNBROKEN,
       publish: true,
     });
+    const rich = await richPage(page, signedIn);
+    await upload(page, signedIn, await photo(page, 900, 600), `${UNBROKEN}.jpg`);
     await page.setViewportSize({ width: 320, height: 640 });
     for (const path of [
       "/admin/",
       "/admin/posts",
       "/admin/pages",
       `/admin/posts/${post.id}`,
+      "/admin/media",
+      "/admin/menu",
+      "/admin/design",
+      "/admin/settings/general",
+      "/admin/settings/business",
+      "/admin/settings/search",
       "/",
       "/blog",
+      "/contact",
       post.url as string,
       about.url as string,
+      rich.url as string,
     ]) {
       await page.goto(`${signedIn.base}${path}`);
       await page.waitForLoadState("networkidle");
@@ -329,7 +459,19 @@ test.describe("at phone widths", () => {
   test("everything tappable in the admin is at least 44 px", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "A post", publish: true });
     await page.setViewportSize({ width: 375, height: 812 });
-    for (const path of ["/admin/", "/admin/posts", `/admin/posts/${post.id}`]) {
+    await upload(page, signedIn, await photo(page, 900, 600), "Counter.jpg");
+    for (const path of [
+      "/admin/",
+      "/admin/posts",
+      `/admin/posts/${post.id}`,
+      "/admin/media",
+      "/admin/menu",
+      "/admin/design",
+      "/admin/settings/general",
+      "/admin/settings/business",
+      "/admin/settings/search",
+      "/admin/settings/advanced",
+    ]) {
       await page.goto(`${signedIn.base}${path}`);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await page.waitForLoadState("networkidle");

@@ -1,5 +1,7 @@
+import sharp from "sharp";
 import { describe, expect, test } from "vitest";
-import { createAdminRoutes } from "../src/api/admin/entries.ts";
+import { createAdminRoutes } from "../src/api/admin/index.ts";
+import type { RoutePolicy } from "../src/api/admin/routing.ts";
 import { type Action, type Actor, can } from "../src/auth/policy.ts";
 import { createSessionIfPasswordUnchanged } from "../src/db/repo/sessions.ts";
 import { uuidv7 } from "../src/ids.ts";
@@ -13,7 +15,19 @@ const ALL_ACTIONS: Action[] = [
   "entry:publish",
   "entry:trash",
   "entry:delete",
+  "media:list",
+  "media:upload",
+  "media:update",
+  "media:replace",
+  "media:trash",
+  "media:delete",
+  "tag:list",
+  "tag:create",
+  "menu:manage",
+  "design:manage",
+  "settings:manage",
 ];
+const ADMIN_ONLY: Action[] = ["entry:delete", "media:delete", "design:manage", "settings:manage"];
 
 function actor(role: Actor["role"], id = "me"): Actor {
   return { id, role, isOwner: 0 };
@@ -28,23 +42,41 @@ describe("can", () => {
   });
 
   test.each(["admin", "editor"] as const)("%s can work on any content", (role) => {
-    for (const action of ALL_ACTIONS.filter((name) => name !== "entry:delete")) {
+    for (const action of ALL_ACTIONS.filter((name) => !ADMIN_ONLY.includes(name))) {
       expect(can(actor(role), action, { authorId: "someone-else" })).toBe(true);
+      expect(can(actor(role), action, { authorId: "someone-else", type: "page" })).toBe(true);
     }
   });
 
-  test("only an admin can delete something forever", () => {
-    expect(can(actor("admin"), "entry:delete", { authorId: "me" })).toBe(true);
-    expect(can(actor("editor"), "entry:delete", { authorId: "me" })).toBe(false);
-    expect(can(actor("writer"), "entry:delete", { authorId: "me" })).toBe(false);
+  test("only an admin can delete forever, or change the design and settings", () => {
+    for (const action of ADMIN_ONLY) {
+      expect(can(actor("admin"), action, { authorId: "me" })).toBe(true);
+      expect(can(actor("editor"), action, { authorId: "me" })).toBe(false);
+      expect(can(actor("writer"), action, { authorId: "me" })).toBe(false);
+    }
   });
 
-  test("a writer can only work on their own, and can't publish", () => {
+  test("a writer can add pictures and describe their own, and nothing about the site", () => {
+    const writer = actor("writer");
+    expect(can(writer, "media:list")).toBe(true);
+    expect(can(writer, "media:upload")).toBe(true);
+    expect(can(writer, "media:update", { authorId: "me" })).toBe(true);
+    expect(can(writer, "media:update", { authorId: "other" })).toBe(false);
+    expect(can(writer, "media:replace", { authorId: "me" })).toBe(false);
+    expect(can(writer, "media:trash", { authorId: "me" })).toBe(false);
+    expect(can(writer, "menu:manage")).toBe(false);
+    expect(can(writer, "tag:create")).toBe(false);
+  });
+
+  test("a writer can only work on their own posts, and can't publish", () => {
     const writer = actor("writer");
     expect(can(writer, "entry:list")).toBe(true);
     expect(can(writer, "entry:create")).toBe(true);
+    expect(can(writer, "entry:create", { authorId: "me", type: "post" })).toBe(true);
+    expect(can(writer, "entry:create", { authorId: "me", type: "page" })).toBe(false);
     expect(can(writer, "entry:read", { authorId: "me" })).toBe(true);
     expect(can(writer, "entry:update", { authorId: "me" })).toBe(true);
+    expect(can(writer, "entry:update", { authorId: "me", type: "page" })).toBe(false);
     expect(can(writer, "entry:read", { authorId: "other" })).toBe(false);
     expect(can(writer, "entry:update", { authorId: "other" })).toBe(false);
     expect(can(writer, "entry:publish", { authorId: "me" })).toBe(false);
@@ -84,16 +116,91 @@ async function signedInAs(made: MadeApp, role: Actor["role"]) {
   return { client, id };
 }
 
+/**
+ * Who each route is for, written out by hand from PLAN.md §6 rather than read from the routes,
+ * so a route guarded by the wrong action fails here.
+ * - anyone: every account, Writers included.
+ * - own: Writers only on their own posts and pictures; everyone else on anything.
+ * - editors: Editors, Admins and the Owner.
+ * - admins: Admins and the Owner.
+ */
+type Who = "anyone" | "own" | "editors" | "admins";
+const WHO: Record<string, Who> = {
+  "GET /link-targets": "anyone",
+  "GET /entries": "anyone",
+  "POST /entries": "anyone",
+  "GET /entries/:id": "own",
+  "PATCH /entries/:id": "own",
+  "POST /entries/:id/publish": "editors",
+  "POST /entries/:id/unpublish": "editors",
+  "POST /entries/:id/undo-unpublish": "editors",
+  "POST /entries/:id/trash": "editors",
+  "POST /entries/:id/restore": "editors",
+  "POST /entries/:id/discard-changes": "editors",
+  "POST /entries/:id/duplicate": "own",
+  "DELETE /entries/:id": "admins",
+  "GET /entries/:id/revisions": "own",
+  "GET /revisions/:rid": "own",
+  "POST /revisions/:rid/restore": "own",
+  "GET /preview/:id": "own",
+  "GET /media": "anyone",
+  "POST /media": "anyone",
+  "GET /media/:mid": "anyone",
+  "PATCH /media/:mid": "own",
+  "GET /media/:mid/usage": "anyone",
+  "POST /media/:mid/replace": "editors",
+  "POST /media/:mid/trash": "editors",
+  "POST /media/:mid/restore": "editors",
+  "DELETE /media/:mid": "admins",
+  "GET /tags": "anyone",
+  "POST /tags": "editors",
+  "GET /settings/:key": "admins",
+  "PUT /settings/:key": "admins",
+  "POST /settings/:key/undo": "admins",
+  "GET /menus": "editors",
+  "PUT /menus/:name": "editors",
+  "POST /menus/:name/undo": "editors",
+  "GET /design": "admins",
+  "PUT /design": "admins",
+  "POST /design/undo": "admins",
+  "POST /design/preview": "admins",
+  "GET /redirects": "admins",
+  "POST /redirects": "admins",
+  "DELETE /redirects": "admins",
+};
+
+const ROLES = ["writer", "editor", "admin", "owner"] as const;
+type Role = (typeof ROLES)[number];
+
+/** Whether the table lets this role act on a Writer's own row, or on someone else's. */
+function allowed(who: Who, role: Role, writersOwn: boolean): boolean {
+  switch (who) {
+    case "anyone":
+      return true;
+    case "own":
+      return role !== "writer" || writersOwn;
+    case "editors":
+      return role !== "writer";
+    case "admins":
+      return role === "admin" || role === "owner";
+  }
+}
+
+function key(policy: RoutePolicy): string {
+  return `${policy.method} ${policy.path}`;
+}
+
 describe("every admin route", () => {
   const options = {
     orm: undefined as never,
+    store: undefined as never,
     secureCookies: false,
     onSiteChanged: () => {},
   };
   const { app, policies } = createAdminRoutes(options);
 
   test("has a stated permission: a new route without one fails this test", () => {
-    const declared = new Set(policies.map((policy) => `${policy.method} ${policy.path}`));
+    const declared = new Set(policies.map(key));
     const actual = app.routes
       .filter((route) => route.method !== "ALL")
       .map((route) => `${route.method} ${route.path}`);
@@ -102,50 +209,150 @@ describe("every admin route", () => {
     expect(new Set(actual).size).toBe(declared.size);
   });
 
-  test.each(policies.map((policy) => [`${policy.method} ${policy.path}`, policy] as const))(
-    "%s follows the policy for every kind of person",
-    async (_, policy) => {
+  test("is in the table of who it's for, and the table names no route that's gone", () => {
+    expect(new Set(policies.map(key))).toEqual(new Set(Object.keys(WHO)));
+  });
+
+  test.each(policies.map((policy) => [key(policy), policy] as const))(
+    "%s declares an action that lets in exactly who the table says",
+    (name, policy) => {
+      const who = WHO[name] as Who;
+      for (const role of ROLES) {
+        const me = {
+          id: "me",
+          role: role === "owner" ? "admin" : role,
+          isOwner: role === "owner" ? 1 : 0,
+        };
+        for (const writersOwn of policy.subject === null ? [false] : [true, false]) {
+          const subject =
+            policy.subject === null
+              ? undefined
+              : {
+                  authorId: writersOwn ? "me" : "someone-else",
+                  ...(policy.subject === "media" ? {} : { type: "post" }),
+                };
+          const label = `${role}${writersOwn ? " on their own" : ""}`;
+          expect(can(me, policy.action, subject), label).toBe(
+            allowed(who, role, writersOwn && role === "writer"),
+          );
+        }
+        // A page is never a Writer's, even one they wrote.
+        if (policy.subject === "entry" || policy.subject === "revision") {
+          expect(
+            can(me, policy.action, { authorId: "me", type: "page" }),
+            `${role} on a page`,
+          ).toBe(allowed(who, role, false));
+        }
+      }
+    },
+  );
+
+  /** A post or page with a version kept in History, and a picture: all a route can be about. */
+  async function rowsOf(
+    client: ReturnType<typeof browser>,
+    picture: Buffer,
+    type: "post" | "page" = "post",
+  ) {
+    const entry = await (await client.post("/api/admin/entries", { type })).json();
+    const path = `/api/admin/entries/${entry.id}`;
+    expect((await client.patch(path, { title: "Something" }, { "If-Match": "1" })).status).toBe(
+      200,
+    );
+    // The second save keeps the first in History.
+    expect(
+      (await client.patch(path, { title: "Something else" }, { "If-Match": "2" })).status,
+    ).toBe(200);
+    const versions = await (await client.get(`${path}/revisions`)).json();
+    expect(versions.revisions.length).toBeGreaterThan(0);
+    const uploaded = await client.upload("/api/admin/media", picture, "dot.png");
+    expect(uploaded.status).toBe(201);
+    return {
+      entryId: entry.id as string,
+      revisionId: versions.revisions[0].id as string,
+      mediaId: (await uploaded.json()).id as string,
+    };
+  }
+
+  test.each(policies.map((policy) => [key(policy), policy] as const))(
+    "%s answers every kind of person as the table says, on their own rows and others'",
+    async (name, policy) => {
+      const who = WHO[name] as Who;
       const made = await makeApp();
       const owner = await setUp(made);
-      const created = await (await owner.post("/api/admin/entries", { type: "post" })).json();
-      await owner.patch(
-        `/api/admin/entries/${created.id}`,
-        { title: "Something" },
-        { "If-Match": "1" },
-      );
-      const published = await owner.post(
-        `/api/admin/entries/${created.id}/publish`,
-        {},
-        { "If-Match": "2" },
-      );
-      expect(published.status).toBe(200);
-      const versions = await (await owner.get(`/api/admin/entries/${created.id}/revisions`)).json();
-      const url = `/api/admin${policy.path
-        .replace(":id", created.id)
-        .replace(":rid", versions.revisions[0].id)}${
-        policy.method === "GET" && !policy.hasSubject ? "?type=post" : ""
-      }`;
-      const request = (client: ReturnType<typeof browser>) => {
+      const writer = await signedInAs(made, "writer");
+      const clients: Record<Role, ReturnType<typeof browser>> = {
+        writer: writer.client,
+        editor: (await signedInAs(made, "editor")).client,
+        admin: (await signedInAs(made, "admin")).client,
+        owner,
+      };
+      const picture = await sharp({
+        create: { width: 8, height: 8, channels: 3, background: "#336699" },
+      })
+        .png()
+        .toBuffer();
+      const rows = {
+        owners: await rowsOf(owner, picture),
+        writers: await rowsOf(clients.writer, picture),
+        // Written by the Writer, as if while they were an Editor: still not theirs to touch.
+        writersPage: await rowsOf(owner, picture, "page"),
+      };
+      made.db
+        .prepare("UPDATE entries SET author_id = ? WHERE id = ?")
+        .run(writer.id, rows.writersPage.entryId);
+      // The Owner's post is on the site, so publishing and unpublishing have something to do.
+      const ownersPost = `/api/admin/entries/${rows.owners.entryId}`;
+      const { rev } = await (await owner.get(ownersPost)).json();
+      expect(
+        (await owner.post(`${ownersPost}/publish`, {}, { "If-Match": String(rev) })).status,
+      ).toBe(200);
+
+      const isUpload = policy.method === "POST" && /^\/media(\/:mid\/replace)?$/.test(policy.path);
+      async function request(client: ReturnType<typeof browser>, row: typeof rows.owners) {
+        const path = policy.path
+          .replace(":id", row.entryId)
+          .replace(":rid", row.revisionId)
+          .replace(":mid", row.mediaId)
+          .replace(":key", "business")
+          .replace(":name", "main");
+        const query = policy.method === "GET" && policy.subject === null ? "?type=post" : "";
+        const url = `/api/admin${path}${query}`;
+        if (isUpload) return client.upload(url, picture, "dot.png");
         if (policy.method === "GET") return client.get(url);
         if (policy.method === "DELETE") return client.delete(url);
-        const headers = { "If-Match": String(created.rev) };
+        // The newest version, so an action that's let through really runs.
+        const current = await (await owner.get(`/api/admin/entries/${row.entryId}`)).json();
+        const headers = { "If-Match": String(current.rev ?? 1) };
         if (policy.method === "PATCH") return client.patch(url, { title: "Edited" }, headers);
+        if (policy.method === "PUT") return client.put(url, { items: [] }, headers);
         return client.post(url, { type: "post" }, headers);
-      };
+      }
 
-      expect((await request(browser(made.app))).status, "not signed in").toBe(401);
-
-      for (const role of ["writer", "editor", "admin"] as const) {
-        const { client, id } = await signedInAs(made, role);
-        const allowed = can(
-          { id, role, isOwner: 0 },
-          policy.action,
-          policy.hasSubject ? { authorId: created.authorId ?? "the-owner" } : undefined,
-        );
-        const { status } = await request(client);
-        if (allowed) expect(status, role).not.toBe(403);
-        else expect(status, role).toBe(403);
-        expect(status, role).not.toBe(401);
+      expect((await request(browser(made.app), rows.owners)).status, "not signed in").toBe(401);
+      const owners = { row: rows.owners, whose: "the Owner's", writersOwn: false };
+      const passes =
+        policy.subject === null
+          ? [owners]
+          : [
+              owners,
+              { row: rows.writers, whose: "the Writer's", writersOwn: true },
+              // A page is never a Writer's, so their own is the same as someone else's.
+              ...(policy.subject === "media"
+                ? []
+                : [{ row: rows.writersPage, whose: "the Writer's page", writersOwn: false }]),
+            ];
+      // Least allowed first, so nobody's refusal is hidden by someone else's change.
+      for (const { row, whose, writersOwn } of passes) {
+        for (const role of ROLES) {
+          const label = `${role} on ${whose}`;
+          const { status } = await request(clients[role], row);
+          expect(status, label).not.toBe(401);
+          if (allowed(who, role, writersOwn && role === "writer")) {
+            expect(status, label).not.toBe(403);
+          } else {
+            expect(status, label).toBe(403);
+          }
+        }
       }
     },
   );
@@ -180,5 +387,24 @@ describe("a writer in practice", () => {
       { "If-Match": "2" },
     );
     expect(publish.status).toBe(403);
+  });
+});
+
+describe("an editor in practice", () => {
+  test("can change the menu, but not the design or settings", async () => {
+    const made = await makeApp();
+    await setUp(made);
+    const { client: editor } = await signedInAs(made, "editor");
+
+    expect((await editor.get("/api/admin/menus")).status).toBe(200);
+    expect((await editor.put("/api/admin/menus/footer", { items: [] })).status).toBe(200);
+
+    expect((await editor.get("/api/admin/design")).status).toBe(403);
+    const design = await editor.put("/api/admin/design", { theme: {} });
+    expect(design.status).toBe(403);
+    expect((await editor.get("/api/admin/settings/general")).status).toBe(403);
+    const settings = await editor.put("/api/admin/settings/general", { name: "Taken over" });
+    expect(settings.status).toBe(403);
+    expect((await settings.json()).error.fix).toBe("Ask whoever runs this site.");
   });
 });

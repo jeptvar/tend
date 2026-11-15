@@ -29,6 +29,11 @@ export interface Config {
   adminDevUrl: string | undefined;
   /** TEND_PUBLIC_URL: the site's real address, when it's known up front. */
   publicUrl: string | undefined;
+  /**
+   * The address pages name as their own: TEND_PUBLIC_URL, or else the one the hosting
+   * platform gave the site. Undefined when neither is known, as with a plain Docker run.
+   */
+  siteUrl: string | undefined;
   /** How many proxies sit in front of Tend (TEND_TRUST_PROXY). */
   trustProxy: number;
   /** Whether the site is reached over https, which decides the cookie mode. */
@@ -72,6 +77,22 @@ export function detectPlatform(env: NodeJS.ProcessEnv): Platform {
   // and Kubernetes don't, and there Tend would listen only on its own loopback.
   if (env.TEND_PLATFORM === "docker" || existsSync("/.dockerenv")) return "docker";
   return "local";
+}
+
+/** The address a hosting platform gave the site, from what it tells every app it runs. */
+export function platformUrl(env: NodeJS.ProcessEnv): string | undefined {
+  const parse = (value: string) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" ? url.origin : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  if (env.RAILWAY_PUBLIC_DOMAIN) return parse(`https://${env.RAILWAY_PUBLIC_DOMAIN}`);
+  if (env.RENDER_EXTERNAL_URL) return parse(env.RENDER_EXTERNAL_URL);
+  if (env.FLY_APP_NAME) return parse(`https://${env.FLY_APP_NAME}.fly.dev`);
+  return undefined;
 }
 
 /** Hosts that run code per request and throw the disk away, which Tend can't work with. */
@@ -185,6 +206,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     hosts: resolveHosts(env, platform),
     adminDevUrl: env.TEND_ADMIN_DEV_URL || undefined,
     publicUrl,
+    siteUrl: publicUrl ?? platformUrl(env),
     trustProxy: parseTrustProxy(env.TEND_TRUST_PROXY, platform),
     // Follows the site's address, never request headers, which a client could fake.
     secureCookies: publicUrl ? publicUrl.startsWith("https:") : HTTPS_PLATFORMS.includes(platform),

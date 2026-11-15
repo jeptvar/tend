@@ -8,7 +8,7 @@ export interface ApiErrorDetails {
 
 /** A failure the admin can show as it is. Every error has the same shape (PLAN.md §9). */
 export class ApiError extends Error {
-  readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 429 | 500;
+  readonly status: 400 | 401 | 403 | 404 | 408 | 409 | 411 | 413 | 415 | 429 | 500 | 503;
   readonly code: string;
   readonly details: ApiErrorDetails;
 

@@ -1,9 +1,15 @@
-import { type Context, Hono } from "hono";
+import type { Context } from "hono";
 import { z } from "zod";
-import { currentUser } from "../../auth/current-user.ts";
 import { type Action, can, seesOnlyOwnEntries } from "../../auth/policy.ts";
 import { entryPath } from "../../content/address.ts";
-import { DocProblem, docField, parseDoc } from "../../content/doc.ts";
+import {
+  DocProblem,
+  docField,
+  type EntryData,
+  isMediaId,
+  parseDoc,
+  parseFeaturedImage,
+} from "../../content/doc.ts";
 import {
   checkAddress,
   createEntry,
@@ -28,30 +34,18 @@ import {
   unpublishEntry,
   userName,
 } from "../../content/entries.ts";
-import type { Orm } from "../../db/client.ts";
+import { writeSetting } from "../../content/settings.ts";
+import { existingTagIds } from "../../content/tags.ts";
 import type { User } from "../../db/repo/users.ts";
+import { uuidv7 } from "../../ids.ts";
+import { menuLinksTo, menuSetting } from "../../site/menus.ts";
 import type { PreviewInput } from "../../site/router.ts";
 import { ApiError } from "../errors.ts";
-
-export interface AdminOptions {
-  orm: Orm;
-  secureCookies: boolean;
-  now?: (() => number) | undefined;
-  /** Called after anything that changes what visitors see. */
-  onSiteChanged: (changedPath?: string) => void;
-  /** How something would look on the site. Missing only in tests that don't need it. */
-  preview?: ((input: PreviewInput) => Promise<string>) | undefined;
-}
-
-export interface RoutePolicy {
-  method: string;
-  path: string;
-  action: Action;
-  /** The route loads an entry and checks the action against it. */
-  hasSubject: boolean;
-}
+import { type AdminOptions, offsetFrom, parseBody, type Routing, readJson } from "./routing.ts";
 
 const PAGE_SIZE = 100;
+/** The most links a menu takes at its top level (content/settings.ts, menuSchema). */
+const MENU_LIMIT = 30;
 const LINK_TARGET_LIMIT = 8;
 const LINK_LOOKUP_LIMIT = 200;
 const REVISION_PAGE_SIZE = 100;
@@ -69,33 +63,28 @@ const patchSchema = z.object({
     .max(300, "Use 300 characters or fewer for the summary.")
     .nullable()
     .optional(),
+  featuredImage: z.unknown().optional(),
+  seo: z
+    .object({
+      title: z
+        .string()
+        .max(200, "Use 200 characters or fewer for the search title.")
+        .nullable()
+        .optional(),
+      description: z
+        .string()
+        .max(400, "Use 400 characters or fewer for the search description.")
+        .nullable()
+        .optional(),
+      imageId: z.string().max(64).nullable().optional(),
+      noindex: z.boolean().optional(),
+    })
+    .optional(),
+  tagIds: z.array(z.string().max(64)).max(50, "Use 50 tags or fewer.").optional(),
   keepOtherVersion: z.boolean().optional(),
   editSession: z.string().max(64).optional(),
   editSeq: z.number().int().nonnegative().optional(),
 });
-
-function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
-  const result = schema.safeParse(body);
-  if (result.success) return result.data;
-  const issue = result.error.issues[0];
-  const field = issue?.path[0];
-  // A document that fails the allowlist isn't something a person typed wrong.
-  const message =
-    field === "doc"
-      ? "Tend couldn't save that content."
-      : (issue?.message ?? "Check what you typed.");
-  throw new ApiError(400, "needs_fixing", message, {
-    ...(typeof field === "string" ? { field } : {}),
-  });
-}
-
-async function readJson(c: Context): Promise<unknown> {
-  try {
-    return await c.req.json();
-  } catch {
-    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request. Try again.");
-  }
-}
 
 const actionSchema = z.object({
   /** Which editor window this came from. It may not have heard about its own last change. */
@@ -104,6 +93,8 @@ const actionSchema = z.object({
   /** Taking back a discard, which brings back a changed address as well. */
   includeAddress: z.boolean().optional(),
   revisionId: z.string().max(64).optional(),
+  /** "Show in site menu", ticked when publishing. */
+  addToMenu: z.boolean().optional(),
 });
 
 /** What an action might say about itself. Nothing here is required. */
@@ -141,9 +132,23 @@ function summaryJson(entry: Entry) {
   };
 }
 
-function offsetFrom(c: Context): number {
-  const parsed = Number.parseInt(c.req.query("cursor") ?? "0", 10);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
+/** Blank means "fill in automatically", so it's stored as null. */
+function cleanSeo(seo: {
+  title?: string | null | undefined;
+  description?: string | null | undefined;
+  imageId?: string | null | undefined;
+  noindex?: boolean | undefined;
+}): Partial<EntryData["seo"]> {
+  const blankIsNull = (value: string | null | undefined) =>
+    value === undefined ? undefined : value === null || value.trim() === "" ? null : value.trim();
+  const cleaned: Partial<EntryData["seo"]> = {};
+  const title = blankIsNull(seo.title);
+  const description = blankIsNull(seo.description);
+  if (title !== undefined) cleaned.title = title;
+  if (description !== undefined) cleaned.description = description;
+  if (seo.imageId !== undefined) cleaned.imageId = isMediaId(seo.imageId) ? seo.imageId : null;
+  if (seo.noindex !== undefined) cleaned.noindex = seo.noindex;
+  return cleaned;
 }
 
 function checkedDoc(value: unknown, type: string) {
@@ -158,12 +163,39 @@ function checkedDoc(value: unknown, type: string) {
   }
 }
 
-/** Everything under /api/admin. Each route has to state the action that guards it. */
-export function createAdminRoutes(options: AdminOptions): { app: Hono; policies: RoutePolicy[] } {
+/** The routes for posts, pages and their history. */
+export function registerEntryRoutes(routing: Routing, options: AdminOptions): void {
   const { orm } = options;
-  const now = options.now ?? Date.now;
-  const app = new Hono();
-  const policies: RoutePolicy[] = [];
+  const { now, refuse, route } = routing;
+
+  /** Whether the site menu links to this, for "Show in site menu" when publishing. */
+  async function menuJson(entry: Entry) {
+    const { menu, automatic } = await menuSetting(orm, "main");
+    return {
+      // An automatic menu has every published page already.
+      automatic,
+      inMenu: automatic ? entry.type === "page" && entry.isHome === 0 : menuLinksTo(menu, entry.id),
+      size: menu.items.length,
+    };
+  }
+
+  /** Adds a link at the end of the main menu, unless one's already there. */
+  async function addToMainMenu(entry: Entry, userId: string) {
+    const { menu, automatic } = await menuSetting(orm, "main");
+    // A full menu stays as it is: the Site menu screen is where room can be made.
+    if (automatic || menuLinksTo(menu, entry.id) || menu.items.length >= MENU_LIMIT) return;
+    await writeSetting(orm, {
+      key: "menu:main",
+      value: {
+        items: [
+          ...menu.items,
+          { id: uuidv7(now()), label: null, target: { type: "entry", id: entry.id }, children: [] },
+        ],
+      },
+      userId,
+      now: now(),
+    });
+  }
 
   /** Everything the editor needs to know, including problems it can warn about early. */
   async function entryJson(entry: Entry) {
@@ -171,6 +203,7 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
     return {
       ...summaryJson(entry),
       data: entry.data,
+      menu: await menuJson(entry),
       updatedBy: entry.updatedBy
         ? { id: entry.updatedBy, name: await userName(orm, entry.updatedBy) }
         : null,
@@ -182,35 +215,9 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
     };
   }
 
-  async function requireUser(c: Context): Promise<User> {
-    const user = await currentUser(c, orm, options.secureCookies, now());
-    if (!user) {
-      throw new ApiError(401, "not_signed_in", "You're not signed in.", {
-        fix: "Sign in again to carry on.",
-      });
-    }
-    return user;
-  }
-
-  function refuse(): ApiError {
-    return new ApiError(403, "not_allowed", "Your account can't do that.", {
-      fix: "Ask whoever runs this site.",
-    });
-  }
-
-  /** A route with no particular entry involved. */
-  function route(
-    method: "get" | "post",
-    path: string,
-    action: Action,
-    handler: (c: Context, user: User) => Promise<Response>,
-  ): void {
-    policies.push({ method: method.toUpperCase(), path, action, hasSubject: false });
-    app[method](path, async (c) => {
-      const user = await requireUser(c);
-      if (!can(user, action)) throw refuse();
-      return handler(c, user);
-    });
+  /** Whose it is, and whether it's a page, which a Writer can't touch even when it's theirs. */
+  function subjectOf(entry: Entry) {
+    return { authorId: entry.authorId, type: entry.type };
   }
 
   /** A route about one entry, checked against that entry. */
@@ -220,18 +227,19 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
     action: Action,
     handler: (c: Context, user: User, entry: Entry) => Promise<Response>,
   ): void {
-    policies.push({ method: method.toUpperCase(), path, action, hasSubject: true });
-    app[method](path, async (c) => {
-      const user = await requireUser(c);
-      const entry = await getEntry(orm, c.req.param("id") as string);
-      if (!entry) {
-        throw new ApiError(404, "not_found", "That's no longer here.", {
-          fix: "Go back to the list.",
-        });
-      }
-      if (!can(user, action, entry)) throw refuse();
-      return handler(c, user, entry);
-    });
+    routing.subjectRoute(
+      method,
+      path,
+      action,
+      {
+        kind: "entry",
+        load: (c) => getEntry(orm, c.req.param("id") as string),
+        missing: () =>
+          new ApiError(404, "not_found", "That's no longer here.", { fix: "Go back to the list." }),
+        owner: subjectOf,
+      },
+      handler,
+    );
   }
 
   /** A route about one saved version, checked against the entry it belongs to. */
@@ -241,19 +249,25 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
     action: Action,
     handler: (c: Context, user: User, entry: Entry, revision: Revision) => Promise<Response>,
   ): void {
-    policies.push({ method: method.toUpperCase(), path, action, hasSubject: true });
-    app[method](path, async (c) => {
-      const user = await requireUser(c);
-      const revision = await getRevision(orm, c.req.param("rid") as string);
-      const entry = revision && (await getEntry(orm, revision.entryId));
-      if (!revision || !entry) {
-        throw new ApiError(404, "not_found", "That version is no longer here.", {
-          fix: "Go back to History.",
-        });
-      }
-      if (!can(user, action, entry)) throw refuse();
-      return handler(c, user, entry, revision);
-    });
+    routing.subjectRoute(
+      method,
+      path,
+      action,
+      {
+        kind: "revision",
+        load: async (c) => {
+          const revision = await getRevision(orm, c.req.param("rid") as string);
+          const entry = revision && (await getEntry(orm, revision.entryId));
+          return revision && entry ? { revision, entry } : undefined;
+        },
+        missing: () =>
+          new ApiError(404, "not_found", "That version is no longer here.", {
+            fix: "Go back to History.",
+          }),
+        owner: ({ entry }) => subjectOf(entry),
+      },
+      (c, user, { entry, revision }) => handler(c, user, entry, revision),
+    );
   }
 
   function requirePreview() {
@@ -292,6 +306,12 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
 
   route("post", "/entries", "entry:create", async (c, user) => {
     const { type } = parseBody(createSchema, await readJson(c));
+    // A Writer's account is for posts: pages are how the site is laid out (PLAN.md §6).
+    if (!can(user, "entry:create", { authorId: user.id, type })) {
+      throw new ApiError(403, "not_allowed", "Your account can write posts, but not pages.", {
+        fix: "Ask whoever runs this site to add the page.",
+      });
+    }
     const entry = await createEntry(orm, { type, authorId: user.id, now: now() });
     return c.json(await entryJson(entry), 201);
   });
@@ -301,11 +321,24 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
   );
 
   entryRoute("patch", "/entries/:id", "entry:update", async (c, user, entry) => {
-    const { doc, ...fields } = parseBody(patchSchema, await readJson(c));
+    const { doc, featuredImage, seo, tagIds, ...fields } = parseBody(
+      patchSchema,
+      await readJson(c),
+    );
     const result = await saveEntry(orm, {
       id: entry.id,
       expectedRev: expectedRev(c),
-      patch: { ...fields, doc: doc === undefined ? undefined : checkedDoc(doc, entry.type) },
+      patch: {
+        ...fields,
+        doc: doc === undefined ? undefined : checkedDoc(doc, entry.type),
+        featuredImage: featuredImage === undefined ? undefined : parseFeaturedImage(featuredImage),
+        seo: seo === undefined ? undefined : cleanSeo(seo),
+        // Only posts have tags. A tag's page lists posts, so one on a page would lead nowhere.
+        tagIds:
+          tagIds === undefined || entry.type !== "post"
+            ? undefined
+            : await existingTagIds(orm, tagIds),
+      },
       authorId: user.id,
       now: now(),
     });
@@ -322,7 +355,7 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
   });
 
   entryRoute("post", "/entries/:id/publish", "entry:publish", async (c, user, entry) => {
-    const { editSession, editSeq } = await actionBody(c);
+    const { editSession, editSeq, addToMenu } = await actionBody(c);
     const published = await publishEntry(orm, {
       id: entry.id,
       expectedRev: expectedRev(c),
@@ -331,6 +364,7 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
       authorId: user.id,
       now: now(),
     });
+    if (addToMenu && can(user, "menu:manage")) await addToMainMenu(published, user.id);
     options.onSiteChanged(summaryJson(published).url ?? undefined);
     return c.json(await entryJson(published));
   });
@@ -395,7 +429,7 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
   });
 
   entryRoute("post", "/entries/:id/duplicate", "entry:read", async (c, user, entry) => {
-    if (!can(user, "entry:create")) throw refuse();
+    if (!can(user, "entry:create", { authorId: user.id, type: entry.type })) throw refuse();
     return c.json(
       await entryJson(await duplicateEntry(orm, { id: entry.id, authorId: user.id, now: now() })),
       201,
@@ -471,6 +505,4 @@ export function createAdminRoutes(options: AdminOptions): { app: Hono; policies:
       }),
     });
   });
-
-  return { app, policies };
 }

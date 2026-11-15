@@ -1,11 +1,13 @@
 <!doctype html>
-<html lang="{{ site.locale }}">
+<html lang="{{ site.locale }}" data-fonts="{{ design.fonts }}" data-header="{{ design.header }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{{ site.name }}{% endblock %}</title>
-  {% block description %}{% if site.tagline != blank %}<meta name="description" content="{{ site.tagline }}">{% endif %}{% endblock %}
   <link rel="stylesheet" href="{{ 'theme.css' | asset_url }}">
+  {%- if design.accent_dark %}
+  <style>:root { --tend-accent: {{ design.accent }}; } @media (prefers-color-scheme: dark) { :root { --tend-accent: {{ design.accent_dark }}; } }</style>
+  {%- endif %}
+  {{ tend.head | raw }}
 </head>
 <body>
   <a class="t-skip" href="#content">Skip to content</a>
@@ -13,6 +15,7 @@
   <main id="content" class="t-main">
     {% block content %}{% endblock %}
   </main>
-  {% render "footer", site: site %}
+  {% render "footer", site: site, menus: menus %}
+  {{ tend.body_end | raw }}
 </body>
 </html>

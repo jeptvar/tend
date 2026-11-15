@@ -395,7 +395,7 @@ test.describe("tabs and the notice", () => {
     const post = await createEntry(page, signedIn, { title: "Saved title", body: "On server" });
     await openPost(page, signedIn, post.id);
     await failSaves(page);
-    await page.getByLabel("Title").fill("Kept title");
+    await page.getByLabel("Title", { exact: true }).fill("Kept title");
     await retype(page, "Kept copy words");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 6000 });
     await page.close();
@@ -405,7 +405,7 @@ test.describe("tabs and the notice", () => {
     await expect(body(again)).toHaveText("On server");
     await toast(again).getByRole("button", { name: "Undo" }).click();
     await expect(body(again)).toHaveText("Kept copy words");
-    await expect(again.getByLabel("Title")).toHaveValue("Kept title");
+    await expect(again.getByLabel("Title", { exact: true })).toHaveValue("Kept title");
     await expect(again.getByRole("button", { name: "Keep these changes" })).toBeVisible();
     // Back to waiting for a decision, so it isn't saved behind the person's back, not even
     // on leaving. It stays on this device, and the notice says so.
@@ -501,10 +501,12 @@ test.describe("reviewing and restoring", () => {
       .first()
       .click();
     await history.getByRole("button", { name: "Restore this version" }).click();
-    await expect(toast(page)).toContainText("Publish changes to put it on your site.");
+    // Wherever it shows: toasts move into a dialog while one is open.
+    const nudge = page.getByText("Publish changes to put it on your site.");
+    await expect(nudge).toBeVisible();
     await page.getByRole("button", { name: "Publish changes" }).click();
     await expect(saveStatus(page)).toContainText("On your site");
-    await expect(toast(page)).not.toContainText("Publish changes to put it on your site.");
+    await expect(nudge).toBeHidden();
   });
 
   test("History reaches versions past the first hundred, and Restore is close by keyboard", async ({

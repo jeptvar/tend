@@ -62,8 +62,8 @@ test.describe("writing", () => {
     await page.goto(`${signedIn.base}/admin/`);
     await page.getByRole("button", { name: "Write a post" }).click();
 
-    await expect(page.getByLabel("Title")).toBeFocused();
-    await page.getByLabel("Title").fill("Sourdough is back");
+    await expect(page.getByLabel("Title", { exact: true })).toBeFocused();
+    await page.getByLabel("Title", { exact: true }).fill("Sourdough is back");
     await page.keyboard.press("Enter");
     await expect(body(page)).toBeFocused();
     await page.keyboard.type("We bake on Saturday.");
@@ -100,7 +100,7 @@ test.describe("writing", () => {
     await page.getByRole("button", { name: "Publish post" }).click();
     await page.getByRole("button", { name: "Publish post now" }).click();
     await page.getByRole("button", { name: "Write another" }).click();
-    await expect(page.getByLabel("Title")).toHaveValue("");
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue("");
     await expect(page).not.toHaveURL(new RegExp(post.id));
   });
 
@@ -178,7 +178,7 @@ test.describe("writing", () => {
     await page.getByRole("button", { name: "Publish post" }).click();
     await expect(page.getByText("This needs a title")).toBeVisible();
     await page.getByRole("button", { name: "Fix this" }).click();
-    await expect(page.getByLabel("Title")).toBeFocused();
+    await expect(page.getByLabel("Title", { exact: true })).toBeFocused();
   });
 
   test("an address of Tend's own doesn't stop the words being saved", async ({
@@ -525,7 +525,7 @@ test.describe("formatting", () => {
     await expect(body(page).locator("a")).toHaveCount(0);
     await expect(body(page).locator("img")).toHaveCount(0);
     expect(await page.evaluate(() => "pwned" in window)).toBe(false);
-    await expect(page.getByText("Pictures can't be added yet")).toBeVisible();
+    await expect(page.getByText("Pictures from another website were left out")).toBeVisible();
     await expect(saveStatus(page)).toHaveText("Saved", { timeout: 5000 });
   });
 
@@ -580,11 +580,11 @@ test.describe("saving as you type", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "", body: "" });
     await openPost(page, signedIn, post.id);
-    await page.getByLabel("Title").click();
+    await page.getByLabel("Title", { exact: true }).click();
     await page.keyboard.type("Fresh ");
     await expect(saveStatus(page)).toHaveText("Saved", { timeout: 5000 });
     await page.keyboard.type("bread");
-    await expect(page.getByLabel("Title")).toHaveValue("Fresh bread");
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Fresh bread");
   });
 
   test("Ctrl+S saves straight away", async ({ page, signedIn }) => {
@@ -1034,7 +1034,7 @@ test.describe("two people editing", () => {
   }) => {
     await conflictOnScreen(page, signedIn);
     await page.getByRole("button", { name: "Use the newest version" }).click();
-    await expect(page.getByLabel("Title")).toHaveValue("Their title");
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Their title");
     await expect(body(page)).toHaveText("Original text");
     await expect(saveStatus(page)).toHaveText("Saved");
     await expect(page.getByText("hadn't reached the server")).toHaveCount(0);
@@ -1259,7 +1259,7 @@ test.describe("recovering from a mistake", () => {
     await openPost(page, signedIn, post.id);
     await openSettings(page);
     await page.getByRole("button", { name: "Duplicate" }).click();
-    await expect(page.getByLabel("Title")).toHaveValue("Copy of Original");
+    await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Copy of Original");
     await expect(page).not.toHaveURL(new RegExp(post.id));
     await expect(body(page)).toHaveText("Same words");
     await expect(saveStatus(page)).toHaveText("Saved");
@@ -1426,7 +1426,7 @@ test.describe("lists", () => {
   }) => {
     await page.goto(`${signedIn.base}/admin/posts`);
     await page.getByRole("button", { name: "New post" }).click();
-    await expect(page.getByLabel("Title")).toBeFocused();
+    await expect(page.getByLabel("Title", { exact: true })).toBeFocused();
     await page.getByRole("link", { name: "Back to posts" }).click();
     await expect(page.getByText("No posts yet")).toBeVisible();
   });

@@ -159,3 +159,59 @@ export async function signIn(page: Page, site: Site, path = "/admin/login"): Pro
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("link", { name: "Overview" })).toBeVisible();
 }
+
+/** A JPEG made in the browser, so tests need no picture files of their own. */
+export async function photo(
+  page: Page,
+  width = 1200,
+  height = 800,
+  color = "#c96a3a",
+): Promise<Buffer> {
+  if (page.url() === "about:blank") await page.goto("data:text/html,<title>x</title>");
+  const base64 = await page.evaluate(
+    async ({ width, height, color }) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+      context.fillStyle = color;
+      context.fillRect(0, 0, width, height);
+      context.fillStyle = "#ffffff";
+      context.fillRect(width / 4, height / 4, width / 2, height / 2);
+      const blob = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((made) => resolve(made as Blob), "image/jpeg", 0.9),
+      );
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary);
+    },
+    { width, height, color },
+  );
+  return Buffer.from(base64, "base64");
+}
+
+export interface Uploaded {
+  id: string;
+  url: string;
+  thumbUrl: string;
+  alt: string | null;
+}
+
+/** Uploads straight to Tend, the way the admin sends files. */
+export async function upload(
+  page: Page,
+  site: Site,
+  data: Buffer,
+  name: string,
+): Promise<Uploaded> {
+  const reply = await page.request.post(`${site.base}/api/admin/media`, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-File-Name": encodeURIComponent(name),
+    },
+    data,
+  });
+  expect(reply.status()).toBe(201);
+  return reply.json();
+}

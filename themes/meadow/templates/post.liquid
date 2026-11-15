@@ -1,10 +1,13 @@
 {% layout "layout" %}
-{% block title %}{{ post.title }} · {{ site.name }}{% endblock %}
-{% block description %}{% if post.summary != blank %}<meta name="description" content="{{ post.summary }}">{% endif %}{% endblock %}
 {% block content %}
 <article class="t-wrap t-article">
   <h1>{{ post.title }}</h1>
   <p class="t-meta"><time datetime="{{ post.published_at | iso_date }}">{{ post.published_at | date: "long" }}</time></p>
   <div class="t-body">{{ post.html | raw }}</div>
+  {% if post.tags.size > 0 %}
+  <ul class="t-tags" aria-label="Tags">
+    {% for tag in post.tags %}<li><a href="{{ tag.url }}">{{ tag.name }}</a></li>{% endfor %}
+  </ul>
+  {% endif %}
 </article>
 {% endblock %}

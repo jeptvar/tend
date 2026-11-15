@@ -1,8 +1,16 @@
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import { defaultThemeDir } from "../src/paths.ts";
 import { PageCache } from "../src/site/cache.ts";
 import { type MadeApp, makeApp, setUp } from "./auth-helpers.ts";
+import { tempDir } from "./helpers.ts";
 
 const ENTRIES = "/api/admin/entries";
+
+function withoutStructuredData(html: string): string {
+  return html.replace(/<script type="application\/ld\+json">[^<]*<\/script>/g, "");
+}
 
 function doc(text: string) {
   return { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] };
@@ -88,7 +96,8 @@ describe("public pages", () => {
     await setUp(made);
     for (const path of ["/", "/contact", "/does-not-exist"]) {
       const html = await (await made.app.request(path)).text();
-      expect(html, path).not.toContain("<script");
+      // Structured data for search engines is a script element, but nothing ever runs it.
+      expect(withoutStructuredData(html), path).not.toContain("<script");
       expect(html, path).toContain('href="#content"');
       expect(html, path).toContain('lang="en-PH"');
       expect(html, path).toContain('name="viewport"');
@@ -187,7 +196,7 @@ describe("public pages", () => {
       expect(reply.status).toBe(404);
       const html = await reply.text();
       expect(html).toContain("Page not found");
-      expect(html).not.toContain("<script");
+      expect(withoutStructuredData(html)).not.toContain("<script");
     },
   );
 
@@ -315,11 +324,31 @@ describe("public pages", () => {
 });
 
 describe("the page cache", () => {
+  test("a changed theme file shows straight away, without a restart", async () => {
+    const themeDir = join(tempDir(), "meadow");
+    cpSync(defaultThemeDir, themeDir, { recursive: true });
+    const made = await makeApp({ themeDir, pageCacheBytes: 1_000_000, watchTheme: true });
+    await setUp(made);
+    expect(await (await made.app.request("/")).text()).not.toContain("Baked with care");
+    expect((await made.app.request("/")).headers.get("server-timing")).toContain("hit");
+
+    const footer = join(themeDir, "partials", "footer.liquid");
+    writeFileSync(
+      footer,
+      readFileSync(footer, "utf8").replace("<footer", "<p>Baked with care</p><footer"),
+    );
+    await vi.waitFor(
+      async () => expect(await (await made.app.request("/")).text()).toContain("Baked with care"),
+      { timeout: 3000, interval: 50 },
+    );
+  });
+
   async function cachedSite(): Promise<{
     made: MadeApp;
     owner: Awaited<ReturnType<typeof setUp>>;
   }> {
-    const made = await makeApp({ pageCacheBytes: 1024 * 1024 });
+    // With a known address, as a hosted site has, so pages are made ahead in the background.
+    const made = await makeApp({ pageCacheBytes: 1024 * 1024, siteUrl: "http://localhost" });
     const owner = await setUp(made);
     return { made, owner };
   }

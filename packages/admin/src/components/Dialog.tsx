@@ -1,8 +1,10 @@
 import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { DialogToasts } from "./Toast.tsx";
 
 /**
  * A native modal dialog: it keeps keyboard focus inside, closes on Escape, and puts focus
- * back where it was. `labelledBy` is the id of its heading.
+ * back where it was. `labelledBy` is the id of its heading. Toasts that arrive while it's
+ * open show inside it, where they can be read and used.
  */
 export function Dialog({
   labelledBy,
@@ -30,7 +32,12 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={labelledBy}
-      onClose={onClose}
+      // The close event arrives a moment after close() is called. In development React
+      // mounts everything twice, so by then the dialog has been opened again, and that
+      // late event mustn't shut it.
+      onClose={() => {
+        if (!ref.current?.open) onClose();
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -40,6 +47,7 @@ export function Dialog({
       }`}
     >
       {children}
+      <DialogToasts />
     </dialog>
   );
 }

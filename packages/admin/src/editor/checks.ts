@@ -35,14 +35,31 @@ export function linkedIds(doc: Doc): string[] {
   return [...ids];
 }
 
+/** What the checks need to know about the pictures a document shows. */
+export interface PictureFacts {
+  id: string;
+  described: boolean;
+  gone: boolean;
+}
+
 export function findChecks(
   doc: Doc,
   targets: readonly LinkTarget[],
   move: { from: string; to: string } | null,
+  pictures: readonly PictureFacts[] = [],
 ): Check[] {
   const checks: Check[] = [];
-  if (docToText(doc).trim() === "") checks.push({ id: "check.empty" });
+  const hasPictures = pictures.length > 0;
+  if (docToText(doc).trim() === "" && !hasPictures) checks.push({ id: "check.empty" });
   if (move) checks.push({ id: "check.moved", values: move });
+
+  // Each picture counts once, wherever it appears, since its description is shared.
+  const undescribed = pictures.filter((picture) => !picture.gone && !picture.described).length;
+  if (undescribed > 0) {
+    checks.push({ id: "check.noDescription", values: { count: String(undescribed) } });
+  }
+  const gone = pictures.filter((picture) => picture.gone).length;
+  if (gone > 0) checks.push({ id: "check.pictureGone", values: { count: String(gone) } });
 
   const known = new Map(targets.map((target) => [target.id, target]));
   for (const id of linkedIds(doc)) {

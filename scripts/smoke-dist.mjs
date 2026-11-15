@@ -99,7 +99,10 @@ try {
   const home = await fetch(`${base}/`);
   const homeHtml = await home.text();
   check(home.status === 200 && homeHtml.includes("Smoke Test"), "the public site renders");
-  check(!homeHtml.includes("<script"), "public pages have no JavaScript");
+  // Structured data for search engines is a script element too, but nothing ever runs it.
+  const withoutData = homeHtml.replace(/<script type="application\/ld\+json">[^<]*<\/script>/g, "");
+  check(!withoutData.includes("<script"), "public pages have no JavaScript");
+  check(homeHtml.includes('<link rel="canonical"'), "public pages say where they live");
   const css = homeHtml.match(/\/assets\/[^"]+\.css/)?.[0];
   check((await fetch(`${base}${css}`)).status === 200, "the theme's stylesheet is served");
   check(

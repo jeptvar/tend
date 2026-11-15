@@ -33,6 +33,7 @@ export interface MadeApp {
   secretKey: Buffer;
   clock: { time: number };
   code: string;
+  uploadsDir: string;
 }
 
 /** A real app on a real, migrated database, with a clock the test controls. */
@@ -59,12 +60,21 @@ export async function makeApp(overrides: Partial<AppOptions> = {}): Promise<Made
     secureCookies: false,
     trustProxy: 0,
     themeDir: defaultThemeDir,
+    uploadsDir: join(root, "uploads"),
     pageCacheBytes: 0,
     isPublic: false,
     now: () => clock.time,
     ...overrides,
   });
-  return { app, db, orm, secretKey, clock, code: displaySetupCode(secretKey) };
+  return {
+    app,
+    db,
+    orm,
+    secretKey,
+    clock,
+    code: displaySetupCode(secretKey),
+    uploadsDir: join(root, "uploads"),
+  };
 }
 
 export interface Reply {
@@ -119,8 +129,29 @@ export function browser(app: ReturnType<typeof createApp>) {
       request("POST", path, body, headers),
     patch: (path: string, body?: unknown, headers?: Record<string, string>) =>
       request("PATCH", path, body, headers),
+    put: (path: string, body?: unknown, headers?: Record<string, string>) =>
+      request("PUT", path, body, headers),
     delete: (path: string, headers?: Record<string, string>) =>
       request("DELETE", path, undefined, headers),
+    /** Sends a file the way the admin does: the bytes themselves, with the name beside them. */
+    upload: async (path: string, data: Buffer, name: string): Promise<Reply> => {
+      const cookie = [...jar].map(([key, value]) => `${key}=${value}`).join("; ");
+      const response = await app.request(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-File-Name": encodeURIComponent(name),
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        body: new Uint8Array(data),
+      });
+      return {
+        status: response.status,
+        headers: response.headers,
+        cookies: response.headers.getSetCookie(),
+        json: () => response.json(),
+      };
+    },
   };
 }
 

@@ -6,6 +6,7 @@ import {
   index,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -164,4 +165,94 @@ export const refs = sqliteTable(
     check("refs_kind_check", sql`${t.kind} IN ('media', 'entry')`),
     index("refs_by_target").on(t.kind, t.refId),
   ],
+);
+
+/**
+ * Photos and files (PLAN.md §8). The re-encoded original is kept in the uploads folder, and
+ * the sizes visitors get are made from it once, when it's uploaded.
+ */
+export const media = sqliteTable(
+  "media",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind", { enum: ["image", "file"] }).notNull(),
+    originalName: text("original_name").notNull(),
+    mime: text("mime").notNull(),
+    ext: text("ext").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    sha256: text("sha256").notNull(),
+    /** The widths made for visitors, smallest first. Empty for files. */
+    variants: text("variants", { mode: "json" }).notNull(),
+    alt: text("alt"),
+    decorative: integer("decorative").notNull().default(0),
+    caption: text("caption"),
+    credit: text("credit"),
+    focalX: real("focal_x").notNull().default(0.5),
+    focalY: real("focal_y").notNull().default(0.5),
+    dominantColor: text("dominant_color"),
+    uploadedBy: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    trashedAt: integer("trashed_at"),
+  },
+  (t) => [
+    check("media_kind_check", sql`${t.kind} IN ('image', 'file')`),
+    index("media_newest").on(t.createdAt),
+    index("media_trashed").on(t.trashedAt),
+  ],
+);
+
+/** Earlier values of each setting, for Undo. The last 20 per key are kept. */
+export const settingsHistory = sqliteTable(
+  "settings_history",
+  {
+    id: text("id").primaryKey(),
+    key: text("key").notNull(),
+    /** Null: it had never been set, so undoing goes back to the default. */
+    value: text("value", { mode: "json" }),
+    createdAt: integer("created_at").notNull(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [index("settings_history_by_key").on(t.key, t.createdAt)],
+);
+
+/** Old addresses that lead to new ones (PLAN.md §9). */
+export const redirects = sqliteTable(
+  "redirects",
+  {
+    fromPath: text("from_path").primaryKey(),
+    toPath: text("to_path").notNull(),
+    status: integer("status").notNull().default(301),
+    source: text("source", { enum: ["auto", "manual", "import"] }).notNull(),
+    createdAt: integer("created_at").notNull(),
+    hits: integer("hits").notNull().default(0),
+  },
+  (t) => [
+    check("redirects_source_check", sql`${t.source} IN ('auto', 'manual', 'import')`),
+    index("redirects_to").on(t.toPath),
+  ],
+);
+
+export const tags = sqliteTable("tags", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  description: text("description"),
+  createdAt: integer("created_at").notNull(),
+});
+
+/** The tags on what's live, rewritten at each publish. The working copy keeps its own. */
+export const entryTags = sqliteTable(
+  "entry_tags",
+  {
+    entryId: text("entry_id")
+      .notNull()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    tagId: text("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.entryId, t.tagId] }), index("entry_tags_by_tag").on(t.tagId)],
 );

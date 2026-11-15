@@ -13,6 +13,9 @@ const SECTION_KINDS = new Set(["intro", "pictureText", "contact"]);
 const SECTION_TONES = new Set(["none", "muted", "accent"]);
 const SECTION_ALIGNS = new Set(["left", "center"]);
 const SIMPLE_MARKS = new Set(["bold", "italic", "underline", "strike", "code"]);
+const IMAGE_SIZES = new Set(["normal", "wide", "full"]);
+const MEDIA_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const IMAGE_TEXT_LIMIT = 1000;
 
 export type Mark =
   | { type: "bold" | "italic" | "underline" | "strike" | "code" }
@@ -31,7 +34,22 @@ export type BlockNode =
   | { type: "codeBlock"; content?: { type: "text"; text: string }[] }
   | { type: "horizontalRule" }
   | { type: "button"; attrs: { href: string; label: string } }
+  | { type: "image"; attrs: ImageAttrs }
   | { type: "section"; attrs: SectionAttrs; content: BlockNode[] };
+
+export interface ImageAttrs {
+  mediaId: string;
+  /** Null uses the description from Media, so changing it there changes it everywhere. */
+  alt: string | null;
+  decorative: boolean;
+  caption: string | null;
+  size: "normal" | "wide" | "full";
+}
+
+export interface FeaturedImage {
+  mediaId: string;
+  alt: string | null;
+}
 
 export interface ListItem {
   type: "listItem";
@@ -54,7 +72,7 @@ export interface EntryData {
   doc: Doc;
   /** Null means "fill in automatically". The same goes for the seo fields. */
   summary: string | null;
-  featuredImage: null;
+  featuredImage: FeaturedImage | null;
   seo: {
     title: string | null;
     description: string | null;
@@ -121,6 +139,16 @@ export function isAllowedHref(href: string): boolean {
 
 export class DocProblem extends Error {}
 
+export function isMediaId(value: unknown): value is string {
+  return typeof value === "string" && MEDIA_ID.test(value);
+}
+
+function optionalText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed.slice(0, IMAGE_TEXT_LIMIT);
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -181,7 +209,7 @@ class Validator {
 
   blocks(value: unknown, depth: number): BlockNode[] {
     if (!Array.isArray(value)) throw new DocProblem("content must be a list");
-    return value.map((node) => this.block(node, depth));
+    return value.flatMap((node) => this.block(node, depth) ?? []);
   }
 
   items(value: unknown, depth: number): ListItem[] {
@@ -193,7 +221,8 @@ class Validator {
     });
   }
 
-  block(node: unknown, depth: number): BlockNode {
+  /** A node, cleaned up, or nothing for one that can be left out without losing words. */
+  block(node: unknown, depth: number): BlockNode | undefined {
     this.#count(depth);
     if (!isObject(node)) throw new DocProblem("bad node");
     const attrs = isObject(node.attrs) ? node.attrs : {};
@@ -243,6 +272,22 @@ class Validator {
         const safe = isAllowedHref(href.trim()) ? href.trim() : "";
         return { type: "button", attrs: { href: safe, label } };
       }
+      case "image": {
+        // A picture still uploading has nothing to show yet. It's saved once it arrives.
+        if (!isMediaId(attrs.mediaId)) return undefined;
+        return {
+          type: "image",
+          attrs: {
+            mediaId: attrs.mediaId,
+            alt: optionalText(attrs.alt),
+            decorative: attrs.decorative === true,
+            caption: optionalText(attrs.caption),
+            size: IMAGE_SIZES.has(attrs.size as string)
+              ? (attrs.size as ImageAttrs["size"])
+              : "normal",
+          },
+        };
+      }
       case "section": {
         if (!this.allowSections) throw new DocProblem("sections are for pages");
         if (depth !== 0) throw new DocProblem("sections can't go inside anything");
@@ -277,23 +322,108 @@ export function parseDoc(value: unknown, options: { allowSections: boolean }): D
 /** Accepts anything that's shaped like a document here. parseDoc does the real checking. */
 export const docField = z.custom<unknown>((value) => isObject(value));
 
+/** A featured image as sent by the editor, or null for none. */
+export function parseFeaturedImage(value: unknown): FeaturedImage | null {
+  if (!isObject(value) || !isMediaId(value.mediaId)) return null;
+  return { mediaId: value.mediaId, alt: optionalText(value.alt) };
+}
+
+/** Every picture a version shows: in its text, as its featured image or for sharing. */
+export function shownMediaIds(data: Pick<EntryData, "doc" | "featuredImage" | "seo">): string[] {
+  const found = new Set<string>();
+  const visit = (nodes: readonly (BlockNode | ListItem)[]) => {
+    for (const node of nodes) {
+      if (node.type === "image") found.add(node.attrs.mediaId);
+      if ("content" in node && node.content) visit(node.content as (BlockNode | ListItem)[]);
+    }
+  };
+  visit(data.doc.content);
+  if (data.featuredImage) found.add(data.featuredImage.mediaId);
+  if (data.seo?.imageId) found.add(data.seo.imageId);
+  return [...found];
+}
+
+/**
+ * Every picture and file a version uses: the pictures it shows, and whatever its links and
+ * buttons lead to. A PDF is only ever on a page as a link, so without those it would never
+ * count as used, and could be deleted forever from under a published page.
+ */
+export function usedMediaIds(data: Pick<EntryData, "doc" | "featuredImage" | "seo">): string[] {
+  return [...new Set([...shownMediaIds(data), ...linkedMediaIds(data.doc)])];
+}
+
+/** The first picture in the text, which stands in when no featured image is chosen. */
+export function firstImageId(doc: Doc): string | null {
+  const find = (nodes: readonly (BlockNode | ListItem)[]): string | null => {
+    for (const node of nodes) {
+      if (node.type === "image") return node.attrs.mediaId;
+      if ("content" in node && node.content) {
+        const found = find(node.content as (BlockNode | ListItem)[]);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+  return find(doc.content);
+}
+
+/** Calls back with the address of every link and button in a document. */
+function eachHref(doc: Doc, visit: (href: string) => void): void {
+  const walk = (nodes: readonly (BlockNode | InlineNode | ListItem)[]) => {
+    for (const node of nodes) {
+      if (node.type === "button") visit(node.attrs.href);
+      if ("marks" in node) {
+        for (const mark of node.marks ?? []) {
+          if (mark.type === "link") visit(mark.attrs.href);
+        }
+      }
+      if ("content" in node && node.content) walk(node.content);
+    }
+  };
+  walk(doc.content);
+}
+
 /** Every other entry this document links to. */
 export function linkedEntryIds(doc: Doc): string[] {
   const found = new Set<string>();
-  const add = (href: string) => {
+  eachHref(doc, (href) => {
     if (ENTRY_LINK.test(href)) found.add(href.slice("entry:".length));
-  };
-  const visit = (nodes: readonly (BlockNode | InlineNode | ListItem)[]) => {
-    for (const node of nodes) {
-      if (node.type === "button") add(node.attrs.href);
-      if ("marks" in node) {
-        for (const mark of node.marks ?? []) {
-          if (mark.type === "link") add(mark.attrs.href);
-        }
-      }
-      if ("content" in node && node.content) visit(node.content);
-    }
-  };
-  visit(doc.content);
+  });
+  return [...found];
+}
+
+const MEDIA_PATH = /^\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//;
+
+/**
+ * The picture or file a link leads to, when it's one in Media: its address as a page shows
+ * it, or as Copy address gives it, with the site's own origin in front. Any origin counts,
+ * because the site's own address isn't always known (on localhost, or behind a proxy), and
+ * an ID only ever belongs to one file.
+ */
+export function mediaIdInHref(href: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(href, "https://relative.invalid/");
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  let path = url.pathname;
+  try {
+    // An address with its letters written as %-codes still reaches the file.
+    path = decodeURIComponent(path);
+  } catch {
+    // Not a %-code after all: the address as written is all there is to go on.
+  }
+  return MEDIA_PATH.exec(path)?.[1] ?? null;
+}
+
+/** Every picture and file in Media that this document's links and buttons lead to. */
+export function linkedMediaIds(doc: Doc): string[] {
+  const found = new Set<string>();
+  eachHref(doc, (href) => {
+    const id = mediaIdInHref(href);
+    if (id) found.add(id);
+  });
   return [...found];
 }

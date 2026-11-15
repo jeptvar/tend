@@ -37,9 +37,11 @@ export function PublishDialog({
   type,
   checks,
   summary,
+  shareTitle,
   done,
   busy,
   problem,
+  canEditMenu,
   onPublish,
   onFix,
   onClose,
@@ -49,10 +51,14 @@ export function PublishDialog({
   type: EntryType;
   checks: Check[];
   summary: string;
+  /** The title shown when it's shared: the one for search results, if there is one. */
+  shareTitle?: string;
   done: boolean;
   busy: boolean;
   problem: string | null;
-  onPublish: () => void;
+  /** Whether this person can change the site menu. */
+  canEditMenu: boolean;
+  onPublish: (options: { addToMenu: boolean }) => void;
   onFix: (field: "title" | "slug") => void;
   onClose: () => void;
   onWriteAnother: () => void;
@@ -64,6 +70,21 @@ export function PublishDialog({
   const fullAddress = new URL(entry.url ?? entry.address.path, window.location.origin).href;
   const noTitle = entry.title.trim() === "";
   const addressProblem = entry.address.problem;
+  // Only a page that isn't linked yet, from a menu someone has set up: an automatic menu
+  // has every page already. Ticked while the menu is short (PLAN.md J4).
+  const offerMenu =
+    canEditMenu &&
+    type === "page" &&
+    // Only the first time: a page that's been on the site may have been left out on purpose.
+    entry.url === null &&
+    !entry.isHome &&
+    entry.menu !== undefined &&
+    !entry.menu.automatic &&
+    !entry.menu.inMenu &&
+    // A full menu has no room: making some is for the Site menu screen.
+    entry.menu.size < 30;
+  const [addToMenu, setAddToMenu] = useState(() => (entry.menu?.size ?? 0) < 6);
+  const menuHintId = useId();
 
   // The button that was just pressed has gone, so the good news gets the focus.
   useEffect(() => {
@@ -142,7 +163,7 @@ export function PublishDialog({
           </p>
           <div className="mt-1 rounded-lg border border-muted p-3">
             <p className="font-medium [overflow-wrap:anywhere]">
-              {entry.title || intl.formatMessage({ id: "list.untitled" })}
+              {shareTitle || entry.title || intl.formatMessage({ id: "list.untitled" })}
             </p>
             {summary && <p className="mt-1 line-clamp-3 text-sm text-muted">{summary}</p>}
             <p className="mt-1 text-sm text-muted">{window.location.host}</p>
@@ -193,6 +214,24 @@ export function PublishDialog({
           </div>
         )}
 
+        {offerMenu && (
+          <div className="grid gap-1">
+            <label className="flex min-h-11 items-center gap-3">
+              <input
+                type="checkbox"
+                checked={addToMenu}
+                aria-describedby={menuHintId}
+                onChange={(event) => setAddToMenu(event.target.checked)}
+                className="h-5 w-5 accent-brand"
+              />
+              <FormattedMessage id="publish.showInMenu" />
+            </label>
+            <p id={menuHintId} className="text-sm text-muted">
+              <FormattedMessage id="publish.showInMenuHint" />
+            </p>
+          </div>
+        )}
+
         <p role="alert" className="font-medium text-danger empty:sr-only">
           {problem}
         </p>
@@ -202,7 +241,7 @@ export function PublishDialog({
             type="button"
             aria-disabled={blocked || busy}
             onClick={() => {
-              if (!blocked && !busy) onPublish();
+              if (!blocked && !busy) onPublish({ addToMenu: offerMenu && addToMenu });
             }}
             className={`${primaryButtonClass} aria-disabled:opacity-60`}
           >
