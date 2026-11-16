@@ -63,6 +63,22 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # Known vulnerabilities in anything the lockfile installs, the published package's bundled
+  # libraries included (PLAN.md §12). An ignore needs a date and a reason, in osv-scanner.toml.
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        with:
+          scan-args: |-
+            --config=osv-scanner.toml
+            --lockfile=pnpm-lock.yaml
+
   docker:
     runs-on: ubuntu-latest
     permissions:
