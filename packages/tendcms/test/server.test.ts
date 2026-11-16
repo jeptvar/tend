@@ -363,7 +363,11 @@ describe("what Tend prints when it starts", () => {
       TEND_PUBLIC_URL: "https://cms.example.test",
     });
     try {
-      await vi.waitFor(() => expect(cli.output()).toMatch(/is (running|listening)/));
+      // Waits as long as waitForRunning does, which can't be used here because it only
+      // reads http:// links. vi.waitFor's own second is too short for a cold start on Windows.
+      await vi.waitFor(() => expect(cli.output()).toMatch(/is (running|listening)/), {
+        timeout: 15_000,
+      });
       if (detectPlatform(cleanEnv({})) === "local") {
         expect(cli.output()).toContain("https://cms.example.test/admin/setup#code=");
         expect(cli.output()).not.toContain("localhost");
