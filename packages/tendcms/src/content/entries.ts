@@ -102,6 +102,18 @@ function isOwnLatest(
 }
 
 /**
+ * A request from the window that made the newest version, sent before the one that made it
+ * and held up on the way. What it carries was replaced by that window's own newer words.
+ */
+function isOlderFromSameWindow(
+  entry: Entry,
+  from: { editSession?: string | undefined; editSeq?: number | undefined },
+): boolean {
+  if (from.editSession === undefined || entry.editSession !== from.editSession) return false;
+  return from.editSeq !== undefined && entry.editSeq !== null && from.editSeq <= entry.editSeq;
+}
+
+/**
  * Anything acting on an entry has to have seen its newest version. The exception is the
  * editor window that made that version: it knows about it, and only lost the answer.
  */
@@ -332,18 +344,22 @@ export async function saveEntry(
         ) {
           return { saved: entry };
         }
-        tx.insert(revisions)
-          .values({
-            id: uuidv7(input.now),
-            entryId: entry.id,
-            kind: "conflict",
-            title,
-            slug,
-            data: nextData,
-            authorId: input.authorId,
-            createdAt: input.now,
-          })
-          .run();
+        // Still refused, so it can't undo what came after it. But it lost to nothing except
+        // the same window's newer words, so it isn't a version anyone has to choose between.
+        if (!isOlderFromSameWindow(entry, patch)) {
+          tx.insert(revisions)
+            .values({
+              id: uuidv7(input.now),
+              entryId: entry.id,
+              kind: "conflict",
+              title,
+              slug,
+              data: nextData,
+              authorId: input.authorId,
+              createdAt: input.now,
+            })
+            .run();
+        }
         return { conflict: entry };
       }
       if (patch.keepOtherVersion) {

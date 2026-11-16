@@ -196,6 +196,9 @@ describe("saving as you type", () => {
     expect(late.status).toBe(409);
     const current = await (await owner.get(`${ENTRIES}/${entry.id}`)).json();
     expect(current.data.doc).toEqual(doc("NEWER words"));
+    // Nobody else was involved, so History has no clash to show.
+    const kinds = (await versions(owner, entry.id)).map((version) => version.kind);
+    expect(kinds).not.toContain("conflict");
   });
 
   test("the same goes for an action, like Discard, held up on the way", async () => {
