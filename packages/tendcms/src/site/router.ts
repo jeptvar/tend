@@ -263,6 +263,8 @@ export function createSite(options: SiteOptions): Site {
   // Kept in memory, because every request needs it and a cache hit should touch no database.
   // Every change to settings goes through changed(), which forgets it.
   let visibility: VisibilitySettings | undefined;
+  // Once there's an Owner, there always is, so the homepage only asks until then.
+  let setUp = false;
 
   const theme = createTheme({
     themeDir: options.themeDir,
@@ -1025,7 +1027,10 @@ export function createSite(options: SiteOptions): Site {
     }
 
     const { path } = c.req;
-    if (path === "/" && !(await ownerExists(orm))) return c.redirect("/admin/setup");
+    if (path === "/" && !setUp) {
+      setUp = await ownerExists(orm);
+      if (!setUp) return c.redirect("/admin/setup");
+    }
 
     try {
       if (path === "/") {

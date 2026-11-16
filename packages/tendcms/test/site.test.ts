@@ -366,6 +366,17 @@ describe("the page cache", () => {
     expect(reply.headers.get("server-timing")).toContain("hit");
   });
 
+  test("the stored homepage needs no database work either", async () => {
+    const { made } = await cachedSite();
+    await settle();
+    await made.app.request("/");
+    // Asking whether the site is set up is database work too, and the answer can't go back.
+    made.db.exec("PRAGMA foreign_keys = OFF; DROP TABLE sessions; DROP TABLE users;");
+    const reply = await made.app.request("/");
+    expect(reply.status).toBe(200);
+    expect(reply.headers.get("server-timing")).toContain("hit");
+  });
+
   test("a static homepage has only one page, so numbers can't fill the cache", async () => {
     const { made } = await cachedSite();
     await settle();
