@@ -995,11 +995,10 @@ describe("fixes from review", () => {
   });
 
   test("pages made in the background name the site's address, or aren't made at all", async () => {
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
     const known = await makeApp({ siteUrl: "https://rise.example", pageCacheBytes: 1_000_000 });
     const owner = await setUp(known);
     await publish(owner, "post", { title: "Fresh" });
-    await settle();
+    await known.settled();
     const refilled = await known.app.request("/");
     expect(refilled.headers.get("server-timing")).toContain("hit");
     expect(await refilled.text()).not.toContain("http://localhost");
@@ -1007,7 +1006,7 @@ describe("fixes from review", () => {
     const unknown = await makeApp({ pageCacheBytes: 1_000_000 });
     const other = await setUp(unknown);
     await publish(other, "post", { title: "Fresh" });
-    await settle();
+    await unknown.settled();
     const first = await unknown.app.request("http://rise.example/");
     expect(first.headers.get("server-timing")).toContain("miss");
     expect(await first.text()).not.toContain("http://localhost");

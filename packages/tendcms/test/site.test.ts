@@ -353,12 +353,9 @@ describe("the page cache", () => {
     return { made, owner };
   }
 
-  /** The background refill runs after a change, so wait for it to settle first. */
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
-
   test("a stored page needs no database work at all", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     await made.app.request("/contact");
     made.db.exec("PRAGMA foreign_keys = OFF; DROP TABLE revisions; DROP TABLE entries;");
     const reply = await made.app.request("/contact");
@@ -368,7 +365,7 @@ describe("the page cache", () => {
 
   test("the stored homepage needs no database work either", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     await made.app.request("/");
     // Asking whether the site is set up is database work too, and the answer can't go back.
     made.db.exec("PRAGMA foreign_keys = OFF; DROP TABLE sessions; DROP TABLE users;");
@@ -398,13 +395,13 @@ describe("the page cache", () => {
       owner.post(`${ENTRIES}/${post.id}/unpublish`, {}, { "If-Match": String(post.rev) }),
     ]);
     expect(unpublished.status).toBe(200);
-    await settle();
+    await made.settled();
     expect((await made.app.request(post.url)).status).toBe(404);
   });
 
   test("the second visitor gets the stored page", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     const first = await made.app.request("/contact");
     const second = await made.app.request("/contact");
     expect(first.headers.get("server-timing")).toContain("miss");
@@ -414,7 +411,7 @@ describe("the page cache", () => {
 
   test("publishing shows up straight away, and the homepage is ready before anyone asks", async () => {
     const { made, owner } = await cachedSite();
-    await settle();
+    await made.settled();
     await made.app.request("/contact");
     const before = await (await made.app.request("/")).text();
     expect(before).not.toContain('href="/blog"');
@@ -423,7 +420,7 @@ describe("the page cache", () => {
     expect(await (await made.app.request("/blog/fresh-news")).text()).toContain("Fresh news");
     expect(await (await made.app.request("/")).text()).toContain('href="/blog"');
 
-    await settle();
+    await made.settled();
     expect((await made.app.request("/")).headers.get("server-timing")).toContain("hit");
     expect((await made.app.request(post.url)).headers.get("server-timing")).toContain("hit");
   });
@@ -434,7 +431,7 @@ describe("the page cache", () => {
   ])("%s takes it off the site at once", async (_, action) => {
     const { made, owner } = await cachedSite();
     const post = await publishPost(owner, "Short lived");
-    await settle();
+    await made.settled();
     expect((await made.app.request(post.url)).status).toBe(200);
     await owner.post(`${ENTRIES}/${post.id}/${action}`, {}, { "If-Match": String(post.rev) });
     expect((await made.app.request(post.url)).status).toBe(404);
@@ -484,7 +481,7 @@ describe("the page cache", () => {
 
   test("every missing address shares one stored page, so typos can't fill the cache", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     const first = await made.app.request("/nope-1");
     const second = await made.app.request("/nope-2");
     expect(first.status).toBe(404);
@@ -494,7 +491,7 @@ describe("the page cache", () => {
 
   test("query strings can't make endless copies of a page", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     await made.app.request("/contact");
     const reply = await made.app.request("/contact?utm=anything");
     expect(reply.headers.get("server-timing")).toContain("hit");
@@ -516,7 +513,7 @@ describe("the page cache", () => {
     const { made, owner } = await cachedSite();
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     await publishPost(owner, "Fine");
-    await settle();
+    await made.settled();
     expect((await made.app.request("/")).status).toBe(200);
     logged.mockRestore();
   });
