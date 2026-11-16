@@ -265,11 +265,35 @@ function gone(): ApiError {
   });
 }
 
+/** Each picture or file's replace still running, so the next one waits its turn. */
+const replacing = new Map<string, Promise<unknown>>();
+
 /**
  * A new file in the same place: every page using it shows the new one at once. The
  * description stays, because a replacement is usually a better copy of the same thing.
+ *
+ * Replaces of the same one go one at a time. Two at once can each take away what the other
+ * relies on: the same picture again rewrites the version the row points at, and the other
+ * replace, finishing in between, removes that version as the one it replaced. The row then
+ * points at files that are gone.
  */
 export async function replaceMedia(
+  orm: Orm,
+  store: MediaStore,
+  input: { id: string; name: string; data: Buffer; now: number },
+): Promise<Media> {
+  const earlier = replacing.get(input.id) ?? Promise.resolve();
+  const replace = () => replaceInTurn(orm, store, input);
+  const turn = earlier.then(replace, replace);
+  replacing.set(input.id, turn);
+  try {
+    return await turn;
+  } finally {
+    if (replacing.get(input.id) === turn) replacing.delete(input.id);
+  }
+}
+
+async function replaceInTurn(
   orm: Orm,
   store: MediaStore,
   input: { id: string; name: string; data: Buffer; now: number },
