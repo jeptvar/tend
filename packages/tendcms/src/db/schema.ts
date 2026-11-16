@@ -117,6 +117,10 @@ export const entries = sqliteTable(
       .where(sql`${t.liveSlug} IS NOT NULL`),
     uniqueIndex("entries_single_home").on(t.isHome).where(sql`${t.isHome} = 1`),
     index("entries_trashed").on(t.trashedAt),
+    // Deleting a version makes SQLite look for entries that point at it, to set this to
+    // null. Without an index that's a read of every entry, working copy and all, for each
+    // version deleted: tidying old versions and emptying the Trash delete hundreds at once.
+    index("entries_published_rev").on(t.publishedRevId),
   ],
 );
 

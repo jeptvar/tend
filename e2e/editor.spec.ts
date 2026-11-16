@@ -1,5 +1,14 @@
 import type { Page, Route } from "@playwright/test";
-import { bodyText, createEntry, expect, readEntry, type Site, signIn, test } from "./fixtures.ts";
+import {
+  bodyText,
+  closeWhileDown,
+  createEntry,
+  expect,
+  readEntry,
+  type Site,
+  signIn,
+  test,
+} from "./fixtures.ts";
 
 const SAVE_PATH = "**/api/admin/entries/*";
 
@@ -653,6 +662,38 @@ test.describe("saving as you type", () => {
     await expect(saveStatus(page)).toHaveText("Saved", { timeout: 10_000 });
     await expect(page.getByText("Something went wrong on Tend's side.")).toHaveCount(0);
   });
+
+  test("after a save is refused, the next change saves by itself", async ({ page, signedIn }) => {
+    const post = await createEntry(page, signedIn, { title: "Draft", body: "" });
+    await openPost(page, signedIn, post.id);
+    let refused = 0;
+    await page.route(SAVE_PATH, (route) => {
+      if (!isSave(route) || refused > 0) return route.fallback();
+      refused += 1;
+      return route.fulfill({
+        status: 413,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "too_large",
+            message: "That's more than Tend can save in one go.",
+            fix: "Split it into two.",
+          },
+        }),
+      });
+    });
+    await retype(page, "Far too long");
+    await expect(page.getByText("more than Tend can save").first()).toBeVisible({ timeout: 5000 });
+    await expect(saveStatus(page)).toHaveText("Not saved yet");
+
+    // Cutting it down is the fix. Nobody should have to know to press Ctrl+S after that.
+    await body(page).click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(", cut down");
+    await expect(saveStatus(page)).toHaveText("Saved", { timeout: 5000 });
+    expect(bodyText(await readEntry(page, signedIn, post.id))).toBe("Far too long, cut down");
+    expect(refused).toBe(1);
+  });
 });
 
 test.describe("never losing what's typed", () => {
@@ -688,13 +729,19 @@ test.describe("never losing what's typed", () => {
   test("closing the tab straight after typing keeps it", async ({ page, signedIn, context }) => {
     const post = await createEntry(page, signedIn, { title: "Draft", body: "Saved earlier" });
     await openPost(page, signedIn, post.id);
-    await failSaves(page);
+    // Down before typing, so the tab can close straight after. Its last save can't be failed
+    // from the browser (see closeWhileDown), and getting through would hide a lost copy.
+    await signedIn.crash();
     await retype(page, "Typed then closed");
     await page.close({ runBeforeUnload: true });
+    await signedIn.restart();
 
     const again = await context.newPage();
+    // The server never got them, so what comes back is the copy kept on this device.
+    expect(bodyText(await readEntry(again, signedIn, post.id))).toBe("Saved earlier");
     await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
     await expect(body(again)).toHaveText("Typed then closed");
+    await expect(again.getByText("hadn't reached the server")).toBeVisible();
   });
 
   test("typing while a save is running isn't overwritten by its answer", async ({
@@ -800,7 +847,7 @@ test.describe("never losing what's typed", () => {
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
     expect(await heldRows(page)).toHaveLength(1);
 
-    await page.close();
+    await closeWhileDown(signedIn, page);
 
     // The same entry, with this copy belonging to someone else on this device.
     const again = await context.newPage();
@@ -835,6 +882,86 @@ test.describe("never losing what's typed", () => {
     await expect(saveStatus(again)).toHaveText("Saved", { timeout: 5000 });
     const rows = await heldRows(again);
     expect(rows.map((row) => row.userId)).toContain("someone-else");
+  });
+
+  test("updating Tend keeps what an older admin left on this device", async ({
+    page,
+    signedIn,
+    context,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Draft", body: "On the server" });
+    await openPost(page, signedIn, post.id);
+    await failSaves(page);
+    await retype(page, "Typed before the update");
+    await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
+    await closeWhileDown(signedIn, page);
+
+    // The same copy, in a store of the first version, as an older admin would have left it.
+    // Opening the editor then updates the store, and the copy has to survive that.
+    const again = await context.newPage();
+    await again.goto(`${signedIn.base}/healthz`);
+    const moved = await again.evaluate(async () => {
+      const open = (version?: number, upgrade?: (db: IDBDatabase) => void) =>
+        new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("tend", version);
+          request.onupgradeneeded = () => upgrade?.(request.result);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      const current = await open();
+      const rows = await new Promise<unknown[]>((resolve) => {
+        const get = current.transaction("drafts").objectStore("drafts").getAll();
+        get.onsuccess = () => resolve(get.result);
+      });
+      current.close();
+      await new Promise((resolve) => {
+        indexedDB.deleteDatabase("tend").onsuccess = resolve;
+      });
+      const older = await open(1, (db) => {
+        const store = db.createObjectStore("drafts", { keyPath: "key" });
+        for (const row of rows) store.put(row);
+      });
+      older.close();
+      return rows.length;
+    });
+    expect(moved).toBe(1);
+
+    await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
+    await expect(body(again)).toHaveText("Typed before the update");
+    await expect(again.getByText("hadn't reached the server")).toBeVisible();
+  });
+
+  test("an open editor doesn't stop a newer admin updating what's on this device", async ({
+    page,
+    signedIn,
+    context,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Draft", body: "On the server" });
+    await openPost(page, signedIn, post.id);
+    await failSaves(page);
+    await retype(page, "Typed in the older tab");
+    await expect(saveStatus(page)).toContainText("kept on this device", { timeout: 5000 });
+
+    const newer = await context.newPage();
+    await newer.goto(`${signedIn.base}/healthz`);
+    const outcome = await newer.evaluate(
+      () =>
+        new Promise<string>((resolve) => {
+          const request = indexedDB.open("tend", 99);
+          request.onblocked = () => resolve("blocked");
+          request.onerror = () => resolve("failed");
+          request.onsuccess = () => {
+            request.result.close();
+            resolve("updated");
+          };
+        }),
+    );
+    expect(outcome).toBe("updated");
+
+    // The older tab can't use a store newer than it knows, so it stops saying its words are
+    // kept there.
+    await retype(page, "Typed after the update");
+    await expect(saveStatus(page)).toContainText("only in this window", { timeout: 5000 });
   });
 
   test("a network blip doesn't replace the open editor", async ({ page, signedIn }) => {
@@ -1285,6 +1412,42 @@ test.describe("recovering from a mistake", () => {
   test("leaving with nothing waiting says nothing", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Hours", publish: true });
     await openPost(page, signedIn, post.id);
+    await postsLink(page).click();
+    await expect(page.getByRole("heading", { name: "Posts" })).toBeVisible();
+    await page.waitForTimeout(300);
+    await expect(page.getByText("aren't on your site yet")).toHaveCount(0);
+  });
+
+  test("leaving someone else's unpublished changes doesn't offer to publish them", async ({
+    page,
+    signedIn,
+  }) => {
+    const post = await createEntry(page, signedIn, {
+      title: "Hours",
+      body: "Live words",
+      publish: true,
+    });
+    await page.request.patch(`${signedIn.base}/api/admin/entries/${post.id}`, {
+      headers: { "If-Match": String(post.rev) },
+      data: {
+        doc: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Maya's changes" }] }],
+        },
+      },
+    });
+    // There's no second account yet, so the editor is told those changes are Maya's.
+    await page.route(`**/api/admin/entries/${post.id}`, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      const response = await route.fetch();
+      const entry = await response.json();
+      await route.fulfill({
+        response,
+        json: { ...entry, updatedBy: { id: "maya", name: "Maya" } },
+      });
+    });
+    await openPost(page, signedIn, post.id);
+    await expect(body(page)).toHaveText("Maya's changes");
     await postsLink(page).click();
     await expect(page.getByRole("heading", { name: "Posts" })).toBeVisible();
     await page.waitForTimeout(300);

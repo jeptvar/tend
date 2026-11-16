@@ -141,6 +141,18 @@ export async function readEntry(page: Page, site: Site, id: string) {
   return (await page.request.get(`${site.base}/api/admin/entries/${id}`)).json();
 }
 
+/**
+ * Closes tabs while Tend is down, so their last save fails the way it does when the connection
+ * drops. A test can't fail that save from the browser: it leaves as the tab closes, after
+ * page.route, context.route and setOffline have all stopped applying to the tab. It would
+ * reach the server, and the copy the test means to leave behind would never be offered.
+ */
+export async function closeWhileDown(site: Site, ...pages: Page[]): Promise<void> {
+  await site.crash();
+  for (const page of pages) await page.close();
+  await site.restart();
+}
+
 interface TextNode {
   text?: string;
   content?: TextNode[];

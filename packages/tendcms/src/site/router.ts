@@ -263,6 +263,8 @@ export function createSite(options: SiteOptions): Site {
   // Kept in memory, because every request needs it and a cache hit should touch no database.
   // Every change to settings goes through changed(), which forgets it.
   let visibility: VisibilitySettings | undefined;
+  // Once there's an Owner, there always is, so the homepage only asks until then.
+  let setUp = false;
 
   const theme = createTheme({
     themeDir: options.themeDir,
@@ -659,14 +661,17 @@ export function createSite(options: SiteOptions): Site {
     await loadSite();
     const path = `/tag/${tag.slug}`;
     const listed = await postsContext(page, path, tag.id);
+    // Only published posts decide which tag pages exist. A tag is made as soon as someone
+    // types it on a draft, and its name can say what isn't announced yet ("Closing down").
+    // Later pages past the end are already 404, so an empty one is always the first.
+    if (listed.posts.length === 0) throw new NotFound();
     const facts: PageFacts = {
       path: pagedPath(path, page),
       title: `${tag.name} · ${site.name}`,
       description: tag.description,
       type: "website",
       imageId: null,
-      // A tag with nothing published under it is an empty page, not worth finding.
-      noindex: listed.posts.length === 0,
+      noindex: false,
     };
     const context = {
       ...(await baseContext(c, facts)),
@@ -1025,7 +1030,10 @@ export function createSite(options: SiteOptions): Site {
     }
 
     const { path } = c.req;
-    if (path === "/" && !(await ownerExists(orm))) return c.redirect("/admin/setup");
+    if (path === "/" && !setUp) {
+      setUp = await ownerExists(orm);
+      if (!setUp) return c.redirect("/admin/setup");
+    }
 
     try {
       if (path === "/") {

@@ -282,9 +282,10 @@ test.describe("design (J3)", () => {
     await page.goto(`${signedIn.base}/admin/design`);
     const accent = page.getByRole("textbox", { name: "Accent colour", exact: true });
     await accent.fill("#ffcc00");
-    await expect(page.getByText("Hard to read on white. Use #8c7000 instead?")).toBeVisible();
+    // The suggestion reads on white and in Soft sections both (see admin/test/accent.test.ts).
+    await expect(page.getByText("Hard to read on white. Use #806600 instead?")).toBeVisible();
     await page.getByRole("button", { name: "Use it" }).click();
-    await expect(accent).toHaveValue("#8c7000");
+    await expect(accent).toHaveValue("#806600");
     await page.getByRole("radio", { name: /Classic/ }).check();
 
     await page.getByRole("button", { name: "Preview" }).click();
@@ -294,7 +295,7 @@ test.describe("design (J3)", () => {
     const accentInPreview = await frame
       .locator("body")
       .evaluate((element) => getComputedStyle(element).getPropertyValue("--tend-accent").trim());
-    expect(accentInPreview).toBe("#8c7000");
+    expect(accentInPreview).toBe("#806600");
     await page.getByRole("button", { name: "Close" }).click();
 
     await page.getByRole("button", { name: "Save design" }).click();

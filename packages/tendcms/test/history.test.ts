@@ -196,6 +196,9 @@ describe("saving as you type", () => {
     expect(late.status).toBe(409);
     const current = await (await owner.get(`${ENTRIES}/${entry.id}`)).json();
     expect(current.data.doc).toEqual(doc("NEWER words"));
+    // Nobody else was involved, so History has no clash to show.
+    const kinds = (await versions(owner, entry.id)).map((version) => version.kind);
+    expect(kinds).not.toContain("conflict");
   });
 
   test("the same goes for an action, like Discard, held up on the way", async () => {
@@ -1161,5 +1164,17 @@ describe("tidying up", () => {
     cleanUp(made.orm, made.clock.time + 1000 * DAY);
     expect((await owner.get(`${ENTRIES}/${live.id}`)).status).toBe(200);
     expect(await pageText(made, "/blog/live")).toContain("Live words");
+  });
+
+  test("finds what points at a deleted version with an index, not by reading every entry", async () => {
+    // Deleting a version runs this lookup to clear entries.published_rev_id. Tidying old
+    // versions and emptying the Trash delete hundreds of versions at once.
+    const { made } = await signedIn();
+    const plan = made.db
+      .prepare("EXPLAIN QUERY PLAN SELECT rowid FROM entries WHERE published_rev_id = ?")
+      .all("a-version") as { detail: string }[];
+    expect(plan.map((step) => step.detail).join("\n")).toMatch(
+      /USING (COVERING )?INDEX entries_published_rev\b/,
+    );
   });
 });

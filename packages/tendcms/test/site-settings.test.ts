@@ -362,7 +362,7 @@ describe("design", () => {
     const { html } = await page(made, "/");
     expect(html).toContain('data-fonts="classic"');
     expect(html).toContain("--tend-accent: #ffcc00;");
-    expect(html).toContain("\\3c /style>\\3c script>");
+    expect(html).toContain("<\\/style><script>");
     expect(html).not.toContain("</style><script>");
     expect(html).toContain("Made with flour");
     expect(html).toContain('href="https://instagram.com/rise"');
@@ -518,6 +518,23 @@ describe("tags", () => {
     expect(post.html).toContain('<a href="/tag/sourdough-recipes">Sourdough Recipes</a>');
     expect((await page(made, "/tag/nothing-here")).status).toBe(404);
   });
+
+  test("a tag only drafts use has no page, so its name stays private", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const tag = await (await owner.post("/api/admin/tags", { name: "Closing down" })).json();
+    const draft = await (await owner.post(ENTRIES, { type: "post" })).json();
+    const saved = await owner.patch(
+      `${ENTRIES}/${draft.id}`,
+      { title: "Big news", tagIds: [tag.id] },
+      { "If-Match": "1" },
+    );
+    expect((await saved.json()).data.tagIds).toEqual([tag.id]);
+
+    const reply = await page(made, "/tag/closing-down");
+    expect(reply.status).toBe(404);
+    expect(reply.html).not.toContain("Closing down");
+  });
 });
 
 describe("search engines and sharing", () => {
@@ -609,7 +626,11 @@ describe("search engines and sharing", () => {
       "</script>",
     );
     expect(jsonForScript({ name: "a b" })).toBe('{"name":"a\\u2028b"}');
-    expect(cssForStyle("a { content: '</style>' }")).toBe("a { content: '\\3c /style>' }");
+    expect(cssForStyle("a { content: '</style>' }")).toBe("a { content: '<\\/style>' }");
+    expect(cssForStyle("a { content: '</STYLE >' }")).not.toContain("</");
+    // Range queries need their "<" exactly as typed, or the rules inside never apply.
+    const ranges = "@media (width < 600px) { a { color: red } } @container (width <= 40em) {}";
+    expect(cssForStyle(ranges)).toBe(ranges);
     const head = buildHead({
       origin: "https://example.com",
       path: '/x"><script>',
@@ -759,6 +780,35 @@ describe("fixes from review", () => {
       const body = await reply.json();
       expect(body.error.fix, `${from} → ${to}`).toBeTruthy();
     }
+  });
+
+  test("an old address typed with capitals leads on, whatever capitals it's asked for in", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    await owner.post("/api/admin/redirects", {
+      from: "https://old.example/Menu.html",
+      to: "/contact",
+    });
+    expect(await redirectsAfter(owner)).toEqual({ "/menu.html": "/contact" });
+    for (const path of ["/Menu.html", "/menu.html", "/MENU.HTML"]) {
+      const reply = await made.app.request(path);
+      expect(reply.status, path).toBe(301);
+      expect(reply.headers.get("location"), path).toBe("/contact");
+    }
+  });
+
+  test("going round in circles is refused in capitals beyond A to Z too", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    await owner.post("/api/admin/redirects", { from: "/café", to: "/x" });
+    const reply = await owner.post("/api/admin/redirects", { from: "/x", to: "/CAFÉ" });
+    expect(reply.status).toBe(400);
+    expect(await redirectsAfter(owner)).toEqual({ "/café": "/x" });
+
+    // Moving the page that one leads to doesn't make a chain, or point anything at itself.
+    addRedirect(made.orm, { from: "/x", to: "/Été", source: "auto", now: 1 });
+    addRedirect(made.orm, { from: "/été", to: "/CAFÉ", source: "auto", now: 2 });
+    expect(await redirectsAfter(owner)).toEqual({ "/été": "/CAFÉ", "/x": "/CAFÉ" });
   });
 
   test("old-site addresses are stored the way they'll be asked for", async () => {

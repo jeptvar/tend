@@ -52,9 +52,13 @@ export function jsonForScript(value: unknown): string {
     .replaceAll(String.fromCharCode(0x2029), "\\u2029");
 }
 
-/** CSS inside a style element can't close it, whatever was typed. */
+/**
+ * CSS inside a style element can't close it, whatever was typed. Only "</" can start the
+ * closing tag, so only that changes: "<\/" means the same to CSS. A bare "<" has to stay as it
+ * is, because CSS needs it in range queries like `@media (width < 600px)`.
+ */
 export function cssForStyle(css: string): string {
-  return css.replace(/</g, "\\3c ");
+  return css.replaceAll("</", "<\\/");
 }
 
 export function shorten(text: string, limit = DESCRIPTION_LIMIT): string {

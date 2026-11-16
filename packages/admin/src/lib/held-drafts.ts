@@ -87,11 +87,26 @@ function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
+      // Never drop the store, not even to change its shape: it holds words that haven't
+      // reached the server, and updating Tend is no reason to lose them (PLAN.md P5). Every
+      // version so far keeps the same records under `key`, and completeDraft fills in fields
+      // added since. A version that changes the records converts the ones here, right here.
       const db = request.result;
-      if (db.objectStoreNames.contains(STORE)) db.deleteObjectStore(STORE);
-      db.createObjectStore(STORE, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "key" });
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // A newer admin in another tab needs this closed before it can update the store, and
+      // holding on would leave it unable to keep anything. So this tab lets go, and opens
+      // again on its next write. If the store is then newer than this tab understands, that
+      // fails, and its words stay in memory, where the status says they are.
+      db.onversionchange = () => {
+        db.close();
+        if (opened === db) opened = undefined;
+        database = undefined;
+      };
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error("blocked"));
   });

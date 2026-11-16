@@ -1,5 +1,14 @@
 import type { Page, Route } from "@playwright/test";
-import { bodyText, createEntry, expect, readEntry, type Site, signIn, test } from "./fixtures.ts";
+import {
+  bodyText,
+  closeWhileDown,
+  createEntry,
+  expect,
+  readEntry,
+  type Site,
+  signIn,
+  test,
+} from "./fixtures.ts";
 
 // Each of these is something an independent review found going wrong, kept so it can't return.
 
@@ -201,7 +210,7 @@ test.describe("two tabs", () => {
     await expect(second.getByText("hadn't reached the server")).toHaveCount(0);
 
     // Once that tab has gone, its copy really is left behind.
-    await page.close();
+    await closeWhileDown(signedIn, page);
     await second.goto(`${signedIn.base}/admin/posts/${post.id}`);
     await expect(body(second)).toHaveText("Typed in the first tab");
     await expect(second.getByText("hadn't reached the server")).toBeVisible();
@@ -253,32 +262,21 @@ test.describe("two tabs", () => {
     await retype(second, "Second tab's words");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
     await expect(saveStatus(second)).toContainText("Offline", { timeout: 5000 });
-    await page.close();
-    await second.close();
+    await closeWhileDown(signedIn, page, second);
 
-    // Each tab's words are either on the server, or kept on this device and offered. A tab
-    // closing makes one last save, which can get through, since the test's offline routing
-    // goes with the tab. Either way, neither is lost.
+    // Neither tab's words reached the server, so both are kept on this device: one is
+    // offered, and once that's decided about, the other.
     const words = ["First tab's words", "Second tab's words"];
     const third = await context.newPage();
+    expect(bodyText(await readEntry(third, signedIn, post.id))).toBe("On the server");
     await third.goto(`${signedIn.base}/admin/posts/${post.id}`);
     await expect(third.getByText("hadn't reached the server")).toBeVisible();
     const offered = (await body(third).textContent()) ?? "";
     expect(words).toContain(offered);
-    const onServer = bodyText(await readEntry(third, signedIn, post.id));
     await third.getByRole("button", { name: "Go back to the saved version" }).click();
     await third.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await expect(body(third)).toBeVisible();
-    if (words.includes(onServer)) {
-      // One got through as its tab closed, so only the other was left to offer.
-      expect(onServer).not.toBe(offered);
-      await expect(body(third)).toHaveText(onServer);
-    } else {
-      // The other one hasn't been lost: it's offered next.
-      await expect(third.getByText("hadn't reached the server")).toBeVisible();
-      expect(await body(third).textContent()).not.toBe(offered);
-      expect(words).toContain(await body(third).textContent());
-    }
+    await expect(third.getByText("hadn't reached the server")).toBeVisible();
+    await expect(body(third)).toHaveText(words.find((other) => other !== offered) ?? "");
   });
 
   test("just opening a draft left behind and going back doesn't save it", async ({
@@ -291,7 +289,7 @@ test.describe("two tabs", () => {
     await failSaves(page);
     await retype(page, "Old words left behind");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
 
     const again = await context.newPage();
     await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
@@ -368,10 +366,11 @@ test.describe("a copy on this device with nowhere to go", () => {
         };
       });
     });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
     await expect(body(again)).toHaveText("From long ago");
+    await expect(again.getByText("hadn't reached the server")).toBeVisible();
   });
 
   test("a device refusing to store anything is told the truth", async ({ page, signedIn }) => {
@@ -454,7 +453,7 @@ test.describe("a copy on this device with nowhere to go", () => {
     await failSaves(page);
     await retype(page, "Held words");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     await again.request.post(`${signedIn.base}/api/admin/entries/${post.id}/trash`, { data: {} });
     await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
@@ -1243,7 +1242,7 @@ test.describe("keyboard focus", () => {
     await failSaves(page);
     await retype(page, "Held");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
     await again.getByRole("button", { name: "Go back to the saved version" }).focus();

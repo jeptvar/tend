@@ -102,6 +102,18 @@ function isOwnLatest(
 }
 
 /**
+ * A request from the window that made the newest version, sent before the one that made it
+ * and held up on the way. What it carries was replaced by that window's own newer words.
+ */
+function isOlderFromSameWindow(
+  entry: Entry,
+  from: { editSession?: string | undefined; editSeq?: number | undefined },
+): boolean {
+  if (from.editSession === undefined || entry.editSession !== from.editSession) return false;
+  return from.editSeq !== undefined && entry.editSeq !== null && from.editSeq <= entry.editSeq;
+}
+
+/**
  * Anything acting on an entry has to have seen its newest version. The exception is the
  * editor window that made that version: it knows about it, and only lost the answer.
  */
@@ -332,18 +344,22 @@ export async function saveEntry(
         ) {
           return { saved: entry };
         }
-        tx.insert(revisions)
-          .values({
-            id: uuidv7(input.now),
-            entryId: entry.id,
-            kind: "conflict",
-            title,
-            slug,
-            data: nextData,
-            authorId: input.authorId,
-            createdAt: input.now,
-          })
-          .run();
+        // Still refused, so it can't undo what came after it. But it lost to nothing except
+        // the same window's newer words, so it isn't a version anyone has to choose between.
+        if (!isOlderFromSameWindow(entry, patch)) {
+          tx.insert(revisions)
+            .values({
+              id: uuidv7(input.now),
+              entryId: entry.id,
+              kind: "conflict",
+              title,
+              slug,
+              data: nextData,
+              authorId: input.authorId,
+              createdAt: input.now,
+            })
+            .run();
+        }
         return { conflict: entry };
       }
       if (patch.keepOtherVersion) {
@@ -651,6 +667,9 @@ export async function trashEntry(
   return orm.transaction(
     (tx) => {
       const entry = requireEntry(tx, input.id);
+      // Already there, from another tab or person: binning it again mustn't restart the
+      // 30 days it has left.
+      if (entry.trashedAt !== null) return entry;
       refuseForHome(entry, "moved to the Trash");
       tx.update(entries)
         .set({ ...offTheSite(input, entry), trashedAt: input.now })
@@ -671,6 +690,9 @@ export async function restoreEntry(
   return orm.transaction(
     (tx) => {
       const entry = requireEntry(tx, input.id);
+      // Someone else restored it first. Doing it again would change nothing but the version
+      // number, and that would tell whoever's now editing it that they'd been overtaken.
+      if (entry.trashedAt === null) return entry;
       tx.update(entries)
         .set({
           trashedAt: null,
