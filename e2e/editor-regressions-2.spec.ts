@@ -1,5 +1,13 @@
 import type { Page } from "@playwright/test";
-import { bodyText, createEntry, expect, readEntry, type Site, test } from "./fixtures.ts";
+import {
+  bodyText,
+  closeWhileDown,
+  createEntry,
+  expect,
+  readEntry,
+  type Site,
+  test,
+} from "./fixtures.ts";
 
 // What the second independent review found going wrong, kept so it can't come back.
 
@@ -318,7 +326,7 @@ test.describe("restoring from the Trash", () => {
     await failSaves(page);
     await retype(page, "Yesterday's copy");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 6000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     const current = await readEntry(again, signedIn, post.id);
     const later = await patch(again, signedIn, post.id, current.rev, {
@@ -398,7 +406,7 @@ test.describe("tabs and the notice", () => {
     await page.getByLabel("Title", { exact: true }).fill("Kept title");
     await retype(page, "Kept copy words");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 6000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     await openPost(again, signedIn, post.id);
     await again.getByRole("button", { name: "Go back to the saved version" }).click();
@@ -424,7 +432,7 @@ test.describe("tabs and the notice", () => {
     await failSaves(page);
     await retype(page, "Old copy");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 6000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     await openPost(again, signedIn, post.id);
     await expect(again.getByRole("button", { name: "Preview" })).toHaveAttribute(

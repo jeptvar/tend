@@ -1,5 +1,14 @@
 import type { Page, Route } from "@playwright/test";
-import { bodyText, createEntry, expect, readEntry, type Site, signIn, test } from "./fixtures.ts";
+import {
+  bodyText,
+  closeWhileDown,
+  createEntry,
+  expect,
+  readEntry,
+  type Site,
+  signIn,
+  test,
+} from "./fixtures.ts";
 
 const SAVE_PATH = "**/api/admin/entries/*";
 
@@ -688,13 +697,19 @@ test.describe("never losing what's typed", () => {
   test("closing the tab straight after typing keeps it", async ({ page, signedIn, context }) => {
     const post = await createEntry(page, signedIn, { title: "Draft", body: "Saved earlier" });
     await openPost(page, signedIn, post.id);
-    await failSaves(page);
+    // Down before typing, so the tab can close straight after. Its last save can't be failed
+    // from the browser (see closeWhileDown), and getting through would hide a lost copy.
+    await signedIn.crash();
     await retype(page, "Typed then closed");
     await page.close({ runBeforeUnload: true });
+    await signedIn.restart();
 
     const again = await context.newPage();
+    // The server never got them, so what comes back is the copy kept on this device.
+    expect(bodyText(await readEntry(again, signedIn, post.id))).toBe("Saved earlier");
     await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
     await expect(body(again)).toHaveText("Typed then closed");
+    await expect(again.getByText("hadn't reached the server")).toBeVisible();
   });
 
   test("typing while a save is running isn't overwritten by its answer", async ({
@@ -800,7 +815,7 @@ test.describe("never losing what's typed", () => {
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
     expect(await heldRows(page)).toHaveLength(1);
 
-    await page.close();
+    await closeWhileDown(signedIn, page);
 
     // The same entry, with this copy belonging to someone else on this device.
     const again = await context.newPage();
