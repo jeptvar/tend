@@ -852,6 +852,86 @@ test.describe("never losing what's typed", () => {
     expect(rows.map((row) => row.userId)).toContain("someone-else");
   });
 
+  test("updating Tend keeps what an older admin left on this device", async ({
+    page,
+    signedIn,
+    context,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Draft", body: "On the server" });
+    await openPost(page, signedIn, post.id);
+    await failSaves(page);
+    await retype(page, "Typed before the update");
+    await expect(saveStatus(page)).toContainText("Offline", { timeout: 5000 });
+    await closeWhileDown(signedIn, page);
+
+    // The same copy, in a store of the first version, as an older admin would have left it.
+    // Opening the editor then updates the store, and the copy has to survive that.
+    const again = await context.newPage();
+    await again.goto(`${signedIn.base}/healthz`);
+    const moved = await again.evaluate(async () => {
+      const open = (version?: number, upgrade?: (db: IDBDatabase) => void) =>
+        new Promise<IDBDatabase>((resolve, reject) => {
+          const request = indexedDB.open("tend", version);
+          request.onupgradeneeded = () => upgrade?.(request.result);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      const current = await open();
+      const rows = await new Promise<unknown[]>((resolve) => {
+        const get = current.transaction("drafts").objectStore("drafts").getAll();
+        get.onsuccess = () => resolve(get.result);
+      });
+      current.close();
+      await new Promise((resolve) => {
+        indexedDB.deleteDatabase("tend").onsuccess = resolve;
+      });
+      const older = await open(1, (db) => {
+        const store = db.createObjectStore("drafts", { keyPath: "key" });
+        for (const row of rows) store.put(row);
+      });
+      older.close();
+      return rows.length;
+    });
+    expect(moved).toBe(1);
+
+    await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
+    await expect(body(again)).toHaveText("Typed before the update");
+    await expect(again.getByText("hadn't reached the server")).toBeVisible();
+  });
+
+  test("an open editor doesn't stop a newer admin updating what's on this device", async ({
+    page,
+    signedIn,
+    context,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Draft", body: "On the server" });
+    await openPost(page, signedIn, post.id);
+    await failSaves(page);
+    await retype(page, "Typed in the older tab");
+    await expect(saveStatus(page)).toContainText("kept on this device", { timeout: 5000 });
+
+    const newer = await context.newPage();
+    await newer.goto(`${signedIn.base}/healthz`);
+    const outcome = await newer.evaluate(
+      () =>
+        new Promise<string>((resolve) => {
+          const request = indexedDB.open("tend", 99);
+          request.onblocked = () => resolve("blocked");
+          request.onerror = () => resolve("failed");
+          request.onsuccess = () => {
+            request.result.close();
+            resolve("updated");
+          };
+        }),
+    );
+    expect(outcome).toBe("updated");
+
+    // The older tab can't use a store newer than it knows, so it stops saying its words are
+    // kept there.
+    await retype(page, "Typed after the update");
+    await expect(saveStatus(page)).toContainText("only in this window", { timeout: 5000 });
+  });
+
   test("a network blip doesn't replace the open editor", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Draft" });
     await openPost(page, signedIn, post.id);
