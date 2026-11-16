@@ -46,6 +46,24 @@ function focusRowAt(index: number): void {
   else focusHeading();
 }
 
+/** A little over half a second of frames: the list is long since updated by then. */
+const ROW_GONE_FRAMES = 30;
+
+/**
+ * Focuses the row that took the place of `id`, once the list really shows it gone. The list
+ * updates when react-query tells it to, on a timer whose order against animation frames
+ * differs between browsers: in Safari a single frame came first, so focus went to the
+ * departing row's button and was lost with it.
+ */
+function focusRowWhenGone(id: string, index: number): void {
+  const attempt = (framesLeft: number) => {
+    const stillThere = document.querySelector(`[data-entry-row="${CSS.escape(id)}"]`) !== null;
+    if (stillThere && framesLeft > 0) requestAnimationFrame(() => attempt(framesLeft - 1));
+    else focusRowAt(index);
+  };
+  requestAnimationFrame(() => attempt(ROW_GONE_FRAMES));
+}
+
 /** What someone needs to know about an entry at a glance, in plain words (PLAN.md P15). */
 function StatusLabel({ entry }: { entry: EntrySummary }) {
   if (entry.url === null) return <FormattedMessage id="status.draft" />;
@@ -115,8 +133,8 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
           id: target.wasPublished ? "list.restored" : "list.restoredDraft",
         }),
       });
-      // The row and its button have gone, and focus shouldn't go with them.
-      requestAnimationFrame(() => focusRowAt(target.index));
+      // The row and its button are going, and focus shouldn't go with them.
+      focusRowWhenGone(target.id, target.index);
     },
   });
 
@@ -132,7 +150,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
       setConfirmDelete(null);
       showToast({ message: intl.formatMessage({ id: "list.deletedForever" }) });
       // After the dialog's closed: it hands focus back to a button that's about to go.
-      requestAnimationFrame(() => requestAnimationFrame(() => focusRowAt(index)));
+      focusRowWhenGone(target.id, index);
     },
   });
 
@@ -197,7 +215,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
         {rows?.map((entry, index) => (
           <li
             key={entry.id}
-            data-entry-row=""
+            data-entry-row={entry.id}
             className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3"
           >
             <div className="min-w-0">
