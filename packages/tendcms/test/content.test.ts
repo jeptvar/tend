@@ -862,6 +862,33 @@ describe("the entries API", () => {
     expect(restored.data.doc).toEqual(paragraph("Words"));
   });
 
+  test("binning twice, from two tabs, doesn't restart its 30 days", async () => {
+    const { made, owner } = await signedIn();
+    const entry = await newEntry(owner);
+    await save(owner, entry.id, 1, { title: "Twice", doc: paragraph("Words") });
+    const binned = await (await owner.post(`${ENTRIES}/${entry.id}/trash`)).json();
+    made.clock.time += 60_000;
+    const again = await (await owner.post(`${ENTRIES}/${entry.id}/trash`)).json();
+    expect(again.trashedAt).toBe(binned.trashedAt);
+    expect(again.rev).toBe(binned.rev);
+  });
+
+  test("restoring twice, from two tabs, doesn't overtake whoever carried on", async () => {
+    const { owner } = await signedIn();
+    const entry = await newEntry(owner);
+    await save(owner, entry.id, 1, { title: "Twice", doc: paragraph("Words") });
+    await owner.post(`${ENTRIES}/${entry.id}/trash`);
+    const restored = await (await owner.post(`${ENTRIES}/${entry.id}/restore`)).json();
+    // Whoever restored it has carried on, so the second Restore mustn't overtake them.
+    const typed = await (
+      await save(owner, entry.id, restored.rev, { doc: paragraph("Carried on") })
+    ).json();
+    const second = await owner.post(`${ENTRIES}/${entry.id}/restore`);
+    expect(second.status).toBe(200);
+    expect((await second.json()).rev).toBe(typed.rev);
+    expect((await save(owner, entry.id, typed.rev, { doc: paragraph("More") })).status).toBe(200);
+  });
+
   test("something in the Trash can't be published", async () => {
     const { owner } = await signedIn();
     const entry = await newEntry(owner);

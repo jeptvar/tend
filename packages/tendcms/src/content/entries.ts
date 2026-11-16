@@ -651,6 +651,9 @@ export async function trashEntry(
   return orm.transaction(
     (tx) => {
       const entry = requireEntry(tx, input.id);
+      // Already there, from another tab or person: binning it again mustn't restart the
+      // 30 days it has left.
+      if (entry.trashedAt !== null) return entry;
       refuseForHome(entry, "moved to the Trash");
       tx.update(entries)
         .set({ ...offTheSite(input, entry), trashedAt: input.now })
@@ -671,6 +674,9 @@ export async function restoreEntry(
   return orm.transaction(
     (tx) => {
       const entry = requireEntry(tx, input.id);
+      // Someone else restored it first. Doing it again would change nothing but the version
+      // number, and that would tell whoever's now editing it that they'd been overtaken.
+      if (entry.trashedAt === null) return entry;
       tx.update(entries)
         .set({
           trashedAt: null,
