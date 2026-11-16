@@ -218,6 +218,15 @@ function renderBlocks(
   out.text = text.join("\n\n");
 }
 
+/**
+ * Which renderer a published version's stored HTML came from (PLAN.md §8). Raise it whenever
+ * renderDoc's output changes for any document. Tend then renders every published version
+ * again when it starts (content/rerender.ts), so the change, an escaping fix above all,
+ * reaches pages that are already on the site. A test in content.test.ts fails until it's
+ * raised.
+ */
+export const RENDER_VERSION = 1;
+
 export function renderDoc(doc: Doc): RenderedDoc {
   const out: RenderedDoc = { html: "", text: "" };
   renderBlocks(doc.content, out);

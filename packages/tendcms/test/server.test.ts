@@ -3,6 +3,7 @@ import { chmodSync, existsSync, readdirSync, readFileSync, statSync, writeFileSy
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { detectPlatform } from "../src/config.ts";
+import { openDatabase } from "../src/db/client.ts";
 import { appVersion } from "../src/paths.ts";
 import { cleanEnv, exitedWithin, runCli, tempDir, waitForRunning } from "./helpers.ts";
 
@@ -249,6 +250,27 @@ describe("setting up through the real server", () => {
     expect(reply.status).toBe(201);
     return { cli, url, reply };
   }
+
+  test("pages published by an older renderer are brought up to date when Tend starts", async () => {
+    const dataDir = tempDir();
+    const { cli } = await setUpSite(dataDir);
+    await cli.stop();
+    // As an older Tend would have left them.
+    const db = openDatabase(join(dataDir, "tend.db"));
+    db.prepare("UPDATE revisions SET html = ? WHERE html IS NOT NULL").run("<p>Old renderer</p>");
+    db.prepare("DELETE FROM schema_meta WHERE key = 'render_version'").run();
+    db.close();
+
+    const second = runCli(["start"], { TEND_DATA_DIR: dataDir, PORT: "0" });
+    try {
+      const url = await waitForRunning(second);
+      expect(second.output()).toMatch(/Updated \d+ published pages for this version of Tend/);
+      const home = await (await fetch(new URL("/", url))).text();
+      expect(home).not.toContain("Old renderer");
+    } finally {
+      await second.stop();
+    }
+  });
 
   test("setup works, and the next start offers the admin instead of setup", async () => {
     const dataDir = tempDir();
