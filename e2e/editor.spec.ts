@@ -662,6 +662,38 @@ test.describe("saving as you type", () => {
     await expect(saveStatus(page)).toHaveText("Saved", { timeout: 10_000 });
     await expect(page.getByText("Something went wrong on Tend's side.")).toHaveCount(0);
   });
+
+  test("after a save is refused, the next change saves by itself", async ({ page, signedIn }) => {
+    const post = await createEntry(page, signedIn, { title: "Draft", body: "" });
+    await openPost(page, signedIn, post.id);
+    let refused = 0;
+    await page.route(SAVE_PATH, (route) => {
+      if (!isSave(route) || refused > 0) return route.fallback();
+      refused += 1;
+      return route.fulfill({
+        status: 413,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "too_large",
+            message: "That's more than Tend can save in one go.",
+            fix: "Split it into two.",
+          },
+        }),
+      });
+    });
+    await retype(page, "Far too long");
+    await expect(page.getByText("more than Tend can save").first()).toBeVisible({ timeout: 5000 });
+    await expect(saveStatus(page)).toHaveText("Not saved yet");
+
+    // Cutting it down is the fix. Nobody should have to know to press Ctrl+S after that.
+    await body(page).click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(", cut down");
+    await expect(saveStatus(page)).toHaveText("Saved", { timeout: 5000 });
+    expect(bodyText(await readEntry(page, signedIn, post.id))).toBe("Far too long, cut down");
+    expect(refused).toBe(1);
+  });
 });
 
 test.describe("never losing what's typed", () => {

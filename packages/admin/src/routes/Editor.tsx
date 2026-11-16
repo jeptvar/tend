@@ -313,6 +313,11 @@ function EditorScreen({
     keptInConflict: null as EditorDraft | null,
     trouble: null as SaveTrouble,
     /**
+     * The server refused the last save for what it held, like being too big. No retry is
+     * coming, because the same words would be refused again, so the next change tries.
+     */
+    retryOnChange: false,
+    /**
      * A request went out and no answer came back, so the server may or may not have it. Until
      * one is confirmed, what's on the screen counts as unsaved, and it's sent again.
      */
@@ -356,6 +361,7 @@ function EditorScreen({
 
   function setTrouble(next: SaveTrouble): void {
     session.current.trouble = next;
+    session.current.retryOnChange = false;
     setTroubleState(next);
   }
 
@@ -382,7 +388,8 @@ function EditorScreen({
   function scheduleSave(): void {
     const s = session.current;
     // While saving isn't working, retries go at their own slowing pace, not with each word.
-    if (s.trouble !== null) return;
+    // After a refusal there are no retries, so a change is what tries again.
+    if (s.trouble !== null && !s.retryOnChange) return;
     clearTimeout(s.saveTimer);
     if (s.done || s.closed || s.locked || s.heldUntouched) return;
     const now = Date.now();
@@ -635,6 +642,10 @@ function EditorScreen({
     }
     troubleIs("problem");
     setProblem(error);
+    // Refused for what was sent, like being too big or not making sense. What fixes it is a
+    // change, so the next one is saved after the usual pause, not straight away.
+    s.retryOnChange = true;
+    s.firstUnsavedAt = null;
   }
 
   /** Saves if anything's waiting. Never throws: whatever goes wrong shows in the status. */
