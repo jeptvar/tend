@@ -1162,4 +1162,16 @@ describe("tidying up", () => {
     expect((await owner.get(`${ENTRIES}/${live.id}`)).status).toBe(200);
     expect(await pageText(made, "/blog/live")).toContain("Live words");
   });
+
+  test("finds what points at a deleted version with an index, not by reading every entry", async () => {
+    // Deleting a version runs this lookup to clear entries.published_rev_id. Tidying old
+    // versions and emptying the Trash delete hundreds of versions at once.
+    const { made } = await signedIn();
+    const plan = made.db
+      .prepare("EXPLAIN QUERY PLAN SELECT rowid FROM entries WHERE published_rev_id = ?")
+      .all("a-version") as { detail: string }[];
+    expect(plan.map((step) => step.detail).join("\n")).toMatch(
+      /USING (COVERING )?INDEX entries_published_rev\b/,
+    );
+  });
 });

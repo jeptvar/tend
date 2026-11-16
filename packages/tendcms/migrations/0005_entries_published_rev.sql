@@ -1,0 +1,1 @@
+CREATE INDEX `entries_published_rev` ON `entries` (`published_rev_id`);
