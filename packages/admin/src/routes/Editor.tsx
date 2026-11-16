@@ -1348,6 +1348,10 @@ function EditorScreen({
             } = leaving.current;
             // Not with a conflict still to be decided: publishing would only be refused.
             if (s.done || s.locked || !canPublish || !s.entry.url || !s.entry.dirty) return;
+            // It says "Your changes", which has to be true. Someone else's are theirs to put
+            // on the site, after they've looked them over, not one click away for whoever
+            // happened to open the page.
+            if (s.entry.updatedBy?.id !== me.user.id) return;
             // Signed out, or back in the editor already: either way, this isn't the moment.
             if (!queryClient.getQueryData(ME_KEY) || openEditors.has(entry.id)) return;
             const toast = showToast({

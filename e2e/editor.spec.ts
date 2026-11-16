@@ -1417,6 +1417,42 @@ test.describe("recovering from a mistake", () => {
     await page.waitForTimeout(300);
     await expect(page.getByText("aren't on your site yet")).toHaveCount(0);
   });
+
+  test("leaving someone else's unpublished changes doesn't offer to publish them", async ({
+    page,
+    signedIn,
+  }) => {
+    const post = await createEntry(page, signedIn, {
+      title: "Hours",
+      body: "Live words",
+      publish: true,
+    });
+    await page.request.patch(`${signedIn.base}/api/admin/entries/${post.id}`, {
+      headers: { "If-Match": String(post.rev) },
+      data: {
+        doc: {
+          type: "doc",
+          content: [{ type: "paragraph", content: [{ type: "text", text: "Maya's changes" }] }],
+        },
+      },
+    });
+    // There's no second account yet, so the editor is told those changes are Maya's.
+    await page.route(`**/api/admin/entries/${post.id}`, async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      const response = await route.fetch();
+      const entry = await response.json();
+      await route.fulfill({
+        response,
+        json: { ...entry, updatedBy: { id: "maya", name: "Maya" } },
+      });
+    });
+    await openPost(page, signedIn, post.id);
+    await expect(body(page)).toHaveText("Maya's changes");
+    await postsLink(page).click();
+    await expect(page.getByRole("heading", { name: "Posts" })).toBeVisible();
+    await page.waitForTimeout(300);
+    await expect(page.getByText("aren't on your site yet")).toHaveCount(0);
+  });
 });
 
 test.describe("toasts", () => {
