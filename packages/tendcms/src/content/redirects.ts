@@ -49,9 +49,22 @@ export function addRedirect(
   db: Db,
   input: { from: string; to: string; source: Redirect["source"]; now: number },
 ): void {
-  const { from, to } = input;
-  if (sameAddress(from, to)) return;
-  db.update(redirects).set({ toPath: to }).where(eq(redirects.toPath, from)).run();
+  const from = input.from.toLowerCase();
+  const { to } = input;
+  const toKey = targetKey(to);
+  if (toKey === from) return;
+  // Compared here rather than in SQL, whose lower() only knows A to Z, and because where a
+  // redirect goes is stored encoded while where it's from is stored decoded.
+  const all = db.select({ from: redirects.fromPath, to: redirects.toPath }).from(redirects).all();
+  for (const row of all) {
+    if (targetKey(row.to) !== from) continue;
+    if (row.from.toLowerCase() === toKey) {
+      // A to B, then B to A: A would point at itself.
+      db.delete(redirects).where(eq(redirects.fromPath, row.from)).run();
+    } else {
+      db.update(redirects).set({ toPath: to }).where(eq(redirects.fromPath, row.from)).run();
+    }
+  }
   db.insert(redirects)
     .values({ fromPath: from, toPath: to, source: input.source, createdAt: input.now })
     .onConflictDoUpdate({
@@ -59,28 +72,32 @@ export function addRedirect(
       set: { toPath: to, source: input.source, createdAt: input.now, hits: 0 },
     })
     .run();
-  // A to B, then B to A, would otherwise leave A pointing at itself.
-  db.delete(redirects).where(sql`lower(${redirects.fromPath}) = lower(${redirects.toPath})`).run();
 }
 
 /** Something was published here, and live pages always win over redirects. */
 export function clearRedirectFrom(db: Db, path: string): void {
-  db.delete(redirects).where(eq(redirects.fromPath, path)).run();
+  db.delete(redirects).where(eq(redirects.fromPath, path.toLowerCase())).run();
 }
 
-/** Addresses are matched ignoring case, because old sites often had capitals in theirs. */
-function sameAddress(a: string, b: string): boolean {
-  return a.toLowerCase() === b.toLowerCase();
+/**
+ * Where a redirect goes, as the site compares addresses: decoded, in lower case, and without
+ * anything after a ?. Null for an address on another website, which no redirect here is from.
+ * Addresses are matched ignoring case, because old sites often had capitals in theirs.
+ */
+function targetKey(to: string): string | null {
+  if (!to.startsWith("/")) return null;
+  return decoded(to.split("?")[0] ?? to).toLowerCase();
 }
 
 /**
  * Where an address that isn't a page leads, counting the visit. `sent` is the path as it
  * arrived, still encoded: it's decoded the same way old addresses are when they're saved,
- * then tried in lower case too, so every way of writing it matches.
+ * then looked up in lower case, the way they're stored, so every way of writing it matches.
+ * As it was sent too, for any saved before they were all stored in lower case.
  */
 export async function followRedirect(orm: Orm, sent: string): Promise<string | undefined> {
   const path = decoded(sent);
-  for (const candidate of new Set([path, path.toLowerCase()])) {
+  for (const candidate of new Set([path.toLowerCase(), path])) {
     const found = orm
       .update(redirects)
       .set({ hits: sql`${redirects.hits} + 1` })
@@ -128,8 +145,8 @@ function asUrl(typed: string): URL | undefined {
 }
 
 /**
- * The old address, stored the way the site compares addresses: a decoded path with
- * nothing after it. A whole address from an old website gives just its path.
+ * The old address, stored the way the site compares addresses: a decoded path in lower
+ * case, with nothing after it. A whole address from an old website gives just its path.
  */
 export function cleanFrom(typed: string): string {
   const text = typed.trim();
@@ -177,7 +194,7 @@ export function cleanFrom(typed: string): string {
       "Use the old page's own address, like /old-page.",
     );
   }
-  return path;
+  return path.toLowerCase();
 }
 
 /**
@@ -230,22 +247,25 @@ export function cleanTo(typed: string, ownHosts: readonly string[] = []): string
 /** Where an address finally ends up, following any redirects from it. */
 function finalTarget(db: Db, to: string, from: string): string {
   let target = to;
+  const fromKey = from.toLowerCase();
   const seen = new Set<string>();
   for (let hop = 0; hop < CHAIN_LIMIT; hop++) {
-    const path = decoded(target.split("?")[0] ?? target);
-    if (sameAddress(path, from)) {
+    const key = targetKey(target);
+    // Another website: nothing here can lead on from there.
+    if (key === null) return target;
+    if (key === fromKey) {
       throw refuse(
         "to",
         "That would lead back to the old address, so visitors would go round in circles.",
         "Choose a different address for Goes to.",
       );
     }
-    if (seen.has(path.toLowerCase())) break;
-    seen.add(path.toLowerCase());
+    if (seen.has(key)) break;
+    seen.add(key);
     const next = db
       .select({ to: redirects.toPath })
       .from(redirects)
-      .where(sql`lower(${redirects.fromPath}) = lower(${path})`)
+      .where(eq(redirects.fromPath, key))
       .get();
     if (!next) return target;
     target = next.to;

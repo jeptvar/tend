@@ -782,6 +782,35 @@ describe("fixes from review", () => {
     }
   });
 
+  test("an old address typed with capitals leads on, whatever capitals it's asked for in", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    await owner.post("/api/admin/redirects", {
+      from: "https://old.example/Menu.html",
+      to: "/contact",
+    });
+    expect(await redirectsAfter(owner)).toEqual({ "/menu.html": "/contact" });
+    for (const path of ["/Menu.html", "/menu.html", "/MENU.HTML"]) {
+      const reply = await made.app.request(path);
+      expect(reply.status, path).toBe(301);
+      expect(reply.headers.get("location"), path).toBe("/contact");
+    }
+  });
+
+  test("going round in circles is refused in capitals beyond A to Z too", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    await owner.post("/api/admin/redirects", { from: "/café", to: "/x" });
+    const reply = await owner.post("/api/admin/redirects", { from: "/x", to: "/CAFÉ" });
+    expect(reply.status).toBe(400);
+    expect(await redirectsAfter(owner)).toEqual({ "/café": "/x" });
+
+    // Moving the page that one leads to doesn't make a chain, or point anything at itself.
+    addRedirect(made.orm, { from: "/x", to: "/Été", source: "auto", now: 1 });
+    addRedirect(made.orm, { from: "/été", to: "/CAFÉ", source: "auto", now: 2 });
+    expect(await redirectsAfter(owner)).toEqual({ "/été": "/CAFÉ", "/x": "/CAFÉ" });
+  });
+
   test("old-site addresses are stored the way they'll be asked for", async () => {
     const made = await makeApp();
     const owner = await setUp(made);
