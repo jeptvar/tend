@@ -124,6 +124,8 @@ const NOT_FOUND_KEY = "not-found";
 const COMING_SOON_KEY = "coming-soon";
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FOREVER = "public, max-age=31536000, immutable";
+/** The same for one person: a browser keeps it, a shared cache never does. */
+const PRIVATELY_FOREVER = "private, max-age=31536000, immutable";
 const VARIANT_FILE = /^(\d{1,5})\.webp$/;
 const ICON_FILE = /^icon-(\d{2,3})\.png$/;
 /** The size shared pictures are, when there's one that big: what sharing sites ask for. */
@@ -912,8 +914,7 @@ export function createSite(options: SiteOptions): Site {
     c: Context,
     path: string,
     type: string,
-    name?: string,
-    disposition: "inline" | "attachment" = "inline",
+    options: { name?: string; disposition?: "inline" | "attachment"; privately?: boolean } = {},
   ): Response | undefined {
     let size: number;
     try {
@@ -924,11 +925,11 @@ export function createSite(options: SiteOptions): Site {
     const headers: Record<string, string> = {
       "Content-Type": type,
       "Content-Length": String(size),
-      "Cache-Control": FOREVER,
+      "Cache-Control": options.privately ? PRIVATELY_FOREVER : FOREVER,
     };
-    if (name) {
+    if (options.name) {
       headers["Content-Disposition"] =
-        `${disposition}; filename*=UTF-8''${encodeURIComponent(name)}`;
+        `${options.disposition ?? "inline"}; filename*=UTF-8''${encodeURIComponent(options.name)}`;
     }
     if (c.req.method === "HEAD") return new Response(null, { headers });
     const stream = Readable.toWeb(createReadStream(path)) as ReadableStream<Uint8Array>;
@@ -988,12 +989,31 @@ export function createSite(options: SiteOptions): Site {
     return sendFile(c, path, "image/png");
   }
 
-  // Pictures and files stay reachable whoever can see the site: their addresses can't be
-  // guessed, and the Coming soon page needs the logo.
+  /**
+   * Who may have a picture or file. A Private site keeps them for people who can sign in,
+   * except its logo and icon, which say whose site it is on the way to signing in. While a
+   * site is Coming soon they stay reachable, because its page shows the logo, and nothing on
+   * it links to anything else. Signed in on a Private site, they're sent for that person
+   * only, so no shared cache passes them on.
+   */
+  async function mediaAccess(c: Context, item: Media): Promise<"everyone" | "signedIn" | "no"> {
+    const who = await access(c);
+    if (who === "public" || who === "comingSoon" || visibility?.mode !== "private") {
+      return "everyone";
+    }
+    if (who === "signedIn") return "signedIn";
+    const design = await settingValue(orm, "design");
+    return item.id === design.logoId || item.id === siteIconId(design) ? "everyone" : "no";
+  }
+
   app.get("/media/:id/:hash/:file", async (c) => {
     const { id, hash, file } = c.req.param();
     const item = isMediaId(id) ? await getMedia(orm, id) : undefined;
     if (!item || item.trashedAt !== null) return fileNotFound(c);
+    // The same answer as for nothing at all, so a Private site doesn't say what it has.
+    const allowed = await mediaAccess(c, item);
+    if (allowed === "no") return fileNotFound(c);
+    const privately = allowed === "signedIn";
     const current = mediaHash(item);
     const icon = file.match(ICON_FILE);
     if (icon && item.kind === "image") {
@@ -1013,12 +1033,13 @@ export function createSite(options: SiteOptions): Site {
         return nearest === undefined ? fileNotFound(c) : moved(variantUrl(item, nearest));
       }
       const path = files.variantPath(item.id, current, `${width}.webp`);
-      return sendFile(c, path, "image/webp") ?? fileNotFound(c);
+      return sendFile(c, path, "image/webp", { privately }) ?? fileNotFound(c);
     }
     if (hash !== current || file !== downloadName(item)) return moved(originalUrl(item));
     const path = files.originalPath(item.id, current, item.ext);
+    const name = downloadName(item);
     const disposition = item.kind === "image" ? "inline" : "attachment";
-    return sendFile(c, path, item.mime, downloadName(item), disposition) ?? fileNotFound(c);
+    return sendFile(c, path, item.mime, { name, disposition, privately }) ?? fileNotFound(c);
   });
 
   app.get("/robots.txt", async (c) => {
