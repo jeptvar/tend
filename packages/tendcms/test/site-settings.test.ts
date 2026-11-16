@@ -362,7 +362,7 @@ describe("design", () => {
     const { html } = await page(made, "/");
     expect(html).toContain('data-fonts="classic"');
     expect(html).toContain("--tend-accent: #ffcc00;");
-    expect(html).toContain("\\3c /style>\\3c script>");
+    expect(html).toContain("<\\/style><script>");
     expect(html).not.toContain("</style><script>");
     expect(html).toContain("Made with flour");
     expect(html).toContain('href="https://instagram.com/rise"');
@@ -609,7 +609,11 @@ describe("search engines and sharing", () => {
       "</script>",
     );
     expect(jsonForScript({ name: "a b" })).toBe('{"name":"a\\u2028b"}');
-    expect(cssForStyle("a { content: '</style>' }")).toBe("a { content: '\\3c /style>' }");
+    expect(cssForStyle("a { content: '</style>' }")).toBe("a { content: '<\\/style>' }");
+    expect(cssForStyle("a { content: '</STYLE >' }")).not.toContain("</");
+    // Range queries need their "<" exactly as typed, or the rules inside never apply.
+    const ranges = "@media (width < 600px) { a { color: red } } @container (width <= 40em) {}";
+    expect(cssForStyle(ranges)).toBe(ranges);
     const head = buildHead({
       origin: "https://example.com",
       path: '/x"><script>',
