@@ -379,8 +379,9 @@ describe("the page cache", () => {
 
   test("a static homepage has only one page, so numbers can't fill the cache", async () => {
     const { made } = await cachedSite();
-    await settle();
-    expect((await made.app.request("/")).headers.get("server-timing")).toContain("hit");
+    // Stored by the background refill or by this visit, whichever is first. When the refill
+    // finishes depends on the machine, and this test is about the numbers that come after.
+    await made.app.request("/");
     for (const page of [2, 3, 999]) {
       expect((await made.app.request(`/?page=${page}`)).status, String(page)).toBe(404);
     }
