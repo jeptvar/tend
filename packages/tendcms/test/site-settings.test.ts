@@ -471,6 +471,49 @@ describe("redirects", () => {
     ]);
   });
 
+  test("a redirect from one of Tend's own addresses is refused, as it could never be used", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    for (const from of [
+      "/blog",
+      "/BLOG",
+      "/feed",
+      "/rss.xml",
+      "/sitemap.xml",
+      "/robots.txt",
+      "/healthz",
+      "/admin",
+      "/admin/posts",
+      "/api/admin/entries",
+      "/media/x/y/480.webp",
+      "/assets/meadow/x/theme.css",
+    ]) {
+      const reply = await owner.post("/api/admin/redirects", { from, to: "/contact" });
+      expect(reply.status, from).toBe(400);
+      expect((await reply.json()).error.field, from).toBe("from");
+    }
+    expect((await (await owner.get("/api/admin/redirects")).json()).redirects).toEqual([]);
+    // Only as far as Tend's own: an old page called /blogging or /media-kit is fine.
+    for (const from of ["/blogging", "/media-kit"]) {
+      expect((await owner.post("/api/admin/redirects", { from, to: "/contact" })).status).toBe(201);
+    }
+  });
+
+  test("a tag's page is taken while it has posts, and free to lead on from when it hasn't", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const news = await (await owner.post("/api/admin/tags", { name: "News" })).json();
+    await publish(owner, "post", { title: "Opening day", tagIds: [news.id] });
+    const taken = await owner.post("/api/admin/redirects", { from: "/tag/news", to: "/contact" });
+    expect((await taken.json()).error.code).toBe("address_taken");
+
+    const old = await owner.post("/api/admin/redirects", { from: "/tag/specials", to: "/blog" });
+    expect(old.status).toBe(201);
+    const reply = await made.app.request("/tag/specials");
+    expect(reply.status).toBe(301);
+    expect(reply.headers.get("location")).toBe("/blog");
+  });
+
   test("a redirect added by hand works, but never over a page that's there", async () => {
     const made = await makeApp();
     const owner = await setUp(made);

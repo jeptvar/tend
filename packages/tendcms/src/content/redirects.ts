@@ -144,6 +144,26 @@ function asUrl(typed: string): URL | undefined {
   }
 }
 
+/** Addresses Tend answers itself, before it ever looks for a redirect (server.ts, router.ts). */
+const TENDS_OWN = new Set([
+  "/blog",
+  "/feed",
+  "/rss.xml",
+  "/sitemap.xml",
+  "/robots.txt",
+  "/healthz",
+]);
+const TENDS_OWN_FOLDERS = ["/admin", "/api", "/media", "/assets"];
+
+/** Whether an address is one of Tend's own, so a redirect from it would never be used. */
+export function isTendsOwnAddress(path: string): boolean {
+  const lower = path.toLowerCase();
+  return (
+    TENDS_OWN.has(lower) ||
+    TENDS_OWN_FOLDERS.some((folder) => lower === folder || lower.startsWith(`${folder}/`))
+  );
+}
+
 /**
  * The old address, stored the way the site compares addresses: a decoded path in lower
  * case, with nothing after it. A whole address from an old website gives just its path.
