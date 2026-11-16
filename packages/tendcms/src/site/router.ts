@@ -661,14 +661,17 @@ export function createSite(options: SiteOptions): Site {
     await loadSite();
     const path = `/tag/${tag.slug}`;
     const listed = await postsContext(page, path, tag.id);
+    // Only published posts decide which tag pages exist. A tag is made as soon as someone
+    // types it on a draft, and its name can say what isn't announced yet ("Closing down").
+    // Later pages past the end are already 404, so an empty one is always the first.
+    if (listed.posts.length === 0) throw new NotFound();
     const facts: PageFacts = {
       path: pagedPath(path, page),
       title: `${tag.name} · ${site.name}`,
       description: tag.description,
       type: "website",
       imageId: null,
-      // A tag with nothing published under it is an empty page, not worth finding.
-      noindex: listed.posts.length === 0,
+      noindex: false,
     };
     const context = {
       ...(await baseContext(c, facts)),

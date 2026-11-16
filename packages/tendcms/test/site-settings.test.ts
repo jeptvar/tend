@@ -518,6 +518,23 @@ describe("tags", () => {
     expect(post.html).toContain('<a href="/tag/sourdough-recipes">Sourdough Recipes</a>');
     expect((await page(made, "/tag/nothing-here")).status).toBe(404);
   });
+
+  test("a tag only drafts use has no page, so its name stays private", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const tag = await (await owner.post("/api/admin/tags", { name: "Closing down" })).json();
+    const draft = await (await owner.post(ENTRIES, { type: "post" })).json();
+    const saved = await owner.patch(
+      `${ENTRIES}/${draft.id}`,
+      { title: "Big news", tagIds: [tag.id] },
+      { "If-Match": "1" },
+    );
+    expect((await saved.json()).data.tagIds).toEqual([tag.id]);
+
+    const reply = await page(made, "/tag/closing-down");
+    expect(reply.status).toBe(404);
+    expect(reply.html).not.toContain("Closing down");
+  });
 });
 
 describe("search engines and sharing", () => {
