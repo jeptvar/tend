@@ -431,6 +431,8 @@ describe("media-7 and media-10: an original named like a size or an icon", () =>
     const served = await made.app.request(icon.url);
     expect(served.status).toBe(200);
     expect(served.headers.get("content-disposition")).toContain("icon-32-original.png");
+    // A picture shows in the browser. Only other files, like PDFs, are saved instead.
+    expect(served.headers.get("content-disposition")).toMatch(/^inline;/);
     const iconMeta = await sharp(Buffer.from(await served.arrayBuffer())).metadata();
     expect([iconMeta.width, iconMeta.height]).toEqual([64, 64]);
 

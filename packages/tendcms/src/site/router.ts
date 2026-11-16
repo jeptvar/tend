@@ -903,8 +903,18 @@ export function createSite(options: SiteOptions): Site {
     });
   });
 
-  /** A stored file, sent as it's read. Its address names its contents, so it never changes. */
-  function sendFile(c: Context, path: string, type: string, name?: string): Response | undefined {
+  /**
+   * A stored file, sent as it's read. Its address names its contents, so it never changes.
+   * With a name, a picture shows in the browser, but anything else, like a PDF, is saved
+   * (PLAN.md §12): opened in place, it would run in a viewer at the site's own address.
+   */
+  function sendFile(
+    c: Context,
+    path: string,
+    type: string,
+    name?: string,
+    disposition: "inline" | "attachment" = "inline",
+  ): Response | undefined {
     let size: number;
     try {
       size = statSync(path).size;
@@ -917,7 +927,8 @@ export function createSite(options: SiteOptions): Site {
       "Cache-Control": FOREVER,
     };
     if (name) {
-      headers["Content-Disposition"] = `inline; filename*=UTF-8''${encodeURIComponent(name)}`;
+      headers["Content-Disposition"] =
+        `${disposition}; filename*=UTF-8''${encodeURIComponent(name)}`;
     }
     if (c.req.method === "HEAD") return new Response(null, { headers });
     const stream = Readable.toWeb(createReadStream(path)) as ReadableStream<Uint8Array>;
@@ -1006,7 +1017,8 @@ export function createSite(options: SiteOptions): Site {
     }
     if (hash !== current || file !== downloadName(item)) return moved(originalUrl(item));
     const path = files.originalPath(item.id, current, item.ext);
-    return sendFile(c, path, item.mime, downloadName(item)) ?? fileNotFound(c);
+    const disposition = item.kind === "image" ? "inline" : "attachment";
+    return sendFile(c, path, item.mime, downloadName(item), disposition) ?? fileNotFound(c);
   });
 
   app.get("/robots.txt", async (c) => {

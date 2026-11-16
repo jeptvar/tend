@@ -253,6 +253,8 @@ describe("uploading", () => {
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toBe("application/pdf");
     expect(served.headers.get("content-disposition")).toContain("lunch-menu-2026.pdf");
+    // Saved, not opened in a viewer at the site's own address (PLAN.md §12).
+    expect(served.headers.get("content-disposition")).toMatch(/^attachment;/);
     expect(Buffer.from(await served.arrayBuffer()).equals(pdf)).toBe(true);
   });
 });
