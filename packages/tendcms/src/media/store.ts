@@ -14,6 +14,9 @@ import { fsyncDir, fsyncFile } from "../durable.ts";
 /** The name write() gives a file until it's complete: <name>.<process>.<time>.tmp. */
 const TEMPORARY = /\.\d+\.\d+\.tmp$/;
 
+/** How full a disk gets before picture sizes are cleared to make room (PLAN.md §13). */
+export const SIZES_CLEARED_AT = 0.9;
+
 /**
  * Where uploads live in the data folder (PLAN.md §8). Originals are spread over folders by
  * the end of their ID, because the start is a timestamp that hardly changes. Each version
@@ -106,6 +109,32 @@ export class MediaStore {
   removeAllSizes(id: string): void {
     rmSync(join(this.#root, "variants", id), { recursive: true, force: true });
   }
+
+  /** Removes every size of every picture, and says how many bytes that freed. */
+  removeEverySize(): number {
+    const folder = join(this.#root, "variants");
+    let bytes = 0;
+    try {
+      for (const entry of readdirSync(folder, { recursive: true, withFileTypes: true })) {
+        if (entry.isFile()) bytes += statSync(join(entry.parentPath, entry.name)).size;
+      }
+    } catch {
+      // There's nothing there yet, or a size went while it was counted.
+    }
+    // A size being made right now can recreate a folder underneath this, hence the retries.
+    rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
+    return bytes;
+  }
+}
+
+/**
+ * Clears every picture size once the disk they're on is nearly full. They're made again when
+ * they're next asked for, so they go before anything that can't be (PLAN.md §13). Returns the
+ * bytes freed.
+ */
+export function clearSizesIfLow(store: MediaStore, space: { total: number; free: number }): number {
+  if (space.total <= 0 || (space.total - space.free) / space.total < SIZES_CLEARED_AT) return 0;
+  return store.removeEverySize();
 }
 
 /** The short form of a content hash used in addresses. */

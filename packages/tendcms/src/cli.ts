@@ -7,7 +7,7 @@ import { generatePassword, hashPassword } from "./auth/passwords.ts";
 import { displaySetupCode } from "./auth/setup-code.ts";
 import { backupFileName } from "./backups/format.ts";
 import { BackupError, checkBackup, restoreBackup } from "./backups/restore.ts";
-import { takeDailySnapshot } from "./backups/snapshots.ts";
+import { diskSpace, takeDailySnapshot } from "./backups/snapshots.ts";
 import { writeBackup } from "./backups/write.ts";
 import {
   type Config,
@@ -36,7 +36,7 @@ import {
 import { fsyncFile } from "./durable.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
 import { cleanUpMedia } from "./media/library.ts";
-import { MediaStore } from "./media/store.ts";
+import { clearSizesIfLow, MediaStore } from "./media/store.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
 
@@ -243,7 +243,8 @@ async function restore(file: string | undefined): Promise<void> {
 }
 
 const HOUR_MS = 60 * 60 * 1000;
-const SNAPSHOT_CHECK_MS = 10 * 60 * 1000;
+// How often Tend looks at whether a daily copy is due, and whether the disk is nearly full.
+const CHECK_EVERY_MS = 10 * 60 * 1000;
 
 async function start(): Promise<void> {
   const config = loadConfig();
@@ -355,8 +356,27 @@ async function start(): Promise<void> {
       snapshotting = false;
     }
   };
+  // When the disk is nearly full, picture sizes go first: they're made again as visitors ask
+  // for them, and the room they free keeps the site's own changes saving (PLAN.md §13).
+  const makeRoom = () => {
+    try {
+      const freed = clearSizesIfLow(files, diskSpace(config.dataDir));
+      if (freed > 0) {
+        const megabytes = Math.ceil(freed / (1024 * 1024));
+        console.warn(
+          `The disk is nearly full, so Tend cleared ${megabytes} MB of picture sizes. They're made again as visitors ask for them. Make more room soon: Settings → Backups shows how.`,
+        );
+      }
+    } catch (error) {
+      console.error(`Couldn't clear picture sizes to make room: ${(error as Error).message}`);
+    }
+  };
+  makeRoom();
   void snapshotIfDue();
-  setInterval(() => void snapshotIfDue(), SNAPSHOT_CHECK_MS).unref();
+  setInterval(() => {
+    makeRoom();
+    void snapshotIfDue();
+  }, CHECK_EVERY_MS).unref();
 
   const ports = portsToTry(config);
   listening = await listen(app.fetch, ports, config.hosts);

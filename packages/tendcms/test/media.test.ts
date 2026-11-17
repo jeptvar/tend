@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import { ApiError } from "../src/api/errors.ts";
 import { renderDoc } from "../src/content/render-doc.ts";
 import { checkUpload, processImage, sniff, widthsFor } from "../src/media/process.ts";
+import { clearSizesIfLow, MediaStore } from "../src/media/store.ts";
 import { makeApp, setUp } from "./auth-helpers.ts";
 
 const MEDIA = "/api/admin/media";
@@ -349,6 +350,30 @@ describe("serving pictures", () => {
     expect(trash.media.map((item: { id: string }) => item.id)).toEqual([uploaded.id]);
     await owner.post(`${MEDIA}/${uploaded.id}/restore`, {});
     expect((await made.app.request(uploaded.thumbUrl)).status).toBe(200);
+  });
+});
+
+describe("a nearly full disk", () => {
+  test("loses its picture sizes first, which are made again when next asked for", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const uploaded = await withPicture(owner);
+    const url: string = uploaded.srcset.split(", ")[0].split(" ")[0];
+    expect((await made.app.request(url)).status).toBe(200);
+    const store = new MediaStore(made.uploadsDir);
+    const originals = readdirSync(join(made.uploadsDir, "originals"), { recursive: true });
+
+    // 85% full is a warning in Settings, not yet a reason to clear anything.
+    expect(clearSizesIfLow(store, { total: 100, free: 15 })).toBe(0);
+    expect(existsSync(join(made.uploadsDir, "variants"))).toBe(true);
+
+    expect(clearSizesIfLow(store, { total: 100, free: 10 })).toBeGreaterThan(0);
+    expect(existsSync(join(made.uploadsDir, "variants"))).toBe(false);
+    expect(readdirSync(join(made.uploadsDir, "originals"), { recursive: true })).toEqual(originals);
+    expect((await made.app.request(url)).status).toBe(200);
+    // With nothing left to clear, there's nothing more it can free.
+    rmSync(join(made.uploadsDir, "variants"), { recursive: true, force: true });
+    expect(clearSizesIfLow(store, { total: 100, free: 1 })).toBe(0);
   });
 });
 
