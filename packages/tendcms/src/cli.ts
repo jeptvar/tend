@@ -114,7 +114,7 @@ function takeDataFolder(config: Config): Lock {
   } catch (error) {
     lock?.release();
     if (error instanceof LockError || error instanceof ConfigError) throw error;
-    throw explainDataFolderFailure(config.dataDir, error);
+    throw explainDataFolderFailure(config.dataDir, error, config.platform);
   }
 }
 

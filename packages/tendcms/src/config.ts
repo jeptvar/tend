@@ -227,11 +227,23 @@ export function portsToTry(config: Pick<Config, "port" | "platform">): number[] 
   return Array.from({ length: FALLBACK_PORTS + 1 }, (_, i) => DEFAULT_PORT + i);
 }
 
-export function dataFolderError(dataDir: string, cause: unknown): ConfigError {
+/** What to do about a data folder Tend can't write to, where it's running. */
+function dataFolderFix(platform: Platform | undefined): string {
+  // The image runs as node (user 1000), and a folder from the server, or a volume some
+  // hosts make, belongs to root.
+  if (platform === "railway") {
+    return "Railway's volumes belong to root, so set RAILWAY_RUN_UID=0 in this service's variables, then deploy again.";
+  }
+  if (platform === "docker") {
+    return "Tend runs as the node user (1000), so whatever is mounted at /data has to belong to it. For a folder on the server, run: sudo chown -R 1000:1000 <that folder>";
+  }
+  return "Give your user write access to it, or choose another folder with TEND_DATA_DIR.";
+}
+
+export function dataFolderError(dataDir: string, cause: unknown, platform?: Platform): ConfigError {
   const reason = (cause as NodeJS.ErrnoException).code ?? (cause as Error).message;
   return new ConfigError(
-    `Tend can't write to its data folder, ${dataDir} (${reason}). ` +
-      "Give your user write access to it, or choose another folder with TEND_DATA_DIR. " +
+    `Tend can't write to its data folder, ${dataDir} (${reason}). ${dataFolderFix(platform)} ` +
       "Fix: https://tendcms.dev/errors/data_not_writable",
   );
 }
@@ -242,9 +254,13 @@ const FOLDER_FAILURE =
   /^(EACCES|EPERM|EROFS|ENOSPC|EISDIR|ENOTDIR|SQLITE_CANTOPEN|SQLITE_READONLY|SQLITE_FULL|SQLITE_IOERR)/;
 
 /** Turns a failure while taking over the data folder into something that tells the truth. */
-export function explainDataFolderFailure(dataDir: string, error: unknown): unknown {
+export function explainDataFolderFailure(
+  dataDir: string,
+  error: unknown,
+  platform?: Platform,
+): unknown {
   const code = String((error as NodeJS.ErrnoException).code);
-  if (FOLDER_FAILURE.test(code)) return dataFolderError(dataDir, error);
+  if (FOLDER_FAILURE.test(code)) return dataFolderError(dataDir, error, platform);
   // The lock is the first thing to open a database, so this is where a broken
   // install or a computer with no prebuilt database component shows up.
   if (code === "ERR_DLOPEN_FAILED" || code === "MODULE_NOT_FOUND") {
@@ -271,7 +287,7 @@ export function prepareDataDir(config: Config): void {
     }
     accessSync(config.dataDir, constants.W_OK);
   } catch (error) {
-    throw dataFolderError(config.dataDir, error);
+    throw dataFolderError(config.dataDir, error, config.platform);
   }
 }
 
