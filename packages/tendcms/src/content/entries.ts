@@ -7,8 +7,19 @@ import type * as schema from "../db/schema.ts";
 import { entries, refs, revisions, users } from "../db/schema.ts";
 import { uuidv7 } from "../ids.ts";
 import { entryPath, isReservedPageAddress, slugify } from "./address.ts";
-import { type Doc, type EntryData, linkedEntryIds, newEntryData } from "./doc.ts";
+import {
+  type Doc,
+  type EntryData,
+  type FeaturedImage,
+  firstImageId,
+  linkedEntryIds,
+  newEntryData,
+  shownMediaIds,
+  usedMediaIds,
+} from "./doc.ts";
+import { addRedirect, clearRedirectFrom } from "./redirects.ts";
 import { leadText, renderDoc } from "./render-doc.ts";
+import { syncLiveTags } from "./tags.ts";
 
 export type EntryType = "post" | "page";
 export type Entry = typeof entries.$inferSelect;
@@ -31,6 +42,9 @@ export interface EntryPatch {
   slug?: string | undefined;
   doc?: Doc | undefined;
   summary?: string | null | undefined;
+  featuredImage?: FeaturedImage | null | undefined;
+  seo?: Partial<EntryData["seo"]> | undefined;
+  tagIds?: string[] | undefined;
   /** Replacing someone else's version on purpose: it's kept as a revision first. */
   keepOtherVersion?: boolean | undefined;
   /** Which editor window this came from. Its own earlier saves are never a conflict. */
@@ -41,8 +55,18 @@ export interface EntryPatch {
 
 export type SaveResult = { saved: Entry } | { conflict: Entry };
 
-function entryData(entry: Entry): EntryData {
-  return entry.data as EntryData;
+/** The stored data, with anything a row from an older version lacks filled in. */
+function entryData(entry: Pick<Entry, "data">): EntryData {
+  const stored = entry.data as Partial<EntryData>;
+  const blank = newEntryData();
+  return {
+    ...blank,
+    ...stored,
+    doc: stored.doc ?? blank.doc,
+    seo: { ...blank.seo, ...stored.seo },
+    tagIds: Array.isArray(stored.tagIds) ? stored.tagIds : [],
+    featuredImage: stored.featuredImage ?? null,
+  };
 }
 
 function fetchEntry(db: Db, id: string): Entry | undefined {
@@ -78,6 +102,18 @@ function isOwnLatest(
 }
 
 /**
+ * A request from the window that made the newest version, sent before the one that made it
+ * and held up on the way. What it carries was replaced by that window's own newer words.
+ */
+function isOlderFromSameWindow(
+  entry: Entry,
+  from: { editSession?: string | undefined; editSeq?: number | undefined },
+): boolean {
+  if (from.editSession === undefined || entry.editSession !== from.editSession) return false;
+  return from.editSeq !== undefined && entry.editSeq !== null && from.editSeq <= entry.editSeq;
+}
+
+/**
  * Anything acting on an entry has to have seen its newest version. The exception is the
  * editor window that made that version: it knows about it, and only lost the answer.
  */
@@ -93,21 +129,28 @@ function requireCurrentRev(
   }
 }
 
-/** Records what this version links to, for "used in" and for telling people what breaks. */
-function syncEntryRefs(db: Db, entryId: string, scope: "working" | "live", doc: Doc | null): void {
+/** Records what this version links to and shows, for "used in" and for telling people what breaks. */
+function syncEntryRefs(
+  db: Db,
+  entryId: string,
+  scope: "working" | "live",
+  data: Pick<EntryData, "doc" | "featuredImage" | "seo" | "tagIds"> | null,
+): void {
   db.delete(refs)
-    .where(and(eq(refs.entryId, entryId), eq(refs.scope, scope), eq(refs.kind, "entry")))
+    .where(and(eq(refs.entryId, entryId), eq(refs.scope, scope)))
     .run();
-  const ids = doc ? linkedEntryIds(doc) : [];
+  // What visitors see tagged follows the published version, like everything else live.
+  if (scope === "live") syncLiveTags(db, entryId, data?.tagIds ?? []);
+  if (!data) return;
+  const rows = [
+    ...linkedEntryIds(data.doc).map((refId) => ({ entryId, scope, kind: "entry" as const, refId })),
+    ...usedMediaIds(data).map((refId) => ({ entryId, scope, kind: "media" as const, refId })),
+  ];
   // In batches, because one statement can only carry so many values, and a long index page
   // really can link to thousands of posts.
-  for (let start = 0; start < ids.length; start += REF_BATCH) {
+  for (let start = 0; start < rows.length; start += REF_BATCH) {
     db.insert(refs)
-      .values(
-        ids
-          .slice(start, start + REF_BATCH)
-          .map((refId) => ({ entryId, scope, kind: "entry" as const, refId })),
-      )
+      .values(rows.slice(start, start + REF_BATCH))
       .run();
   }
 }
@@ -280,6 +323,9 @@ export async function saveEntry(
         ...data,
         doc: patch.doc ?? data.doc,
         summary: patch.summary === undefined ? data.summary : patch.summary,
+        featuredImage: patch.featuredImage === undefined ? data.featuredImage : patch.featuredImage,
+        seo: patch.seo === undefined ? data.seo : { ...data.seo, ...patch.seo },
+        tagIds: patch.tagIds ?? data.tagIds,
       };
       const title = patch.title === undefined ? entry.title : patch.title.trim();
       const slug =
@@ -298,18 +344,22 @@ export async function saveEntry(
         ) {
           return { saved: entry };
         }
-        tx.insert(revisions)
-          .values({
-            id: uuidv7(input.now),
-            entryId: entry.id,
-            kind: "conflict",
-            title,
-            slug,
-            data: nextData,
-            authorId: input.authorId,
-            createdAt: input.now,
-          })
-          .run();
+        // Still refused, so it can't undo what came after it. But it lost to nothing except
+        // the same window's newer words, so it isn't a version anyone has to choose between.
+        if (!isOlderFromSameWindow(entry, patch)) {
+          tx.insert(revisions)
+            .values({
+              id: uuidv7(input.now),
+              entryId: entry.id,
+              kind: "conflict",
+              title,
+              slug,
+              data: nextData,
+              authorId: input.authorId,
+              createdAt: input.now,
+            })
+            .run();
+        }
         return { conflict: entry };
       }
       if (patch.keepOtherVersion) {
@@ -342,7 +392,7 @@ export async function saveEntry(
         })
         .where(eq(entries.id, entry.id))
         .run();
-      syncEntryRefs(tx, entry.id, "working", nextData.doc);
+      syncEntryRefs(tx, entry.id, "working", nextData);
       return { saved: requireEntry(tx, entry.id) };
     },
     { behavior: "immediate" },
@@ -410,6 +460,13 @@ function publishInTransaction(
   const data = entryData(entry);
   const { html, text } = renderDoc(data.doc);
   const revisionId = uuidv7(input.now);
+  // A published address that changes leaves a way from the old one to the new (PLAN.md §9).
+  const path = entryPath({ type: entry.type, isHome: entry.isHome, slug });
+  if (entry.liveSlug !== null) {
+    const was = entryPath({ type: entry.type, isHome: entry.isHome, slug: entry.liveSlug });
+    if (was !== path) addRedirect(db, { from: was, to: path, source: "auto", now: input.now });
+  }
+  clearRedirectFrom(db, path);
   db.insert(revisions)
     .values({
       id: revisionId,
@@ -441,8 +498,8 @@ function publishInTransaction(
     })
     .where(eq(entries.id, entry.id))
     .run();
-  syncEntryRefs(db, entry.id, "working", data.doc);
-  syncEntryRefs(db, entry.id, "live", data.doc);
+  syncEntryRefs(db, entry.id, "working", data);
+  syncEntryRefs(db, entry.id, "live", data);
   return requireEntry(db, entry.id);
 }
 
@@ -595,7 +652,7 @@ export async function undoUnpublish(
         })
         .where(eq(entries.id, entry.id))
         .run();
-      syncEntryRefs(tx, entry.id, "live", (live.data as EntryData).doc);
+      syncEntryRefs(tx, entry.id, "live", entryData(live));
       return requireEntry(tx, entry.id);
     },
     { behavior: "immediate" },
@@ -610,6 +667,9 @@ export async function trashEntry(
   return orm.transaction(
     (tx) => {
       const entry = requireEntry(tx, input.id);
+      // Already there, from another tab or person: binning it again mustn't restart the
+      // 30 days it has left.
+      if (entry.trashedAt !== null) return entry;
       refuseForHome(entry, "moved to the Trash");
       tx.update(entries)
         .set({ ...offTheSite(input, entry), trashedAt: input.now })
@@ -630,6 +690,9 @@ export async function restoreEntry(
   return orm.transaction(
     (tx) => {
       const entry = requireEntry(tx, input.id);
+      // Someone else restored it first. Doing it again would change nothing but the version
+      // number, and that would tell whoever's now editing it that they'd been overtaken.
+      if (entry.trashedAt === null) return entry;
       tx.update(entries)
         .set({
           trashedAt: null,
@@ -681,7 +744,7 @@ export async function discardChanges(
         authorId: input.authorId,
         now: input.now,
       });
-      const data = live.data as EntryData;
+      const data = entryData(live);
       tx.update(entries)
         .set({
           title: live.title,
@@ -696,7 +759,7 @@ export async function discardChanges(
         })
         .where(eq(entries.id, entry.id))
         .run();
-      syncEntryRefs(tx, entry.id, "working", data.doc);
+      syncEntryRefs(tx, entry.id, "working", data);
       return { entry: requireEntry(tx, entry.id), keptRevisionId };
     },
     { behavior: "immediate" },
@@ -727,7 +790,7 @@ export async function duplicateEntry(
           updatedAt: input.now,
         })
         .run();
-      syncEntryRefs(tx, id, "working", data.doc);
+      syncEntryRefs(tx, id, "working", data);
       return requireEntry(tx, id);
     },
     { behavior: "immediate" },
@@ -830,7 +893,7 @@ export async function restoreRevision(
         authorId: input.authorId,
         now: input.now,
       });
-      const data = input.revision.data as EntryData;
+      const data = entryData(input.revision);
       const title = input.revision.title;
       const slug = input.includeAddress ? input.revision.slug : entry.slug;
       tx.update(entries)
@@ -847,7 +910,7 @@ export async function restoreRevision(
         })
         .where(eq(entries.id, entry.id))
         .run();
-      syncEntryRefs(tx, entry.id, "working", data.doc);
+      syncEntryRefs(tx, entry.id, "working", data);
       return requireEntry(tx, entry.id);
     },
     { behavior: "immediate" },
@@ -955,6 +1018,50 @@ export async function findLinkTargets(
   );
 }
 
+/** Whose each of these is, and its title as published (null when it isn't on the site). */
+export async function findAuthorsAndLiveTitles(
+  orm: Orm,
+  ids: string[],
+): Promise<Map<string, { authorId: string | null; liveTitle: string | null }>> {
+  const found = new Map<string, { authorId: string | null; liveTitle: string | null }>();
+  const wanted = [...new Set(ids)];
+  for (let start = 0; start < wanted.length; start += REF_BATCH) {
+    const rows = orm
+      .select({ id: entries.id, authorId: entries.authorId, liveTitle: revisions.title })
+      .from(entries)
+      .leftJoin(revisions, eq(revisions.id, entries.publishedRevId))
+      .where(inArray(entries.id, wanted.slice(start, start + REF_BATCH)))
+      .all();
+    for (const row of rows) found.set(row.id, { authorId: row.authorId, liveTitle: row.liveTitle });
+  }
+  return found;
+}
+
+/**
+ * Which of these show a picture in their published version, rather than only linking to its
+ * address. Moving it to the Trash takes it off the first kind, but leaves the second with a
+ * link that leads nowhere.
+ */
+export async function findLiveShowing(
+  orm: Orm,
+  input: { entryIds: string[]; mediaId: string },
+): Promise<Set<string>> {
+  const showing = new Set<string>();
+  const wanted = [...new Set(input.entryIds)];
+  for (let start = 0; start < wanted.length; start += REF_BATCH) {
+    const rows = orm
+      .select({ id: entries.id, data: revisions.data })
+      .from(entries)
+      .innerJoin(revisions, eq(revisions.id, entries.publishedRevId))
+      .where(inArray(entries.id, wanted.slice(start, start + REF_BATCH)))
+      .all();
+    for (const row of rows) {
+      if (shownMediaIds(entryData(row)).includes(input.mediaId)) showing.add(row.id);
+    }
+  }
+  return showing;
+}
+
 /**
  * Removes what's been kept long enough: the Trash, automatic versions, and rows from
  * pressing New and never typing anything. Every published version stays.
@@ -984,6 +1091,7 @@ export function cleanUp(orm: Orm, now: number): void {
 
 /** What lists need to know about something published. */
 export interface LiveSummary {
+  id: string;
   type: string;
   title: string;
   slug: string;
@@ -991,7 +1099,12 @@ export interface LiveSummary {
   /** The first paragraph's words, for an automatic summary. */
   lead: string;
   summary: string | null;
+  /** The one chosen, or else the first picture in the text: "automatic". */
+  featuredImage: FeaturedImage | null;
+  seo: EntryData["seo"];
   firstPublishedAt: number | null;
+  /** When this version was published. */
+  publishedAt: number;
 }
 
 /** What visitors see: the published version, never the working copy. */
@@ -1001,33 +1114,69 @@ export interface LiveEntry extends LiveSummary {
 }
 
 const SUMMARY_FIELDS = {
+  id: entries.id,
   type: entries.type,
   title: revisions.title,
   slug: revisions.slug,
   text: revisions.text,
   data: revisions.data,
   firstPublishedAt: entries.firstPublishedAt,
+  publishedAt: revisions.createdAt,
 };
 
 const ENTRY_FIELDS = { ...SUMMARY_FIELDS, isHome: entries.isHome, html: revisions.html };
 
 function toSummary(row: {
+  id: string;
   type: string;
   title: string;
   slug: string;
   text: string | null;
   data: unknown;
   firstPublishedAt: number | null;
+  publishedAt: number;
 }): LiveSummary {
+  const data = entryData(row);
+  const firstImage = firstImageId(data.doc);
   return {
+    id: row.id,
     type: row.type,
     title: row.title,
     slug: row.slug,
     text: row.text ?? "",
-    lead: leadText((row.data as EntryData).doc),
-    summary: (row.data as EntryData).summary,
+    lead: leadText(data.doc),
+    summary: data.summary,
+    featuredImage: data.featuredImage ?? (firstImage ? { mediaId: firstImage, alt: null } : null),
+    seo: data.seo,
     firstPublishedAt: row.firstPublishedAt,
+    publishedAt: row.publishedAt,
   };
+}
+
+/** Every published page and post, for the sitemap: the newest first. */
+export async function listLiveForSitemap(orm: Orm): Promise<(LiveSummary & { isHome: number })[]> {
+  return orm
+    .select({ ...SUMMARY_FIELDS, isHome: entries.isHome })
+    .from(entries)
+    .innerJoin(revisions, eq(revisions.id, entries.publishedRevId))
+    .where(isLive)
+    .orderBy(desc(revisions.createdAt))
+    .all()
+    .map((row) => ({ ...toSummary(row), isHome: row.isHome }));
+}
+
+/** Published posts by their IDs, in the order given. */
+export async function findLivePosts(orm: Orm, ids: string[]): Promise<LiveSummary[]> {
+  if (ids.length === 0) return [];
+  const rows = orm
+    .select(SUMMARY_FIELDS)
+    .from(entries)
+    .innerJoin(revisions, eq(revisions.id, entries.publishedRevId))
+    .where(and(isLive, inArray(entries.id, ids)))
+    .all()
+    .map(toSummary);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return ids.flatMap((id) => byId.get(id) ?? []);
 }
 
 const isLive = and(eq(entries.status, "published"), isNull(entries.trashedAt));
@@ -1107,10 +1256,59 @@ export async function countLivePosts(orm: Orm): Promise<number> {
   return row?.total ?? 0;
 }
 
-/** The pages for the site's menu, until the real Site menu arrives (M3). Titles only. */
-export async function listMenuPages(orm: Orm): Promise<{ title: string; slug: string }[]> {
+/** What a link to something live needs: its published title and address. */
+export async function findLiveLinks(
+  orm: Orm,
+  ids: string[],
+): Promise<Map<string, { title: string; path: string; type: string }>> {
+  const links = new Map<string, { title: string; path: string; type: string }>();
+  const wanted = [...new Set(ids)];
+  for (let start = 0; start < wanted.length; start += 500) {
+    const rows = orm
+      .select({
+        id: entries.id,
+        type: entries.type,
+        isHome: entries.isHome,
+        liveSlug: entries.liveSlug,
+        title: revisions.title,
+      })
+      .from(entries)
+      .innerJoin(revisions, eq(revisions.id, entries.publishedRevId))
+      .where(and(isLive, inArray(entries.id, wanted.slice(start, start + 500))))
+      .all();
+    for (const row of rows) {
+      if (row.liveSlug === null) continue;
+      links.set(row.id, {
+        title: row.title,
+        type: row.type,
+        path: entryPath({ type: row.type, isHome: row.isHome, slug: row.liveSlug }),
+      });
+    }
+  }
+  return links;
+}
+
+/** Whether a published page or post is at this address now. */
+export async function isLivePath(orm: Orm, path: string): Promise<boolean> {
+  if (path === "/") return (await findLiveHome(orm)) !== undefined;
+  const post = path.match(/^\/blog\/([^/]+)$/)?.[1];
+  const page = path.match(/^\/([^/]+)$/)?.[1];
+  const [type, slug] = post ? ["post", post] : page ? ["page", page] : [null, null];
+  if (!type || !slug) return false;
+  const row = orm
+    .select({ id: entries.id })
+    .from(entries)
+    .where(and(isLive, eq(entries.type, type), eq(entries.liveSlug, slug)))
+    .get();
+  return row !== undefined;
+}
+
+/** Every published page but the homepage, for the automatic menu. */
+export async function listMenuPages(
+  orm: Orm,
+): Promise<{ id: string; title: string; slug: string }[]> {
   return orm
-    .select({ title: revisions.title, slug: revisions.slug })
+    .select({ id: entries.id, title: revisions.title, slug: revisions.slug })
     .from(entries)
     .innerJoin(revisions, eq(revisions.id, entries.publishedRevId))
     .where(and(isLive, eq(entries.type, "page"), eq(entries.isHome, 0)))
@@ -1124,9 +1322,28 @@ export interface StarterEntry {
   slug: string;
   isHome?: boolean;
   body: string;
+  /** Ends with a Contact & hours section, showing the business details from Settings. */
+  contact?: boolean;
 }
 
 /** Creates a starting point's example content, already published. Part of setup's transaction. */
+function withContactSection(doc: Doc, contact: boolean | undefined): Doc {
+  if (!contact) return doc;
+  return {
+    type: "doc",
+    content: [
+      ...doc.content,
+      {
+        type: "section",
+        attrs: { kind: "contact", preset: "1", tone: "muted", align: "left" },
+        content: [
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Visit us" }] },
+        ],
+      },
+    ],
+  };
+}
+
 export function seedStarterEntries(
   db: Db,
   input: {
@@ -1146,7 +1363,7 @@ export function seedStarterEntries(
         slug: starter.slug,
         isHome: starter.isHome ? 1 : 0,
         isExample: 1,
-        data: newEntryData(input.toDoc(starter.body)),
+        data: newEntryData(withContactSection(input.toDoc(starter.body), starter.contact)),
         authorId: input.authorId,
         createdAt: input.now,
         updatedAt: input.now,

@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "vitest";
 import { entryPath, isReservedPageAddress, slugify } from "../src/content/address.ts";
 import { type Doc, linkedEntryIds, parseDoc, textToDoc } from "../src/content/doc.ts";
 import {
   leadText,
   placeholderIds,
+  RENDER_VERSION,
   renderDoc,
   resolvePlaceholders,
   summarize,
@@ -345,6 +347,22 @@ describe("rendering every kind of content", () => {
       content: [{ type: "paragraph", content: [text("Hi")] }],
     },
   );
+
+  test("a change to what the renderer makes comes with a new RENDER_VERSION", () => {
+    // Published pages keep the HTML they were published with until Tend renders them again
+    // at start-up, which it does only when RENDER_VERSION changes (content/rerender.ts). So
+    // when this fails because the output changed, raise RENDER_VERSION in render-doc.ts and
+    // add its fingerprint here. Don't edit an old one: it records what that version made.
+    const made = renderDoc(parseDoc(everything, { allowSections: true }));
+    const fingerprint = createHash("sha256")
+      .update(made.html)
+      .update("\0")
+      .update(made.text)
+      .digest("hex")
+      .slice(0, 16);
+    const madeBy: Record<number, string> = { 1: "b36765501ca69a07" };
+    expect(fingerprint, `RENDER_VERSION is ${RENDER_VERSION}`).toBe(madeBy[RENDER_VERSION]);
+  });
 
   test("each one comes out as the right safe HTML", () => {
     const { html, text: plain } = renderDoc(parseDoc(everything, { allowSections: true }));
@@ -821,7 +839,10 @@ describe("the entries API", () => {
     expect((await made.app.request("/blog/old")).status).toBe(200);
     expect((await made.app.request("/blog/new")).status).toBe(404);
     await publish(owner, entry.id, 4);
-    expect((await made.app.request("/blog/old")).status).toBe(404);
+    // The old address leads to the new one, so links and bookmarks keep working.
+    const old = await made.app.request("/blog/old");
+    expect(old.status).toBe(301);
+    expect(old.headers.get("location")).toBe("/blog/new");
     expect((await made.app.request("/blog/new")).status).toBe(200);
   });
 
@@ -857,6 +878,33 @@ describe("the entries API", () => {
     const restored = await (await owner.post(`${ENTRIES}/${entry.id}/restore`)).json();
     expect(restored).toMatchObject({ trashedAt: null, status: "draft", url: null });
     expect(restored.data.doc).toEqual(paragraph("Words"));
+  });
+
+  test("binning twice, from two tabs, doesn't restart its 30 days", async () => {
+    const { made, owner } = await signedIn();
+    const entry = await newEntry(owner);
+    await save(owner, entry.id, 1, { title: "Twice", doc: paragraph("Words") });
+    const binned = await (await owner.post(`${ENTRIES}/${entry.id}/trash`)).json();
+    made.clock.time += 60_000;
+    const again = await (await owner.post(`${ENTRIES}/${entry.id}/trash`)).json();
+    expect(again.trashedAt).toBe(binned.trashedAt);
+    expect(again.rev).toBe(binned.rev);
+  });
+
+  test("restoring twice, from two tabs, doesn't overtake whoever carried on", async () => {
+    const { owner } = await signedIn();
+    const entry = await newEntry(owner);
+    await save(owner, entry.id, 1, { title: "Twice", doc: paragraph("Words") });
+    await owner.post(`${ENTRIES}/${entry.id}/trash`);
+    const restored = await (await owner.post(`${ENTRIES}/${entry.id}/restore`)).json();
+    // Whoever restored it has carried on, so the second Restore mustn't overtake them.
+    const typed = await (
+      await save(owner, entry.id, restored.rev, { doc: paragraph("Carried on") })
+    ).json();
+    const second = await owner.post(`${ENTRIES}/${entry.id}/restore`);
+    expect(second.status).toBe(200);
+    expect((await second.json()).rev).toBe(typed.rev);
+    expect((await save(owner, entry.id, typed.rev, { doc: paragraph("More") })).status).toBe(200);
   });
 
   test("something in the Trash can't be published", async () => {

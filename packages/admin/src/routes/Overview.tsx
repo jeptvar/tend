@@ -2,7 +2,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { FormattedMessage, useIntl } from "react-intl";
 import { Link, useLocation } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
-import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
+import {
+  primaryButtonClass,
+  secondaryButtonClass,
+  textLinkClass,
+} from "../components/AuthLayout.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { type EntrySummary, entriesKey, type Me } from "../lib/queries.ts";
 
@@ -66,9 +70,39 @@ function OverviewScreen({ me }: { me: Me }) {
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
         {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}
       </p>
-      <p className="mt-8 text-muted">
-        <FormattedMessage id="overview.next" />
-      </p>
+      <section aria-labelledby="overview-next" className="mt-10">
+        <h2 id="overview-next" className="text-xl font-semibold">
+          <FormattedMessage id="overview.nextHeading" />
+        </h2>
+        <ul className="mt-2 grid gap-1">
+          {me.user.role === "admin" && me.starter === "business" && (
+            <li>
+              <Link href="/settings/business" className={textLinkClass}>
+                <FormattedMessage id="overview.business" />
+              </Link>
+            </li>
+          )}
+          {me.user.role === "admin" && (
+            <li>
+              <Link href="/design" className={textLinkClass}>
+                <FormattedMessage id="overview.logo" />
+              </Link>
+            </li>
+          )}
+          <li>
+            <Link href="/media" className={textLinkClass}>
+              <FormattedMessage id="overview.photos" />
+            </Link>
+          </li>
+          {(me.user.role === "admin" || me.user.role === "editor") && (
+            <li>
+              <Link href="/menu" className={textLinkClass}>
+                <FormattedMessage id="overview.menu" />
+              </Link>
+            </li>
+          )}
+        </ul>
+      </section>
     </AdminLayout>
   );
 }

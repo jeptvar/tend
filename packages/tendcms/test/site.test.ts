@@ -1,8 +1,16 @@
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import { defaultThemeDir } from "../src/paths.ts";
 import { PageCache } from "../src/site/cache.ts";
 import { type MadeApp, makeApp, setUp } from "./auth-helpers.ts";
+import { tempDir } from "./helpers.ts";
 
 const ENTRIES = "/api/admin/entries";
+
+function withoutStructuredData(html: string): string {
+  return html.replace(/<script type="application\/ld\+json">[^<]*<\/script>/g, "");
+}
 
 function doc(text: string) {
   return { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text }] }] };
@@ -88,7 +96,8 @@ describe("public pages", () => {
     await setUp(made);
     for (const path of ["/", "/contact", "/does-not-exist"]) {
       const html = await (await made.app.request(path)).text();
-      expect(html, path).not.toContain("<script");
+      // Structured data for search engines is a script element, but nothing ever runs it.
+      expect(withoutStructuredData(html), path).not.toContain("<script");
       expect(html, path).toContain('href="#content"');
       expect(html, path).toContain('lang="en-PH"');
       expect(html, path).toContain('name="viewport"');
@@ -187,7 +196,7 @@ describe("public pages", () => {
       expect(reply.status).toBe(404);
       const html = await reply.text();
       expect(html).toContain("Page not found");
-      expect(html).not.toContain("<script");
+      expect(withoutStructuredData(html)).not.toContain("<script");
     },
   );
 
@@ -315,21 +324,38 @@ describe("public pages", () => {
 });
 
 describe("the page cache", () => {
+  test("a changed theme file shows straight away, without a restart", async () => {
+    const themeDir = join(tempDir(), "meadow");
+    cpSync(defaultThemeDir, themeDir, { recursive: true });
+    const made = await makeApp({ themeDir, pageCacheBytes: 1_000_000, watchTheme: true });
+    await setUp(made);
+    expect(await (await made.app.request("/")).text()).not.toContain("Baked with care");
+    expect((await made.app.request("/")).headers.get("server-timing")).toContain("hit");
+
+    const footer = join(themeDir, "partials", "footer.liquid");
+    writeFileSync(
+      footer,
+      readFileSync(footer, "utf8").replace("<footer", "<p>Baked with care</p><footer"),
+    );
+    await vi.waitFor(
+      async () => expect(await (await made.app.request("/")).text()).toContain("Baked with care"),
+      { timeout: 3000, interval: 50 },
+    );
+  });
+
   async function cachedSite(): Promise<{
     made: MadeApp;
     owner: Awaited<ReturnType<typeof setUp>>;
   }> {
-    const made = await makeApp({ pageCacheBytes: 1024 * 1024 });
+    // With a known address, as a hosted site has, so pages are made ahead in the background.
+    const made = await makeApp({ pageCacheBytes: 1024 * 1024, siteUrl: "http://localhost" });
     const owner = await setUp(made);
     return { made, owner };
   }
 
-  /** The background refill runs after a change, so wait for it to settle first. */
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
-
   test("a stored page needs no database work at all", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     await made.app.request("/contact");
     made.db.exec("PRAGMA foreign_keys = OFF; DROP TABLE revisions; DROP TABLE entries;");
     const reply = await made.app.request("/contact");
@@ -337,10 +363,22 @@ describe("the page cache", () => {
     expect(reply.headers.get("server-timing")).toContain("hit");
   });
 
+  test("the stored homepage needs no database work either", async () => {
+    const { made } = await cachedSite();
+    await made.settled();
+    await made.app.request("/");
+    // Asking whether the site is set up is database work too, and the answer can't go back.
+    made.db.exec("PRAGMA foreign_keys = OFF; DROP TABLE sessions; DROP TABLE users;");
+    const reply = await made.app.request("/");
+    expect(reply.status).toBe(200);
+    expect(reply.headers.get("server-timing")).toContain("hit");
+  });
+
   test("a static homepage has only one page, so numbers can't fill the cache", async () => {
     const { made } = await cachedSite();
-    await settle();
-    expect((await made.app.request("/")).headers.get("server-timing")).toContain("hit");
+    // Stored by the background refill or by this visit, whichever is first. When the refill
+    // finishes depends on the machine, and this test is about the numbers that come after.
+    await made.app.request("/");
     for (const page of [2, 3, 999]) {
       expect((await made.app.request(`/?page=${page}`)).status, String(page)).toBe(404);
     }
@@ -357,13 +395,13 @@ describe("the page cache", () => {
       owner.post(`${ENTRIES}/${post.id}/unpublish`, {}, { "If-Match": String(post.rev) }),
     ]);
     expect(unpublished.status).toBe(200);
-    await settle();
+    await made.settled();
     expect((await made.app.request(post.url)).status).toBe(404);
   });
 
   test("the second visitor gets the stored page", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     const first = await made.app.request("/contact");
     const second = await made.app.request("/contact");
     expect(first.headers.get("server-timing")).toContain("miss");
@@ -373,7 +411,7 @@ describe("the page cache", () => {
 
   test("publishing shows up straight away, and the homepage is ready before anyone asks", async () => {
     const { made, owner } = await cachedSite();
-    await settle();
+    await made.settled();
     await made.app.request("/contact");
     const before = await (await made.app.request("/")).text();
     expect(before).not.toContain('href="/blog"');
@@ -382,7 +420,7 @@ describe("the page cache", () => {
     expect(await (await made.app.request("/blog/fresh-news")).text()).toContain("Fresh news");
     expect(await (await made.app.request("/")).text()).toContain('href="/blog"');
 
-    await settle();
+    await made.settled();
     expect((await made.app.request("/")).headers.get("server-timing")).toContain("hit");
     expect((await made.app.request(post.url)).headers.get("server-timing")).toContain("hit");
   });
@@ -393,7 +431,7 @@ describe("the page cache", () => {
   ])("%s takes it off the site at once", async (_, action) => {
     const { made, owner } = await cachedSite();
     const post = await publishPost(owner, "Short lived");
-    await settle();
+    await made.settled();
     expect((await made.app.request(post.url)).status).toBe(200);
     await owner.post(`${ENTRIES}/${post.id}/${action}`, {}, { "If-Match": String(post.rev) });
     expect((await made.app.request(post.url)).status).toBe(404);
@@ -443,7 +481,7 @@ describe("the page cache", () => {
 
   test("every missing address shares one stored page, so typos can't fill the cache", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     const first = await made.app.request("/nope-1");
     const second = await made.app.request("/nope-2");
     expect(first.status).toBe(404);
@@ -453,7 +491,7 @@ describe("the page cache", () => {
 
   test("query strings can't make endless copies of a page", async () => {
     const { made } = await cachedSite();
-    await settle();
+    await made.settled();
     await made.app.request("/contact");
     const reply = await made.app.request("/contact?utm=anything");
     expect(reply.headers.get("server-timing")).toContain("hit");
@@ -475,7 +513,7 @@ describe("the page cache", () => {
     const { made, owner } = await cachedSite();
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     await publishPost(owner, "Fine");
-    await settle();
+    await made.settled();
     expect((await made.app.request("/")).status).toBe(200);
     logged.mockRestore();
   });

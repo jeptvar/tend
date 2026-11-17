@@ -1,5 +1,14 @@
 import type { Page } from "@playwright/test";
-import { bodyText, createEntry, expect, readEntry, type Site, test } from "./fixtures.ts";
+import {
+  bodyText,
+  closeWhileDown,
+  createEntry,
+  expect,
+  holdRequests,
+  readEntry,
+  type Site,
+  test,
+} from "./fixtures.ts";
 
 // What the second independent review found going wrong, kept so it can't come back.
 
@@ -318,7 +327,7 @@ test.describe("restoring from the Trash", () => {
     await failSaves(page);
     await retype(page, "Yesterday's copy");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 6000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     const current = await readEntry(again, signedIn, post.id);
     const later = await patch(again, signedIn, post.id, current.rev, {
@@ -343,13 +352,14 @@ test.describe("Undo after leaving", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "T", body: "Live", publish: true });
     await openPost(page, signedIn, post.id);
-    await page.route("**/unpublish", async (route) => {
-      await new Promise((done) => setTimeout(done, 700));
-      await route.fallback();
-    });
+    const answer = await holdRequests(page, "**/unpublish");
     await page.getByText("Address, summary and more").click();
     await page.getByRole("button", { name: "Unpublish" }).click();
     await postsLink(page).click();
+    // The answer comes once the list is showing. An Undo already showing when the editor
+    // closes goes with it, so arriving first would be a different test.
+    await expect(page.getByRole("heading", { name: "Posts", level: 1 })).toBeVisible();
+    answer();
     await toast(page).getByRole("button", { name: "Undo" }).click();
     await expect(page.getByText("It's back on your site.")).toBeVisible();
     expect((await readEntry(page, signedIn, post.id)).url).toBe(post.url);
@@ -395,17 +405,17 @@ test.describe("tabs and the notice", () => {
     const post = await createEntry(page, signedIn, { title: "Saved title", body: "On server" });
     await openPost(page, signedIn, post.id);
     await failSaves(page);
-    await page.getByLabel("Title").fill("Kept title");
+    await page.getByLabel("Title", { exact: true }).fill("Kept title");
     await retype(page, "Kept copy words");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 6000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     await openPost(again, signedIn, post.id);
     await again.getByRole("button", { name: "Go back to the saved version" }).click();
     await expect(body(again)).toHaveText("On server");
     await toast(again).getByRole("button", { name: "Undo" }).click();
     await expect(body(again)).toHaveText("Kept copy words");
-    await expect(again.getByLabel("Title")).toHaveValue("Kept title");
+    await expect(again.getByLabel("Title", { exact: true })).toHaveValue("Kept title");
     await expect(again.getByRole("button", { name: "Keep these changes" })).toBeVisible();
     // Back to waiting for a decision, so it isn't saved behind the person's back, not even
     // on leaving. It stays on this device, and the notice says so.
@@ -424,7 +434,7 @@ test.describe("tabs and the notice", () => {
     await failSaves(page);
     await retype(page, "Old copy");
     await expect(saveStatus(page)).toContainText("Offline", { timeout: 6000 });
-    await page.close();
+    await closeWhileDown(signedIn, page);
     const again = await context.newPage();
     await openPost(again, signedIn, post.id);
     await expect(again.getByRole("button", { name: "Preview" })).toHaveAttribute(
@@ -501,10 +511,12 @@ test.describe("reviewing and restoring", () => {
       .first()
       .click();
     await history.getByRole("button", { name: "Restore this version" }).click();
-    await expect(toast(page)).toContainText("Publish changes to put it on your site.");
+    // Wherever it shows: toasts move into a dialog while one is open.
+    const nudge = page.getByText("Publish changes to put it on your site.");
+    await expect(nudge).toBeVisible();
     await page.getByRole("button", { name: "Publish changes" }).click();
     await expect(saveStatus(page)).toContainText("On your site");
-    await expect(toast(page)).not.toContainText("Publish changes to put it on your site.");
+    await expect(nudge).toBeHidden();
   });
 
   test("History reaches versions past the first hundred, and Restore is close by keyboard", async ({

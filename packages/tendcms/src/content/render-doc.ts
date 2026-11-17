@@ -1,4 +1,11 @@
-import { type BlockNode, type Doc, type InlineNode, isAllowedHref, type Mark } from "./doc.ts";
+import {
+  type BlockNode,
+  type Doc,
+  type InlineNode,
+  isAllowedHref,
+  isMediaId,
+  type Mark,
+} from "./doc.ts";
 
 const ESCAPES: Record<string, string> = {
   "&": "&amp;",
@@ -8,7 +15,7 @@ const ESCAPES: Record<string, string> = {
   "'": "&#39;",
 };
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (character) => ESCAPES[character] ?? character);
 }
 
@@ -78,18 +85,42 @@ const SECTION_CLASSES: Record<string, string> = {
   contact: "t-contact",
 };
 
+const IMAGE_SIZES = new Set(["normal", "wide", "full"]);
+
+/**
+ * A picture is stored as a placeholder naming it, and becomes a real one when a page is
+ * shown, so replacing it or changing its description in Media changes every page at once.
+ * Inside a Picture and text section it takes half the width, whatever it was set to.
+ */
+function imagePlaceholder(
+  attrs: Extract<BlockNode, { type: "image" }>["attrs"],
+  section: string | undefined,
+): string {
+  const size =
+    section === "pictureText" ? "half" : IMAGE_SIZES.has(attrs.size) ? attrs.size : "normal";
+  const parts = [`data-id="${attrs.mediaId}"`, `data-size="${size}"`];
+  if (attrs.alt) parts.push(`data-alt="${escapeHtml(attrs.alt)}"`);
+  if (attrs.decorative === true) parts.push('data-decorative=""');
+  if (attrs.caption) parts.push(`data-caption="${escapeHtml(attrs.caption)}"`);
+  return `<tend-image ${parts.join(" ")}></tend-image>`;
+}
+
 /**
  * Turns a document into the HTML visitors get. Stored documents are validated when saved,
  * but this still only knows the node types it can make safe. Anything else is dropped, so
  * a bad row in the database can't put markup on the page.
  */
-function renderBlocks(blocks: readonly BlockNode[] | undefined, out: RenderedDoc): void {
+function renderBlocks(
+  blocks: readonly BlockNode[] | undefined,
+  out: RenderedDoc,
+  section?: string,
+): void {
   const html: string[] = [];
   const text: string[] = [];
 
-  const child = (nodes: readonly BlockNode[] | undefined) => {
+  const child = (nodes: readonly BlockNode[] | undefined, inSection = section) => {
     const inner: RenderedDoc = { html: "", text: "" };
-    renderBlocks(nodes, inner);
+    renderBlocks(nodes, inner, inSection);
     if (inner.text) text.push(inner.text);
     return inner.html;
   };
@@ -156,6 +187,12 @@ function renderBlocks(blocks: readonly BlockNode[] | undefined, out: RenderedDoc
         text.push(label);
         break;
       }
+      case "image": {
+        if (!isMediaId(block.attrs?.mediaId)) break;
+        html.push(imagePlaceholder(block.attrs, section));
+        if (block.attrs.caption) text.push(block.attrs.caption);
+        break;
+      }
       case "section": {
         const { kind, tone, align, preset } = block.attrs ?? {};
         const name = SECTION_CLASSES[kind];
@@ -165,7 +202,10 @@ function renderBlocks(blocks: readonly BlockNode[] | undefined, out: RenderedDoc
           `t-tone-${escapeHtml(tone ?? "none")}`,
           `t-align-${escapeHtml(align ?? "left")}`,
         ];
-        const inner = child(block.content);
+        let inner = child(block.content, kind);
+        // Contact & hours shows the business details from Settings, filled in when the page
+        // is shown, so they're typed once and are the same everywhere.
+        if (kind === "contact") inner += "<tend-business></tend-business>";
         if (inner === "") break;
         html.push(
           `<section class="${classes.join(" ")}" data-preset="${escapeHtml(preset ?? "1")}">${inner}</section>`,
@@ -177,6 +217,15 @@ function renderBlocks(blocks: readonly BlockNode[] | undefined, out: RenderedDoc
   out.html = html.join("\n");
   out.text = text.join("\n\n");
 }
+
+/**
+ * Which renderer a published version's stored HTML came from (PLAN.md §8). Raise it whenever
+ * renderDoc's output changes for any document. Tend then renders every published version
+ * again when it starts (content/rerender.ts), so the change, an escaping fix above all,
+ * reaches pages that are already on the site. A test in content.test.ts fails until it's
+ * raised.
+ */
+export const RENDER_VERSION = 1;
 
 export function renderDoc(doc: Doc): RenderedDoc {
   const out: RenderedDoc = { html: "", text: "" };

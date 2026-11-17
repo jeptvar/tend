@@ -1,11 +1,10 @@
 {% layout "layout" %}
 {% if page %}
-{% block description %}{% if page.summary != blank %}<meta name="description" content="{{ page.summary }}">{% endif %}{% endblock %}
 {% block content %}
 <article class="t-wrap t-article">
   <h1>{{ page.title }}</h1>
   {% if site.tagline != blank %}<p class="t-lead">{{ site.tagline }}</p>{% endif %}
-  <div class="t-body">{{ page.html | raw }}</div>
+  <div class="t-body">{% render "page-text", html: page.html, business: site.business %}</div>
 </article>
 {% endblock %}
 {% else %}

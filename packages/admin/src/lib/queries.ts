@@ -35,11 +35,24 @@ export interface EntrySummary {
 }
 
 export interface EntryFull extends EntrySummary {
-  data: { doc: Doc; summary: string | null };
+  data: {
+    doc: Doc;
+    summary: string | null;
+    featuredImage?: { mediaId: string; alt: string | null } | null;
+    seo?: {
+      title: string | null;
+      description: string | null;
+      imageId: string | null;
+      noindex: boolean;
+    };
+    tagIds?: string[];
+  };
   /** Who saved it last, so a conflict can say who changed it. */
   updatedBy: { id: string; name: string | null } | null;
   /** What the address would be if this were published now. */
   address: { path: string; problem: { message: string; fix: string | null } | null };
+  /** Whether the site menu links to it, for "Show in site menu". */
+  menu?: { automatic: boolean; inMenu: boolean; size: number };
 }
 
 export interface LinkTarget {

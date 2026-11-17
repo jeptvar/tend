@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { cleanUp, KEEP_DAYS } from "../src/content/entries.ts";
+import { RENDER_VERSION } from "../src/content/render-doc.ts";
+import { rerenderPublished } from "../src/content/rerender.ts";
 import { createSessionIfPasswordUnchanged } from "../src/db/repo/sessions.ts";
 import { uuidv7 } from "../src/ids.ts";
 import { browser, type MadeApp, makeApp, setUp } from "./auth-helpers.ts";
@@ -196,6 +198,9 @@ describe("saving as you type", () => {
     expect(late.status).toBe(409);
     const current = await (await owner.get(`${ENTRIES}/${entry.id}`)).json();
     expect(current.data.doc).toEqual(doc("NEWER words"));
+    // Nobody else was involved, so History has no clash to show.
+    const kinds = (await versions(owner, entry.id)).map((version) => version.kind);
+    expect(kinds).not.toContain("conflict");
   });
 
   test("the same goes for an action, like Discard, held up on the way", async () => {
@@ -1161,5 +1166,104 @@ describe("tidying up", () => {
     cleanUp(made.orm, made.clock.time + 1000 * DAY);
     expect((await owner.get(`${ENTRIES}/${live.id}`)).status).toBe(200);
     expect(await pageText(made, "/blog/live")).toContain("Live words");
+  });
+
+  test("finds what points at a deleted version with an index, not by reading every entry", async () => {
+    // Deleting a version runs this lookup to clear entries.published_rev_id. Tidying old
+    // versions and emptying the Trash delete hundreds of versions at once.
+    const { made } = await signedIn();
+    const plan = made.db
+      .prepare("EXPLAIN QUERY PLAN SELECT rowid FROM entries WHERE published_rev_id = ?")
+      .all("a-version") as { detail: string }[];
+    expect(plan.map((step) => step.detail).join("\n")).toMatch(
+      /USING (COVERING )?INDEX entries_published_rev\b/,
+    );
+  });
+});
+
+describe("published pages, when the renderer changes", () => {
+  const STALE = "<p>Made by an older renderer</p>";
+
+  /** Every published version's HTML as an older Tend would have left it. */
+  function makeStale(made: MadeApp): void {
+    made.db
+      .prepare("UPDATE revisions SET html = ?, text = ? WHERE html IS NOT NULL")
+      .run(STALE, "old");
+    made.db.prepare("DELETE FROM schema_meta WHERE key = 'render_version'").run();
+  }
+
+  function storedHtml(made: MadeApp): string[] {
+    const rows = made.db.prepare("SELECT html FROM revisions WHERE html IS NOT NULL").all();
+    return (rows as { html: string }[]).map((row) => row.html);
+  }
+
+  function storedVersion(made: MadeApp): number | undefined {
+    const row = made.db.prepare("SELECT value FROM schema_meta WHERE key = 'render_version'").get();
+    return row ? Number((row as { value: string }).value) : undefined;
+  }
+
+  test("are rendered again when Tend starts, once", async () => {
+    const { made, owner } = await signedIn();
+    await livePost(owner);
+    makeStale(made);
+    expect(await pageText(made, "/blog/live")).toContain("Made by an older renderer");
+
+    const result = await rerenderPublished(made.orm);
+    expect(result).toEqual({ rendered: storedHtml(made).length, failed: 0 });
+    const page = await pageText(made, "/blog/live");
+    expect(page).toContain("Live words");
+    expect(page).not.toContain("Made by an older renderer");
+    expect(storedVersion(made)).toBe(RENDER_VERSION);
+    expect((await rerenderPublished(made.orm)).rendered).toBe(0);
+  });
+
+  test("include versions that aren't live, since Undo after Unpublish can bring one back", async () => {
+    const { made, owner } = await signedIn();
+    const live = await livePost(owner);
+    made.clock.time += MINUTE;
+    const changed = await save(owner, live.id, live.rev, { doc: doc("Newer words") });
+    await publish(owner, live.id, changed.rev);
+    makeStale(made);
+    await rerenderPublished(made.orm);
+    const all = storedHtml(made);
+    expect(all.some((html) => html.includes("Live words"))).toBe(true);
+    expect(all.some((html) => html.includes("Newer words"))).toBe(true);
+    expect(all).not.toContain(STALE);
+  });
+
+  test("stopping partway leaves every page showing, and the next start finishes", async () => {
+    const { made } = await signedIn();
+    makeStale(made);
+    const count = storedHtml(made).length;
+    expect(count).toBeGreaterThan(1);
+    let batches = 0;
+    const stopped = rerenderPublished(made.orm, {
+      batchSize: 1,
+      afterBatch: () => {
+        batches += 1;
+        if (batches === 1) throw new Error("Stopped");
+      },
+    });
+    await expect(stopped).rejects.toThrow("Stopped");
+    const halfway = storedHtml(made);
+    expect(halfway.filter((html) => html === STALE)).toHaveLength(count - 1);
+    expect(halfway.every((html) => html.length > 0)).toBe(true);
+    expect(storedVersion(made)).toBeUndefined();
+
+    expect((await rerenderPublished(made.orm)).rendered).toBe(count);
+    expect(storedHtml(made)).not.toContain(STALE);
+  });
+
+  test("a version that can't be rendered keeps its HTML, rather than keeping Tend from starting", async () => {
+    const { made, owner } = await signedIn();
+    const live = await livePost(owner);
+    makeStale(made);
+    made.db
+      .prepare("UPDATE revisions SET data = ? WHERE entry_id = ? AND html IS NOT NULL")
+      .run(JSON.stringify({ doc: null }), live.id);
+    const result = await rerenderPublished(made.orm);
+    expect(result).toEqual({ rendered: storedHtml(made).length - 1, failed: 1 });
+    expect(await pageText(made, "/blog/live")).toContain("Made by an older renderer");
+    expect(storedVersion(made)).toBe(RENDER_VERSION);
   });
 });

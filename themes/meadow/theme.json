@@ -2,5 +2,42 @@
   "name": "Meadow",
   "version": "1.0.0",
   "tend": ">=0.1 <2",
-  "settings": []
+  "settings": [
+    {
+      "id": "accent",
+      "type": "color",
+      "label": "Accent colour",
+      "hint": "Links, buttons and other highlights use it.",
+      "default": "#1f6f4a"
+    },
+    {
+      "id": "fonts",
+      "type": "select",
+      "label": "Fonts",
+      "default": "clean",
+      "options": [
+        { "value": "clean", "label": "Clean", "hint": "Plain and easy to read, like most apps." },
+        { "value": "classic", "label": "Classic", "hint": "Book-style headings over plain text." },
+        { "value": "friendly", "label": "Friendly", "hint": "Rounded and warm." }
+      ]
+    },
+    {
+      "id": "header",
+      "type": "select",
+      "label": "Header",
+      "default": "simple",
+      "options": [
+        {
+          "value": "simple",
+          "label": "Simple",
+          "hint": "The name on the left, the menu on the right."
+        },
+        {
+          "value": "centered",
+          "label": "Centred",
+          "hint": "The name in the middle, with the menu below it."
+        }
+      ]
+    }
+  ]
 }

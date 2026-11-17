@@ -13,13 +13,18 @@ import {
 import { Field } from "../components/fields.tsx";
 import { dismissToast, showToast } from "../components/Toast.tsx";
 import { BodyEditor, type BodyHandle } from "../editor/BodyEditor.tsx";
-import { type Check, findChecks, linkedIds } from "../editor/checks.ts";
+import { type Check, findChecks, linkedIds, type PictureFacts } from "../editor/checks.ts";
+import { FeaturedImageField, SearchFields, TagsField } from "../editor/EntrySettings.tsx";
 import { HistoryDialog } from "../editor/HistoryDialog.tsx";
 import { PreviewDialog } from "../editor/PreviewDialog.tsx";
 import { PublishDialog } from "../editor/PublishDialog.tsx";
+import { getUpload, isUploading, useUploadsChanged } from "../editor/uploads.ts";
 import { ApiError, api, errorText, OFFLINE } from "../lib/api.ts";
-import { cleanDoc, type Doc, docToText, leadText, sameDoc } from "../lib/doc.ts";
+import { cleanDoc, type Doc, docToText, imageIds, leadText, sameDoc } from "../lib/doc.ts";
 import {
+  completeDraft,
+  type DraftFields,
+  draftFields,
   draftsLoaded,
   type EditorDraft,
   getHeldDrafts,
@@ -36,6 +41,7 @@ import {
   useKeptOnDevice,
   waitForSave,
 } from "../lib/held-drafts.ts";
+import { lookUpMedia } from "../lib/media.ts";
 import {
   type EntryFull,
   type EntryPage,
@@ -90,18 +96,50 @@ function newEditSession(): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Placeholders for pictures that haven't arrived: still uploading, or failed. */
+function placeholderUploads(doc: PmNode | null): { going: number; failed: number } {
+  let going = 0;
+  let failed = 0;
+  doc?.descendants((node) => {
+    if (node.type.name === "image" && !node.attrs.mediaId && node.attrs.uploadId) {
+      const upload = getUpload(node.attrs.uploadId as string);
+      if (isUploading(upload)) going++;
+      else if (!upload?.done) failed++;
+    }
+    return true;
+  });
+  return { going, failed };
+}
+
 function draftFrom(entry: EntryFull): EditorDraft {
-  return {
+  return completeDraft({
     title: entry.title,
     slug: entry.slug,
     summary: entry.data.summary ?? "",
+    featuredImageId: entry.data.featuredImage?.mediaId ?? null,
+    seoTitle: entry.data.seo?.title ?? "",
+    seoDescription: entry.data.seo?.description ?? "",
+    noindex: entry.data.seo?.noindex ?? false,
+    tagIds: entry.data.tagIds ?? [],
     doc: cleanDoc(entry.data.doc),
-  };
+  });
 }
+
+const FIELD_NAMES = [
+  "title",
+  "slug",
+  "summary",
+  "featuredImageId",
+  "seoTitle",
+  "seoDescription",
+  "noindex",
+  "tagIds",
+] as const satisfies readonly (keyof DraftFields)[];
 
 function sameDraft(a: EditorDraft, b: EditorDraft): boolean {
   return (
-    a.title === b.title && a.slug === b.slug && a.summary === b.summary && sameDoc(a.doc, b.doc)
+    FIELD_NAMES.every((name) => JSON.stringify(a[name]) === JSON.stringify(b[name])) &&
+    sameDoc(a.doc, b.doc)
   );
 }
 
@@ -111,6 +149,11 @@ function sameOnceTidied(a: EditorDraft, b: EditorDraft, type: EntryType): boolea
     a.title.trim() === b.title.trim() &&
     toAddress(a.slug, type) === toAddress(b.slug, type) &&
     a.summary.trim() === b.summary.trim() &&
+    a.featuredImageId === b.featuredImageId &&
+    a.seoTitle.trim() === b.seoTitle.trim() &&
+    a.seoDescription.trim() === b.seoDescription.trim() &&
+    a.noindex === b.noindex &&
+    JSON.stringify(a.tagIds) === JSON.stringify(b.tagIds) &&
     sameDoc(a.doc, b.doc)
   );
 }
@@ -135,6 +178,13 @@ function saveRequest(
       title: draft.title,
       slug: draft.slug,
       summary: draft.summary.trim() === "" ? null : draft.summary,
+      featuredImage: draft.featuredImageId ? { mediaId: draft.featuredImageId, alt: null } : null,
+      seo: {
+        title: draft.seoTitle.trim() || null,
+        description: draft.seoDescription.trim() || null,
+        noindex: draft.noindex,
+      },
+      tagIds: draft.tagIds,
       doc: draft.doc,
       ...stamp,
       ...options,
@@ -153,7 +203,7 @@ function timeAgo(intl: IntlShape, time: number): string {
 
 /** The parts of a session needed to read what's in the boxes right now. */
 interface DraftSource {
-  fields: { title: string; slug: string; summary: string };
+  fields: DraftFields;
   pmDoc: PmNode | null;
   readFrom: PmNode | null;
   doc: Doc;
@@ -219,11 +269,7 @@ function EditorScreen({
   const serverDraft = draftFrom(entry);
   const startingDraft = held?.draft ?? serverDraft;
   const [current, setCurrent] = useState(entry);
-  const [fields, setFields] = useState({
-    title: startingDraft.title,
-    slug: startingDraft.slug,
-    summary: startingDraft.summary,
-  });
+  const [fields, setFields] = useState(draftFields(startingDraft));
   const [unsaved, setUnsaved] = useState(held !== undefined);
   const [saving, setSaving] = useState(false);
   const [trouble, setTroubleState] = useState<SaveTrouble>(null);
@@ -245,11 +291,7 @@ function EditorScreen({
   // raises a conflict rather than overwriting. The window ID is always new: reusing one
   // would tell the server that this window had seen changes it never saw.
   const session = useRef({
-    fields: {
-      title: startingDraft.title,
-      slug: startingDraft.slug,
-      summary: startingDraft.summary,
-    },
+    fields: draftFields(startingDraft),
     /** The newest text from the editor. Immutable, so it's safe to keep after the editor has gone. */
     pmDoc: null as PmNode | null,
     readFrom: null as PmNode | null,
@@ -270,6 +312,11 @@ function EditorScreen({
     /** What the server kept when a save lost out to someone else's. */
     keptInConflict: null as EditorDraft | null,
     trouble: null as SaveTrouble,
+    /**
+     * The server refused the last save for what it held, like being too big. No retry is
+     * coming, because the same words would be refused again, so the next change tries.
+     */
+    retryOnChange: false,
     /**
      * A request went out and no answer came back, so the server may or may not have it. Until
      * one is confirmed, what's on the screen counts as unsaved, and it's sent again.
@@ -314,6 +361,7 @@ function EditorScreen({
 
   function setTrouble(next: SaveTrouble): void {
     session.current.trouble = next;
+    session.current.retryOnChange = false;
     setTroubleState(next);
   }
 
@@ -340,7 +388,8 @@ function EditorScreen({
   function scheduleSave(): void {
     const s = session.current;
     // While saving isn't working, retries go at their own slowing pace, not with each word.
-    if (s.trouble !== null) return;
+    // After a refusal there are no retries, so a change is what tries again.
+    if (s.trouble !== null && !s.retryOnChange) return;
     clearTimeout(s.saveTimer);
     if (s.done || s.closed || s.locked || s.heldUntouched) return;
     const now = Date.now();
@@ -386,7 +435,7 @@ function EditorScreen({
     s.holdTimer = setTimeout(settle, Math.max(0, wait));
   }
 
-  function changeField(name: "title" | "slug" | "summary", value: string): void {
+  function changeField<K extends keyof DraftFields>(name: K, value: DraftFields[K]): void {
     session.current.fields = { ...session.current.fields, [name]: value };
     setFields(session.current.fields);
     setFieldError(null);
@@ -432,10 +481,17 @@ function EditorScreen({
     const s = session.current;
     const answer = draftFrom(next);
     const typed = draftNow();
+    const keep = <K extends keyof DraftFields>(name: K): DraftFields[K] =>
+      JSON.stringify(typed[name]) === JSON.stringify(sent[name]) ? answer[name] : typed[name];
     s.fields = {
-      title: typed.title === sent.title ? answer.title : typed.title,
-      slug: typed.slug === sent.slug ? answer.slug : typed.slug,
-      summary: typed.summary === sent.summary ? answer.summary : typed.summary,
+      title: keep("title"),
+      slug: keep("slug"),
+      summary: keep("summary"),
+      featuredImageId: keep("featuredImageId"),
+      seoTitle: keep("seoTitle"),
+      seoDescription: keep("seoDescription"),
+      noindex: keep("noindex"),
+      tagIds: keep("tagIds"),
     };
     setFields(s.fields);
     acceptSave(next, answer);
@@ -445,7 +501,7 @@ function EditorScreen({
   function takeVersion(next: EntryFull): void {
     const s = session.current;
     const version = draftFrom(next);
-    s.fields = { title: version.title, slug: version.slug, summary: version.summary };
+    s.fields = draftFields(version);
     setFields(s.fields);
     s.doc = version.doc;
     s.heldUntouched = null;
@@ -586,6 +642,10 @@ function EditorScreen({
     }
     troubleIs("problem");
     setProblem(error);
+    // Refused for what was sent, like being too big or not making sense. What fixes it is a
+    // change, so the next one is saved after the usual pause, not straight away.
+    s.retryOnChange = true;
+    s.firstUnsavedAt = null;
   }
 
   /** Saves if anything's waiting. Never throws: whatever goes wrong shows in the status. */
@@ -690,16 +750,50 @@ function EditorScreen({
     };
   }
 
-  async function publishNow(): Promise<void> {
+  async function publishNow(options: { addToMenu?: boolean } = {}): Promise<void> {
     const s = session.current;
     const sent = s.saved;
-    acceptAnswer(await api<EntryFull>(`/admin/entries/${entry.id}/publish`, actionBody()), sent);
+    acceptAnswer(
+      await api<EntryFull>(`/admin/entries/${entry.id}/publish`, actionBody(options)),
+      sent,
+    );
+    if (options.addToMenu) void queryClient.invalidateQueries({ queryKey: ["menus"] });
     // Anything a toast was offering to undo, or telling someone to publish, is behind them now.
     if (s.undoToast !== undefined) dismissToast(s.undoToast);
   }
 
+  /** Whether each picture is described, as Media says now. */
+  async function pictureFacts(doc: Doc): Promise<PictureFacts[]> {
+    const ids = imageIds(doc);
+    if (ids.length === 0) return [];
+    try {
+      // In batches, like links: a gallery can have hundreds of pictures.
+      const found = new Map((await lookUpMedia(ids)).map((item) => [item.id, item]));
+      return ids.map((id) => {
+        const item = found.get(id);
+        return {
+          id,
+          described: Boolean(item && (item.decorative || item.alt)),
+          gone: !item || item.trashedAt !== null,
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
   async function findReviewChecks(saved: EditorDraft): Promise<Check[]> {
     const ids = linkedIds(saved.doc);
+    const pictures = await pictureFacts(saved.doc);
+    const arriving = placeholderUploads(session.current.pmDoc);
+    const uploadChecks: Check[] = [
+      ...(arriving.going > 0
+        ? [{ id: "check.uploading", values: { count: String(arriving.going) } }]
+        : []),
+      ...(arriving.failed > 0
+        ? [{ id: "check.uploadFailed", values: { count: String(arriving.failed) } }]
+        : []),
+    ];
     const s = session.current.entry;
     const from = s.url;
     const to = s.address.path;
@@ -715,18 +809,26 @@ function EditorScreen({
         targets.push(...reply.targets);
       }
       const untitled = intl.formatMessage({ id: "list.untitled" });
-      return findChecks(
-        saved.doc,
-        targets.map((target) => ({ ...target, title: target.title || untitled })),
-        move,
-      );
+      return [
+        ...uploadChecks,
+        ...findChecks(
+          saved.doc,
+          targets.map((target) => ({ ...target, title: target.title || untitled })),
+          move,
+          pictures,
+        ),
+      ];
     } catch {
       // Only a courtesy, so it's no reason to stand in the way of publishing.
-      return findChecks(
-        saved.doc,
-        ids.map((id) => ({ id, type, title: "", url: "/" })),
-        move,
-      );
+      return [
+        ...uploadChecks,
+        ...findChecks(
+          saved.doc,
+          ids.map((id) => ({ id, type, title: "", url: "/" })),
+          move,
+          pictures,
+        ),
+      ];
     }
   }
 
@@ -747,11 +849,11 @@ function EditorScreen({
     });
   }
 
-  function onConfirmPublish(): void {
+  function onConfirmPublish(options: { addToMenu: boolean }): void {
     const firstTime = session.current.entry.url === null;
     run("publishing", async () => {
       await saveFirst();
-      await publishNow();
+      await publishNow(options);
       setReview((open) => (open && firstTime ? { ...open, done: true } : null));
       if (!firstTime) announce("status.onSite");
     });
@@ -762,6 +864,8 @@ function EditorScreen({
       await saveFirst();
       const s = session.current;
       const sent = s.saved;
+      // The menu only shows what's on the site, so its link goes too, until it's back.
+      const wasInMenu = s.entry.type === "page" && s.entry.menu?.inMenu === true;
       const reply = await api<EntryFull & { wasLiveRevisionId: string | null }>(
         `/admin/entries/${entry.id}/unpublish`,
         actionBody(),
@@ -770,7 +874,9 @@ function EditorScreen({
       setJustUnpublished(true);
       const { wasLiveRevisionId } = reply;
       s.undoToast = showToast({
-        message: intl.formatMessage({ id: "editor.takenOff" }),
+        message: intl.formatMessage({
+          id: wasInMenu ? "editor.takenOffMenu" : "editor.takenOff",
+        }),
         ...(wasLiveRevisionId
           ? {
               action: {
@@ -989,7 +1095,7 @@ function EditorScreen({
     const thrownAwayRev = s.rev;
     const version = s.saved;
     s.rev = s.entry.rev;
-    s.fields = { title: version.title, slug: version.slug, summary: version.summary };
+    s.fields = draftFields(version);
     setFields(s.fields);
     s.doc = version.doc;
     s.heldUntouched = null;
@@ -1022,11 +1128,7 @@ function EditorScreen({
             return;
           }
           s.rev = thrownAwayRev;
-          s.fields = {
-            title: thrownAway.title,
-            slug: thrownAway.slug,
-            summary: thrownAway.summary,
-          };
+          s.fields = draftFields(thrownAway);
           setFields(s.fields);
           s.doc = thrownAway.doc;
           bodyRef.current?.setDoc(thrownAway.doc);
@@ -1246,6 +1348,10 @@ function EditorScreen({
             } = leaving.current;
             // Not with a conflict still to be decided: publishing would only be refused.
             if (s.done || s.locked || !canPublish || !s.entry.url || !s.entry.dirty) return;
+            // It says "Your changes", which has to be true. Someone else's are theirs to put
+            // on the site, after they've looked them over, not one click away for whoever
+            // happened to open the page.
+            if (s.entry.updatedBy?.id !== me.user.id) return;
             // Signed out, or back in the editor already: either way, this isn't the moment.
             if (!queryClient.getQueryData(ME_KEY) || openEditors.has(entry.id)) return;
             const toast = showToast({
@@ -1277,6 +1383,10 @@ function EditorScreen({
     };
   }, [entry.id, type, queryClient, me.user.id]);
 
+  // Pictures still on their way, or that didn't make it: the words can be saved without
+  // them, so the status says so beside whatever it says about the words.
+  useUploadsChanged();
+  const pictures = placeholderUploads(session.current.pmDoc);
   const statusId = activity
     ? `editor.${activity}`
     : inTrash
@@ -1352,6 +1462,16 @@ function EditorScreen({
           <span>
             <FormattedMessage id={statusId} />
           </span>
+          {pictures.going > 0 && (
+            <span>
+              <FormattedMessage id="editor.uploadingPictures" values={{ count: pictures.going }} />
+            </span>
+          )}
+          {pictures.failed > 0 && (
+            <span className="font-medium text-danger">
+              <FormattedMessage id="editor.picturesFailed" values={{ count: pictures.failed }} />
+            </span>
+          )}
           {isLive && !unsaved && !busy && current.url && (
             <a href={current.url} target="_blank" rel="noopener" className={textLinkClass}>
               <FormattedMessage id="editor.view" />
@@ -1549,6 +1669,7 @@ function EditorScreen({
             initial={startingDraft.doc}
             type={type}
             editable={!readOnly}
+            canEditBusiness={me.user.role === "admin"}
             labelledBy={bodyLabelId}
             onReady={(doc) => {
               session.current.pmDoc = doc;
@@ -1607,6 +1728,33 @@ function EditorScreen({
               maxLength={300}
               readOnly={readOnly}
             />
+            <FeaturedImageField
+              value={fields.featuredImageId}
+              onChange={(id) => changeField("featuredImageId", id)}
+              readOnly={readOnly}
+            />
+            {type === "post" && (
+              <TagsField
+                value={fields.tagIds}
+                onChange={(ids) => changeField("tagIds", ids)}
+                readOnly={readOnly}
+              />
+            )}
+            <SearchFields
+              title={fields.seoTitle}
+              description={fields.seoDescription}
+              noindex={fields.noindex}
+              automaticTitle={fields.title}
+              automaticDescription={reviewSummary}
+              readOnly={readOnly}
+              onChange={(change) => {
+                if (change.seoTitle !== undefined) changeField("seoTitle", change.seoTitle);
+                if (change.seoDescription !== undefined) {
+                  changeField("seoDescription", change.seoDescription);
+                }
+                if (change.noindex !== undefined) changeField("noindex", change.noindex);
+              }}
+            />
             {!inTrash && (
               <div className="flex flex-wrap gap-3">
                 <button
@@ -1654,10 +1802,12 @@ function EditorScreen({
           entry={session.current.entry}
           type={type}
           checks={review.checks}
-          summary={reviewSummary}
+          summary={fields.seoDescription.trim() || reviewSummary}
+          shareTitle={fields.seoTitle.trim()}
           done={review.done}
           busy={busy}
           problem={problemText}
+          canEditMenu={me.user.role === "admin" || me.user.role === "editor"}
           onPublish={onConfirmPublish}
           onFix={(field) => {
             setReview(null);

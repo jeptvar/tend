@@ -4,10 +4,13 @@ import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 export interface RenderedPage {
   status: number;
   html: string;
+  /** HTML unless it says otherwise: feeds and the sitemap are XML. */
+  type?: string;
 }
 
 export interface CachedPage {
   status: number;
+  type?: string;
   etag: string;
   raw: Buffer;
   br: Buffer;
@@ -55,6 +58,7 @@ export class PageCache {
     const raw = Buffer.from(rendered.html);
     const page: CachedPage = {
       status: rendered.status,
+      ...(rendered.type ? { type: rendered.type } : {}),
       etag: pageEtag(raw),
       raw: exactCopy(raw),
       br: exactCopy(brotliCompressSync(raw, { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } })),

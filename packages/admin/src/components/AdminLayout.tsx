@@ -34,10 +34,18 @@ export function SignedIn({ children }: { children: (me: Me) => ReactNode }) {
 
 const EDITOR_PRELOAD_MS = 1500;
 
-const NAV = [
+/**
+ * Each item says who sees it, as PLAN.md §6 sets out: a Writer writes posts, so has no Pages.
+ * The server checks again, whatever the screen shows.
+ */
+const NAV: { href: string; id: string; roles?: string[] }[] = [
   { href: "/", id: "nav.overview" },
   { href: "/posts", id: "nav.posts" },
-  { href: "/pages", id: "nav.pages" },
+  { href: "/pages", id: "nav.pages", roles: ["admin", "editor"] },
+  { href: "/media", id: "nav.media" },
+  { href: "/menu", id: "nav.menu", roles: ["admin", "editor"] },
+  { href: "/design", id: "nav.design", roles: ["admin"] },
+  { href: "/settings", id: "nav.settings", roles: ["admin"] },
 ];
 
 const navLinkClass =
@@ -102,21 +110,23 @@ export function AdminLayout({
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2">
           <nav aria-label={intl.formatMessage({ id: "nav.label" })}>
             <ul className="-ml-2 flex flex-wrap items-center">
-              {NAV.map((item) => {
-                const current =
-                  item.href === "/" ? location === "/" : location.startsWith(item.href);
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      aria-current={current ? "page" : undefined}
-                      className={`${navLinkClass} ${current ? "font-semibold" : "text-muted"}`}
-                    >
-                      <FormattedMessage id={item.id} />
-                    </Link>
-                  </li>
-                );
-              })}
+              {NAV.filter((item) => !item.roles || item.roles.includes(me.user.role)).map(
+                (item) => {
+                  const current =
+                    item.href === "/" ? location === "/" : location.startsWith(item.href);
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        aria-current={current ? "page" : undefined}
+                        className={`${navLinkClass} ${current ? "font-semibold" : "text-muted"}`}
+                      >
+                        <FormattedMessage id={item.id} />
+                      </Link>
+                    </li>
+                  );
+                },
+              )}
             </ul>
           </nav>
           <div className="-mr-2 flex flex-wrap items-center gap-x-1">

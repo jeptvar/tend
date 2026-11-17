@@ -6,7 +6,37 @@ export interface EditorDraft {
   title: string;
   slug: string;
   summary: string;
+  /** Null means "the first picture in the text". */
+  featuredImageId: string | null;
+  /** Blank means "the same as the title" and "the summary". */
+  seoTitle: string;
+  seoDescription: string;
+  noindex: boolean;
+  tagIds: string[];
   doc: Doc;
+}
+
+/** Everything but the text. */
+export type DraftFields = Omit<EditorDraft, "doc">;
+
+/** A copy kept before these settings existed has none of them, which means "automatic". */
+export function completeDraft(draft: Partial<EditorDraft> & Pick<EditorDraft, "doc">): EditorDraft {
+  return {
+    title: draft.title ?? "",
+    slug: draft.slug ?? "",
+    summary: draft.summary ?? "",
+    featuredImageId: draft.featuredImageId ?? null,
+    seoTitle: draft.seoTitle ?? "",
+    seoDescription: draft.seoDescription ?? "",
+    noindex: draft.noindex ?? false,
+    tagIds: draft.tagIds ?? [],
+    doc: draft.doc,
+  };
+}
+
+export function draftFields(draft: EditorDraft): DraftFields {
+  const { doc: _doc, ...fields } = draft;
+  return fields;
 }
 
 /** What hasn't reached the server yet, from one editor window. */
@@ -57,11 +87,26 @@ function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
+      // Never drop the store, not even to change its shape: it holds words that haven't
+      // reached the server, and updating Tend is no reason to lose them (PLAN.md P5). Every
+      // version so far keeps the same records under `key`, and completeDraft fills in fields
+      // added since. A version that changes the records converts the ones here, right here.
       const db = request.result;
-      if (db.objectStoreNames.contains(STORE)) db.deleteObjectStore(STORE);
-      db.createObjectStore(STORE, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "key" });
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // A newer admin in another tab needs this closed before it can update the store, and
+      // holding on would leave it unable to keep anything. So this tab lets go, and opens
+      // again on its next write. If the store is then newer than this tab understands, that
+      // fails, and its words stay in memory, where the status says they are.
+      db.onversionchange = () => {
+        db.close();
+        if (opened === db) opened = undefined;
+        database = undefined;
+      };
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
     request.onblocked = () => reject(new Error("blocked"));
   });
@@ -167,15 +212,76 @@ async function findLiveWindows(): Promise<Set<string>> {
   }
 }
 
-/** Reads what's on this device, including anything other tabs have done since last time. */
-async function load(): Promise<void> {
+/** Editor windows open in this tab, which are certainly still open. */
+const ownWindows = new Set<string>();
+/** Other windows being waited on, so their copies are offered as soon as they close. */
+const watching = new Set<string>();
+const CLOSING_GRACE_MS = 400;
+
+/**
+ * Whether another window is really still open. A tab that's just closed can hold on to its
+ * lock for a moment, longest on a busy computer, and its copy shouldn't be passed over
+ * because of that. An editor opening waits a little for the lock; other looks only check.
+ * Either way, once a held lock is let go, everything's read again.
+ */
+async function stillOpen(session: string, wait: boolean): Promise<boolean> {
+  if (!navigator.locks) return true;
+  const name = `${LOCK_PREFIX}${session}`;
+  let open: boolean;
+  try {
+    open = wait
+      ? await navigator.locks.request(
+          name,
+          { signal: AbortSignal.timeout(CLOSING_GRACE_MS) },
+          () => false,
+        )
+      : await navigator.locks.request(name, { ifAvailable: true }, (lock) => lock === null);
+  } catch {
+    open = true;
+  }
+  if (open && !watching.has(session)) {
+    watching.add(session);
+    navigator.locks
+      .request(name, () => undefined)
+      .then(() => {
+        watching.delete(session);
+        void refresh();
+      })
+      .catch(() => watching.delete(session));
+  }
+  return open;
+}
+
+/**
+ * Reads what's on this device, including anything other tabs have done since last time.
+ * `wait` gives a just-closed tab a moment to let go, for when an editor is opening and is
+ * about to decide whether there's a copy to offer.
+ */
+async function load(wait: boolean): Promise<void> {
   const db = await getDatabase();
   const stored = await new Promise<HeldDraft[]>((resolve, reject) => {
     const request = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () =>
+      resolve(
+        (request.result as HeldDraft[]).map((held) => ({
+          ...held,
+          draft: completeDraft(held.draft),
+        })),
+      );
     request.onerror = () => reject(request.error);
   });
-  liveWindows = await findLiveWindows();
+  const live = await findLiveWindows();
+  const others = new Set(
+    stored
+      .map((held) => held.editSession)
+      .filter((session) => live.has(session) && !ownWindows.has(session)),
+  );
+  await Promise.all(
+    [...others].map(async (session) => {
+      if (!(await stillOpen(session, wait))) live.delete(session);
+    }),
+  );
+  liveWindows = live;
   closedHere.clear();
   drafts.clear();
   for (const held of stored) drafts.set(held.key, held);
@@ -185,8 +291,8 @@ async function load(): Promise<void> {
   }
 }
 
-function refresh(): Promise<void> {
-  return load()
+function refresh(wait = false): Promise<void> {
+  return load(wait)
     .catch(() => {
       // Nothing can be read, so what's in memory is all there is, and it stays.
       storageWorks = false;
@@ -205,7 +311,7 @@ window.addEventListener("beforeunload", (event) => {
 
 /** Finished once this device has been read afresh. Opening an entry waits for this. */
 export function draftsLoaded(): Promise<void> {
-  return refresh();
+  return refresh(true);
 }
 
 /** Whether "kept on this device" is true right now. If it isn't, nobody should be told it is. */
@@ -318,6 +424,7 @@ export function holdWindowOpen(editSession: string): () => void {
   const open = new Promise<void>((resolve) => {
     letGo = resolve;
   });
+  ownWindows.add(editSession);
   navigator.locks
     .request(`${LOCK_PREFIX}${editSession}`, () => open)
     // Other tabs hear about it too, so a copy this window left behind gets mentioned there.
@@ -325,6 +432,7 @@ export function holdWindowOpen(editSession: string): () => void {
     .catch(() => {});
   return () => {
     // Straight away for this tab's own notice, which can't wait for the device to say so.
+    ownWindows.delete(editSession);
     closedHere.add(editSession);
     notify();
     letGo();

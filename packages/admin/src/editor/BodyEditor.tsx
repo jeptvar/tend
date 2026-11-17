@@ -15,14 +15,19 @@ import {
   useState,
 } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
+import { MediaPicker } from "../components/MediaPicker.tsx";
 import { showToast } from "../components/Toast.tsx";
 import type { Doc } from "../lib/doc.ts";
+import { type MediaItem, uploadWords, useMediaItems } from "../lib/media.ts";
 import type { EntryType } from "../lib/queries.ts";
+import { AltDialog } from "./AltDialog.tsx";
 import { INSERT_ITEMS, type InsertItem, matchingItems } from "./commands.ts";
 import { editorExtensions } from "./extensions.ts";
+import { UPLOAD_META } from "./ImageNode.tsx";
 import { LinkDialog } from "./LinkDialog.tsx";
 import type { RemovedSection } from "./nodes.tsx";
 import type { SlashState } from "./slash.ts";
+import { forgetUpload, getUpload, isUploading, startUpload } from "./uploads.ts";
 
 export interface BodyHandle {
   /** Replaces the words: a conflict resolved, or an older version brought back. */
@@ -421,7 +426,10 @@ function SlashList({
   );
 }
 
-/** Tables and pictures can't be stored yet, so nothing should vanish without a word. */
+/**
+ * Tables can't be stored yet, and a picture from another site isn't in Media, so nothing
+ * should vanish without a word.
+ */
 function tidyPastedHtml(html: string, notify: (ids: string[]) => void): string {
   const hasTable = /<table[\s>]/i.test(html);
   const notices = [
@@ -477,11 +485,28 @@ type LinkAsk =
   | { kind: "newButton" }
   | { kind: "editButton"; position: number; href: string; label: string };
 
+/** Whether pasted HTML holds words, not just a picture. Parsing it this way runs nothing. */
+function htmlHasWords(html: string): boolean {
+  if (!html) return false;
+  return Boolean(new DOMParser().parseFromString(html, "text/html").body.textContent?.trim());
+}
+
+/** The description dialog, once the picture it's about is known. */
+function DescribeImage({ mediaId, onClose }: { mediaId: string; onClose: () => void }) {
+  const { found, isPending } = useMediaItems([mediaId]);
+  const item = found.get(mediaId);
+  useEffect(() => {
+    if (!isPending && !item) onClose();
+  }, [isPending, item, onClose]);
+  return item ? <AltDialog item={item} onClose={onClose} /> : null;
+}
+
 export function BodyEditor({
   ref,
   initial,
   type,
   editable,
+  canEditBusiness = false,
   labelledBy,
   onDocChange,
   onReady,
@@ -490,6 +515,8 @@ export function BodyEditor({
   initial: Doc;
   type: EntryType;
   editable: boolean;
+  /** Whether this person can change the business details, for Contact & hours. */
+  canEditBusiness?: boolean;
   labelledBy: string;
   /** With an immutable snapshot, which is safe to read after this screen has gone. */
   onDocChange: (doc: PmNode) => void;
@@ -499,7 +526,14 @@ export function BodyEditor({
   const slashListId = useId();
   const [slash, setSlash] = useState<SlashState | null>(null);
   const [ask, setAsk] = useState<LinkAsk | null>(null);
+  // Picking a picture, and what for: the text, or a Picture and text section.
+  const [picking, setPicking] = useState<null | { use?: (mediaId: string) => void }>(null);
+  const [describing, setDescribing] = useState<string | null>(null);
   const [startingDoc] = useState(() => toEditorDoc(initial));
+  /** When someone last changed the words, as opposed to an upload arriving. */
+  const lastTyped = useRef(0);
+  /** Uploads started here, to say what happened to any still going when this closes. */
+  const started = useRef(new Set<string>());
 
   const callbacks = useRef({ onDocChange, onReady, intl });
   callbacks.current = { onDocChange, onReady, intl };
@@ -521,7 +555,10 @@ export function BodyEditor({
         allowSections: type === "page",
         placeholder: callbacks.current.intl.formatMessage({ id: "editor.placeholder" }),
         onEditButton: (position, attrs) => setAsk({ kind: "editButton", position, ...attrs }),
+        onDescribeImage: (mediaId) => setDescribing(mediaId),
+        onUploaded: (item, startedAt) => uploadedRef.current(item, startedAt),
         onSectionRemoved: (removed) => sectionRemovedRef.current(removed),
+        canEditBusiness,
         slash: {
           items: (query) =>
             matchingItems(items, query, (id) =>
@@ -531,7 +568,7 @@ export function BodyEditor({
           runItem: (item) => runRef.current(item),
         },
       }),
-    [type, items],
+    [type, items, canEditBusiness],
   );
 
   const editor = useEditor({
@@ -551,17 +588,24 @@ export function BodyEditor({
       scrollMargin: { top: 120, bottom: 24, left: 0, right: 0 },
       scrollThreshold: { top: 120, bottom: 24, left: 0, right: 0 },
       transformPastedHTML: (html) => tidyPastedHtml(html, notifyMessages),
-      handlePaste: (_view, event) => {
+      // A pasted or dropped file uploads where it lands, and shows how it's going there.
+      handlePaste: (view, event) => {
         const data = event.clipboardData;
-        const onlyFiles = data && data.files.length > 0 && !data.getData("text/plain");
-        if (!onlyFiles) return false;
-        notifyMessages(["paste.image"]);
+        const files = [...(data?.files ?? [])];
+        // Word and others add a picture of what was copied alongside its words: the words
+        // are what's wanted then. A copied photo, or a file from a folder, has none.
+        if (files.length === 0 || htmlHasWords(data?.getData("text/html") ?? "")) return false;
+        uploadsRef.current(files, view.state.selection.from);
         return true;
       },
-      handleDrop: (_view, event) => {
-        const files = (event as DragEvent).dataTransfer?.files;
-        if (!files || files.length === 0) return false;
-        notifyMessages(["paste.image"]);
+      handleDrop: (view, event, _slice, moved) => {
+        const files = [...((event as DragEvent).dataTransfer?.files ?? [])];
+        if (moved || files.length === 0) return false;
+        const { clientX: left, clientY: top } = event as DragEvent;
+        uploadsRef.current(
+          files,
+          view.posAtCoords({ left, top })?.pos ?? view.state.selection.from,
+        );
         return true;
       },
       handleKeyDown: (_view, event) => {
@@ -574,13 +618,114 @@ export function BodyEditor({
       },
     },
     onCreate: ({ editor: created }) => callbacks.current.onReady(created.state.doc),
-    onUpdate: ({ editor: changed }) => callbacks.current.onDocChange(changed.state.doc),
+    onUpdate: ({ editor: changed, transaction }) => {
+      if (!transaction.getMeta(UPLOAD_META)) lastTyped.current = Date.now();
+      callbacks.current.onDocChange(changed.state.doc);
+    },
   });
 
   function runItem(item: InsertItem) {
-    const worked = item.run(editor, { askForButton: () => setAsk({ kind: "newButton" }) });
+    const worked = item.run(editor, {
+      askForButton: () => setAsk({ kind: "newButton" }),
+      askForImage: (use) => setPicking(use ? { use } : {}),
+    });
     if (!worked) notifyMessages(["editor.cantGoHere"]);
   }
+
+  /** Puts a placeholder for each file where it was dropped, and starts sending them. */
+  function insertUploads(files: File[], position: number) {
+    if (!editor.isEditable) return;
+    const words = { ...uploadWords(intl), tooBig: intl.formatMessage({ id: "media.tooBig" }) };
+    const nodes = files.map((file) => {
+      const uploadId = startUpload(file, words);
+      started.current.add(uploadId);
+      return { type: "image", attrs: { uploadId } };
+    });
+    const at = Math.min(position, editor.state.doc.content.size);
+    editor.chain().focus().insertContentAt(at, nodes).setMeta(UPLOAD_META, true).run();
+    leaveRoomToType(true);
+  }
+
+  /**
+   * After a picture goes in, typing carries on after it. Left selected, the picture would
+   * be replaced by the next key typed. If nothing follows it to type into, an empty line
+   * does.
+   */
+  function leaveRoomToType(fromUpload: boolean) {
+    const { selection, doc } = editor.state;
+    const after =
+      selection instanceof NodeSelection && selection.node.type.name === "image"
+        ? selection.to
+        : undefined;
+    if (after === undefined) return;
+    const next = doc.resolve(after).nodeAfter;
+    const chain = editor.chain();
+    if (next?.type.name !== "paragraph") chain.insertContentAt(after, { type: "paragraph" });
+    chain.setTextSelection(after + 1);
+    if (fromUpload) chain.setMeta(UPLOAD_META, true);
+    chain.run();
+  }
+
+  /**
+   * Asks for a description as soon as an upload arrives, but only if nothing's been typed
+   * since it was dropped, and nothing else is open: otherwise the next keys would land in
+   * the dialog. The picture says it has no description either way.
+   */
+  function uploaded(item: MediaItem, startedAt: number) {
+    if (item.kind !== "image" || item.alt || item.decorative) return;
+    if (lastTyped.current > startedAt || document.querySelector("dialog[open]")) return;
+    setDescribing((current) => current ?? item.id);
+  }
+  const uploadedRef = useRef(uploaded);
+  uploadedRef.current = uploaded;
+  const uploadsRef = useRef(insertUploads);
+  uploadsRef.current = insertUploads;
+
+  function insertPicked(item: MediaItem) {
+    const use = picking?.use;
+    setPicking(null);
+    if (!item.alt && !item.decorative) setDescribing((current) => current ?? item.id);
+    if (use) {
+      use(item.id);
+      return;
+    }
+    editor
+      .chain()
+      .focus()
+      .insertContent({ type: "image", attrs: { mediaId: item.id } })
+      .run();
+    leaveRoomToType(false);
+  }
+
+  // Leaving with an upload still going: it finishes into Media, but can't reach these
+  // words any more, so that's said, with its name, rather than it quietly going missing.
+  useEffect(() => {
+    const mine = started.current;
+    return () => {
+      const going = [...mine].map(getUpload).filter(isUploading);
+      const failed = [...mine].map(getUpload).filter((upload) => upload?.error);
+      for (const id of mine) if (!isUploading(getUpload(id))) forgetUpload(id);
+      const { intl: words } = callbacks.current;
+      if (going.length > 0) {
+        showToast({
+          message: words.formatMessage(
+            { id: "editor.uploadLeftBehind" },
+            { names: going.map((upload) => `"${upload?.name}"`).join(", "), count: going.length },
+          ),
+          sticky: true,
+        });
+      } else if (failed.length > 0) {
+        showToast({
+          message: words.formatMessage(
+            { id: "editor.uploadFailedLeft" },
+            { names: failed.map((upload) => `"${upload?.name}"`).join(", "), count: failed.length },
+          ),
+          sticky: true,
+        });
+      }
+    };
+  }, []);
+
   const runRef = useRef(runItem);
   runRef.current = runItem;
 
@@ -669,6 +814,35 @@ export function BodyEditor({
       <EditorContent editor={editor} />
       {wideScreen && <SelectionToolbar editor={editor} onLink={openLink} />}
       {slash && <SlashList state={slash} listId={slashListId} nameOf={nameOf} />}
+      {picking && (
+        <MediaPicker
+          heading={intl.formatMessage({ id: "picker.heading" })}
+          onPick={insertPicked}
+          // A section's picture uploads in the picker, since the section needs it first.
+          {...(picking.use
+            ? {}
+            : {
+                onFiles: (files: File[]) => {
+                  setPicking(null);
+                  insertUploads(files, editor.state.selection.from);
+                },
+              })}
+          onClose={() => {
+            setPicking(null);
+            editor.commands.focus();
+          }}
+        />
+      )}
+      {describing && (
+        <DescribeImage
+          key={describing}
+          mediaId={describing}
+          onClose={() => {
+            setDescribing(null);
+            editor.commands.focus();
+          }}
+        />
+      )}
       {ask?.kind === "link" && (
         <LinkDialog
           heading={intl.formatMessage({ id: "link.heading" })}

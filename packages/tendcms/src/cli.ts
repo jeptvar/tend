@@ -17,6 +17,7 @@ import {
   tightenPrivateFiles,
 } from "./config.ts";
 import { cleanUp } from "./content/entries.ts";
+import { rerenderPublished } from "./content/rerender.ts";
 import { createOrm, openDatabase, type SqliteDatabase } from "./db/client.ts";
 import { acquireLock, type Lock, LockError } from "./db/lock.ts";
 import { MigrationError, migrate, schemaIsCurrent } from "./db/migrate.ts";
@@ -27,6 +28,8 @@ import {
   resetPasswordAndSignOutEverywhere,
 } from "./db/repo/users.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
+import { cleanUpMedia } from "./media/library.ts";
+import { MediaStore } from "./media/store.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
 
@@ -199,6 +202,17 @@ async function start(): Promise<void> {
 
   db = openDatabase(config.dbPath);
   const orm = createOrm(db);
+  // Published pages are stored as HTML. If this Tend renders them differently, they're
+  // brought up to date before anyone is answered (PLAN.md §8). Not managing it is no reason
+  // to stop: each page still has the HTML it was published with.
+  try {
+    const { rendered, failed } = await rerenderPublished(orm);
+    if (rendered > 0) console.log(`Updated ${rendered} published pages for this version of Tend.`);
+    if (failed > 0)
+      console.error(`Couldn't update ${failed} published pages; they look as they did.`);
+  } catch (error) {
+    console.error(`Couldn't update published pages: ${(error as Error).message}`);
+  }
   const secretKey = readSecretKey(config);
   const app = createApp({
     version: appVersion,
@@ -211,17 +225,25 @@ async function start(): Promise<void> {
     secureCookies: config.secureCookies,
     trustProxy: config.trustProxy,
     themeDir: defaultThemeDir,
+    uploadsDir: config.uploadsDir,
     pageCacheBytes: config.pageCacheBytes,
+    watchTheme: true,
+    siteUrl: config.siteUrl,
     isPublic: config.isPublic,
   });
   // The Trash and automatic history only keep things for so long. Not being able to tidy
   // up is no reason to stop serving the site.
+  const files = new MediaStore(config.uploadsDir);
   const tidyUp = () => {
     try {
       cleanUp(orm, Date.now());
     } catch (error) {
       console.error(`Couldn't tidy up old drafts: ${(error as Error).message}`);
     }
+    // Media's Trash after 30 days, except what a published page still shows.
+    cleanUpMedia(orm, files, Date.now()).catch((error: Error) =>
+      console.error(`Couldn't empty Media's Trash: ${error.message}`),
+    );
   };
   tidyUp();
   setInterval(tidyUp, HOUR_MS).unref();

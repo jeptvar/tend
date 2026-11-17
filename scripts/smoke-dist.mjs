@@ -3,7 +3,7 @@
 // finding the admin, serving the real files, and running setup. Run after `pnpm build`.
 // Zero dependencies and no shell, so it runs the same on every OS.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -48,6 +48,22 @@ try {
 
   const health = await (await fetch(`${base}/healthz`)).json();
   check(health.ok === true, "/healthz answers");
+
+  // Every package tsdown may bundle has its licence in the notices, as must be published.
+  const dist = join(import.meta.dirname, "..", "packages", "tendcms", "dist");
+  const notices = readFileSync(join(dist, "THIRD_PARTY_NOTICES.md"), "utf8");
+  const config = readFileSync(join(dist, "..", "tsdown.config.ts"), "utf8");
+  const bundled = [
+    ...(config.match(/onlyBundle:\s*\[([^\]]*)\]/)?.[1] ?? "").matchAll(/"([^"]+)"/g),
+  ];
+  check(bundled.length > 0, "tsdown's list of bundled packages was found");
+  for (const [, name] of bundled) {
+    check(notices.includes(`## ${name} `), `THIRD_PARTY_NOTICES.md has ${name}'s licence`);
+  }
+  check(
+    existsSync(join(dist, "admin", "THIRD_PARTY_NOTICES.md")),
+    "the admin's THIRD_PARTY_NOTICES.md is there too",
+  );
 
   check(existsSync(join(cwd, "data", "tend.db")), "the database was created from the migrations");
 
@@ -99,7 +115,10 @@ try {
   const home = await fetch(`${base}/`);
   const homeHtml = await home.text();
   check(home.status === 200 && homeHtml.includes("Smoke Test"), "the public site renders");
-  check(!homeHtml.includes("<script"), "public pages have no JavaScript");
+  // Structured data for search engines is a script element too, but nothing ever runs it.
+  const withoutData = homeHtml.replace(/<script type="application\/ld\+json">[^<]*<\/script>/g, "");
+  check(!withoutData.includes("<script"), "public pages have no JavaScript");
+  check(homeHtml.includes('<link rel="canonical"'), "public pages say where they live");
   const css = homeHtml.match(/\/assets\/[^"]+\.css/)?.[0];
   check((await fetch(`${base}${css}`)).status === 200, "the theme's stylesheet is served");
   check(

@@ -42,6 +42,20 @@ const BUTTON_LABEL_LIMIT = 200;
 const SECTION_KINDS = new Set(["intro", "pictureText", "contact"]);
 const SECTION_TONES = new Set(["none", "muted", "accent"]);
 const SECTION_ALIGNS = new Set(["left", "center"]);
+const IMAGE_SIZES = new Set(["normal", "wide", "full"]);
+const MEDIA_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const IMAGE_TEXT_LIMIT = 1000;
+
+export function isMediaId(value: unknown): value is string {
+  return typeof value === "string" && MEDIA_ID.test(value);
+}
+
+/** Blank is "nothing", as the server stores it. */
+function optionalText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed.slice(0, IMAGE_TEXT_LIMIT);
+}
 
 /** What the server would refuse must be tidied here. Pasted HTML can set anything at all. */
 function oneOf(value: unknown, allowed: Set<string>, fallback: string): string {
@@ -98,6 +112,19 @@ function cleanNode(node: DocNode): DocNode | null {
         },
       };
     }
+    case "image":
+      // One still uploading isn't part of what's saved yet. It is once it arrives.
+      if (!isMediaId(node.attrs?.mediaId)) return null;
+      return {
+        type: "image",
+        attrs: {
+          mediaId: node.attrs.mediaId,
+          alt: optionalText(node.attrs.alt),
+          decorative: node.attrs.decorative === true,
+          caption: optionalText(node.attrs.caption),
+          size: oneOf(node.attrs.size, IMAGE_SIZES, "normal"),
+        },
+      };
     case "section":
       return withContent({
         type: "section",
@@ -143,6 +170,7 @@ export function sameDoc(a: Doc, b: Doc): boolean {
 function nodeText(node: DocNode): string {
   if (node.type === "hardBreak") return "\n";
   if (node.type === "button") return String(node.attrs?.label ?? "");
+  if (node.type === "image") return String(node.attrs?.caption ?? "");
   return node.text ?? (node.content ?? []).map(nodeText).join("");
 }
 
@@ -169,6 +197,19 @@ export function leadText(doc: Doc): string {
     return "";
   };
   return find(doc.content);
+}
+
+/** Every picture a document shows, for looking them up together. */
+export function imageIds(doc: { content?: DocNode[] }): string[] {
+  const found = new Set<string>();
+  const visit = (nodes: DocNode[] | undefined) => {
+    for (const node of nodes ?? []) {
+      if (node.type === "image" && isMediaId(node.attrs?.mediaId)) found.add(node.attrs.mediaId);
+      visit(node.content);
+    }
+  };
+  visit(doc.content);
+  return [...found];
 }
 
 /** The words alone: what to show when comparing versions, or for a summary. */
