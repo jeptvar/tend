@@ -291,7 +291,7 @@ export function createApp(options: AppOptions): Hono {
     isUpload(c.req.method, c.req.path) ? uploadLimit(c, next) : adminLimit(c, next),
   );
 
-  const store = new MediaStore(options.uploadsDir);
+  const store = new MediaStore(options.uploadsDir, options.backupsDir);
   const site = createSite({
     orm: options.orm,
     store,

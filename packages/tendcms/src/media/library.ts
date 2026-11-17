@@ -1,10 +1,10 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { ApiError } from "../api/errors.ts";
 import { entryPath, slugify } from "../content/address.ts";
 import { mediaIdInHref } from "../content/doc.ts";
 import { settingValue } from "../content/settings.ts";
 import { foldForSearch, type Orm } from "../db/client.ts";
-import { entries, media, refs, users } from "../db/schema.ts";
+import { entries, media, refs, retiredOriginals, users } from "../db/schema.ts";
 import { uuidv7 } from "../ids.ts";
 import { checkUpload, fileEnding, processFile, processImage } from "./process.ts";
 import { type MediaStore, shortHash } from "./store.ts";
@@ -90,12 +90,97 @@ function hashInUse(orm: Orm, id: string): string | undefined {
   return row ? shortHash(row.sha256) : undefined;
 }
 
+/** Whether a version the site stopped using is waiting until no kept copy needs it. */
+function isRetired(orm: Orm, id: string, hash: string): boolean {
+  return (
+    orm
+      .select({ hash: retiredOriginals.hash })
+      .from(retiredOriginals)
+      .where(and(eq(retiredOriginals.mediaId, id), eq(retiredOriginals.hash, hash)))
+      .get() !== undefined
+  );
+}
+
 /**
  * Removes a version that was written for nothing. Not if the row points at it by now: the
- * same picture again makes the same files, and pages are showing them.
+ * same picture again makes the same files, and pages are showing them. Nor its original, if
+ * it's one the site used before that a kept copy of its data may still need.
  */
 function removeUnused(orm: Orm, store: MediaStore, id: string, hash: string, ext: string): void {
-  if (hashInUse(orm, id) !== hash) store.removeVersion(id, hash, ext);
+  if (hashInUse(orm, id) === hash) return;
+  store.removeSizes(id, hash);
+  if (!isRetired(orm, id, hash)) store.removeOriginal(id, hash, ext);
+}
+
+/**
+ * Notes, inside the change that does it, that the site stopped using a version. Its original
+ * stays until no kept copy of the site's data was taken before now: see
+ * removeRetiredOriginals. Its sizes can go straight away, since they can be made again.
+ */
+function retire(
+  tx: Pick<Orm, "insert">,
+  version: { id: string; hash: string; ext: string; now: number },
+): void {
+  tx.insert(retiredOriginals)
+    .values({ mediaId: version.id, hash: version.hash, ext: version.ext, retiredAt: version.now })
+    // Used again since it was last retired, so copies taken in between need it too.
+    .onConflictDoUpdate({
+      target: [retiredOriginals.mediaId, retiredOriginals.hash],
+      set: { ext: version.ext, retiredAt: version.now },
+    })
+    .run();
+}
+
+/**
+ * Removes the originals the site stopped using that no kept copy of its data points at: each
+ * copy was taken after they stopped being used. Until then, restoring a copy brings back
+ * pages that show them (PLAN.md §13). With `evenIfCopiesShowThem`, for a disk that's nearly
+ * full, they all go: a copy missing some pictures is better than a site that can't save.
+ * Returns how many went. It never throws: it runs after other work, whose outcome it mustn't
+ * hide, and whatever it couldn't do is done next time.
+ */
+export function removeRetiredOriginals(
+  orm: Orm,
+  store: MediaStore,
+  now: number,
+  options: { evenIfCopiesShowThem?: boolean } = {},
+): number {
+  const oldestCopy = options.evenIfCopiesShowThem ? undefined : store.oldestCopyAt(now);
+  let due: (typeof retiredOriginals.$inferSelect)[];
+  try {
+    due = orm
+      .select()
+      .from(retiredOriginals)
+      .where(oldestCopy === undefined ? undefined : lte(retiredOriginals.retiredAt, oldestCopy))
+      .all();
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const version of due) {
+    // A replace under way may be about to use this version again. It runs this when done.
+    if (replacing.has(version.mediaId)) continue;
+    try {
+      // Used again, after a replace with the same file, say: then it stays.
+      if (hashInUse(orm, version.mediaId) !== version.hash) {
+        store.removeOriginal(version.mediaId, version.hash, version.ext);
+        removed++;
+      }
+      orm
+        .delete(retiredOriginals)
+        .where(
+          and(
+            eq(retiredOriginals.mediaId, version.mediaId),
+            eq(retiredOriginals.hash, version.hash),
+          ),
+        )
+        .run();
+    } catch {
+      // It can't go yet, being open somewhere, or the disk is too full to note that it went.
+      // Either way the rest still go, and this is looked at again next time.
+    }
+  }
+  return removed;
 }
 
 /**
@@ -289,7 +374,11 @@ export async function replaceMedia(
   try {
     return await turn;
   } finally {
-    if (replacing.get(input.id) === turn) replacing.delete(input.id);
+    if (replacing.get(input.id) === turn) {
+      replacing.delete(input.id);
+      // What this replace stopped using, and what waited for it to finish.
+      removeRetiredOriginals(orm, store, input.now);
+    }
   }
 }
 
@@ -332,6 +421,11 @@ async function replaceInTurn(
           .where(eq(media.id, before.id))
           .returning()
           .get();
+        // The same picture again leaves the same files, which are still in use.
+        const previousHash = shortHash(previous.sha256);
+        if (row && previousHash !== newHash) {
+          retire(tx, { id: before.id, hash: previousHash, ext: previous.ext, now: input.now });
+        }
         return row ? { row, previous } : undefined;
       },
       { behavior: "immediate" },
@@ -342,13 +436,12 @@ async function replaceInTurn(
   }
   if (!changed) {
     // Deleted forever meanwhile: nothing can use what was just written.
-    store.removeVersion(before.id, newHash, stored.ext);
+    removeUnused(orm, store, before.id, newHash, stored.ext);
     store.removeAllSizes(before.id);
     throw gone();
   }
-  // The same picture again leaves the same files, which are still in use.
   const previousHash = shortHash(changed.previous.sha256);
-  if (previousHash !== newHash) store.removeVersion(before.id, previousHash, changed.previous.ext);
+  if (previousHash !== newHash) store.removeSizes(before.id, previousHash);
   return changed.row;
 }
 
@@ -517,7 +610,7 @@ function notInTrash(): ApiError {
 export async function deleteMediaForever(
   orm: Orm,
   store: MediaStore,
-  input: { id: string },
+  input: { id: string; now: number },
 ): Promise<void> {
   const item = await getMedia(orm, input.id);
   if (!item) return;
@@ -554,6 +647,7 @@ export async function deleteMediaForever(
         tx.delete(refs)
           .where(and(eq(refs.kind, "media"), eq(refs.refId, item.id)))
           .run();
+        retire(tx, { id: item.id, hash: shortHash(row.sha256), ext: row.ext, now: input.now });
       }
       return row;
     },
@@ -564,8 +658,8 @@ export async function deleteMediaForever(
     if (await getMedia(orm, item.id)) throw notInTrash();
     return;
   }
-  store.removeVersion(item.id, shortHash(removed.sha256), removed.ext);
   store.removeAllSizes(item.id);
+  removeRetiredOriginals(orm, store, input.now);
 }
 
 /** Long after any write that started then could still be going. */
@@ -573,10 +667,12 @@ const LEFTOVER_AGE_MS = 60 * 60 * 1000;
 
 /**
  * Empties the Trash after 30 days, except what a published page still uses, and removes
- * files a crash left half written.
+ * files a crash left half written, and originals no kept copy of the site needs any more.
  */
 export async function cleanUpMedia(orm: Orm, store: MediaStore, now: number): Promise<void> {
   store.removeLeftovers(now - LEFTOVER_AGE_MS);
+  // Copies are let go of each day, and with them what only they needed.
+  removeRetiredOriginals(orm, store, now);
   const expired = orm
     .select({ id: media.id })
     .from(media)
@@ -585,7 +681,7 @@ export async function cleanUpMedia(orm: Orm, store: MediaStore, now: number): Pr
   for (const { id } of expired) {
     if ((await livePagesUsing(orm, id)).length > 0) continue;
     // Brought back, or put to use, while this ran: it's looked at again next time.
-    await deleteMediaForever(orm, store, { id }).catch((error: unknown) => {
+    await deleteMediaForever(orm, store, { id, now }).catch((error: unknown) => {
       if (!(error instanceof ApiError)) throw error;
     });
   }

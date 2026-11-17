@@ -4,9 +4,11 @@ import sharp from "sharp";
 import { describe, expect, test } from "vitest";
 import { ApiError } from "../src/api/errors.ts";
 import { renderDoc } from "../src/content/render-doc.ts";
+import { saveSnapshot } from "../src/db/migrate.ts";
+import { cleanUpMedia, removeRetiredOriginals } from "../src/media/library.ts";
 import { checkUpload, processImage, sniff, widthsFor } from "../src/media/process.ts";
 import { clearSizesIfLow, MediaStore } from "../src/media/store.ts";
-import { makeApp, setUp } from "./auth-helpers.ts";
+import { type MadeApp, makeApp, setUp } from "./auth-helpers.ts";
 
 const MEDIA = "/api/admin/media";
 const ENTRIES = "/api/admin/entries";
@@ -374,6 +376,133 @@ describe("a nearly full disk", () => {
     // With nothing left to clear, there's nothing more it can free.
     rmSync(join(made.uploadsDir, "variants"), { recursive: true, force: true });
     expect(clearSizesIfLow(store, { total: 100, free: 1 })).toBe(0);
+  });
+});
+
+describe("originals a kept copy of the site still needs (PLAN.md §13)", () => {
+  /** Saves a copy of the site's data as the daily one does, named for when it was taken. */
+  async function takeCopy(made: MadeApp, at = made.clock.time): Promise<string> {
+    const stamp = new Date(at).toISOString().replace(/[-:]/g, "");
+    return saveSnapshot(
+      made.db,
+      join(made.root, "tend.db"),
+      join(made.root, "backups"),
+      `daily-${stamp}.db.gz`,
+    );
+  }
+
+  /** The original files kept for a picture, by name. */
+  function originalsOf(made: MadeApp, id: string): string[] {
+    return readdirSync(join(made.uploadsDir, "originals"), { recursive: true })
+      .map(String)
+      .filter((name) => name.includes(id))
+      .sort();
+  }
+
+  function sizesOf(made: MadeApp, id: string): string[] {
+    const folder = join(made.uploadsDir, "variants", id);
+    return existsSync(folder) ? readdirSync(folder) : [];
+  }
+
+  test("stay until every copy taken while the site used them is gone", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const replaced = await withPicture(owner, await png(1200, 800, "#336699"));
+    const deleted = await withPicture(owner, await png(900, 600, "#993366"));
+    const before = originalsOf(made, replaced.id);
+    const copy = await takeCopy(made);
+    made.clock.time += 60_000;
+
+    // Replaced, then deleted forever: the site stops using both originals.
+    const reply = await owner.upload(
+      `${MEDIA}/${replaced.id}/replace`,
+      await png(1000, 700, "#aa0000"),
+      "New.png",
+    );
+    expect(reply.status).toBe(200);
+    await owner.post(`${MEDIA}/${deleted.id}/trash`, {});
+    expect((await owner.delete(`${MEDIA}/${deleted.id}`)).status).toBe(204);
+
+    // The copy shows them, so they stay. Their sizes don't: they're made again if needed.
+    const afterReplace = originalsOf(made, replaced.id);
+    expect(afterReplace).toHaveLength(2);
+    expect(afterReplace).toEqual(expect.arrayContaining(before));
+    expect(sizesOf(made, replaced.id)).toHaveLength(1);
+    expect(originalsOf(made, deleted.id)).toHaveLength(1);
+    expect(sizesOf(made, deleted.id)).toEqual([]);
+
+    // A copy taken since doesn't show them, so once the older one is gone, so are they.
+    made.clock.time += 60_000;
+    await takeCopy(made);
+    const store = new MediaStore(made.uploadsDir, join(made.root, "backups"));
+    await cleanUpMedia(made.orm, store, made.clock.time);
+    expect(originalsOf(made, deleted.id)).toHaveLength(1);
+    rmSync(copy);
+    await cleanUpMedia(made.orm, store, made.clock.time);
+    expect(originalsOf(made, deleted.id)).toEqual([]);
+    const kept = originalsOf(made, replaced.id);
+    expect(kept).toHaveLength(1);
+    expect(before).not.toContain(kept[0]);
+    // The picture itself still shows.
+    const url: string = (await (await owner.get(`${MEDIA}/${replaced.id}`)).json()).srcset
+      .split(", ")[0]
+      .split(" ")[0];
+    expect((await made.app.request(url)).status).toBe(200);
+  });
+
+  test("a copy from more than six weeks ago doesn't hold on to them", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const item = await withPicture(owner);
+    // A copy from before an update can be months old. The daily ones never are.
+    await takeCopy(made, made.clock.time - 7 * 7 * 24 * 60 * 60 * 1000);
+    await owner.post(`${MEDIA}/${item.id}/trash`, {});
+    expect((await owner.delete(`${MEDIA}/${item.id}`)).status).toBe(204);
+    expect(originalsOf(made, item.id)).toEqual([]);
+  });
+
+  test("go anyway when the disk is nearly full", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const item = await withPicture(owner);
+    await takeCopy(made);
+    made.clock.time += 60_000;
+    await owner.post(`${MEDIA}/${item.id}/trash`, {});
+    expect((await owner.delete(`${MEDIA}/${item.id}`)).status).toBe(204);
+    expect(originalsOf(made, item.id)).toHaveLength(1);
+
+    const store = new MediaStore(made.uploadsDir, join(made.root, "backups"));
+    expect(removeRetiredOriginals(made.orm, store, made.clock.time)).toBe(0);
+    expect(
+      removeRetiredOriginals(made.orm, store, made.clock.time, { evenIfCopiesShowThem: true }),
+    ).toBe(1);
+    expect(originalsOf(made, item.id)).toEqual([]);
+  });
+
+  test("an original used again before it goes stays", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const first = await png(1200, 800, "#336699");
+    const item = await withPicture(owner, first);
+    const original = originalsOf(made, item.id);
+    const copy = await takeCopy(made);
+    made.clock.time += 60_000;
+
+    // Replaced, then replaced with the first picture again.
+    const replace = (data: Buffer) =>
+      owner.upload(`${MEDIA}/${item.id}/replace`, data, "Again.png");
+    expect((await replace(await png(1000, 700, "#aa0000"))).status).toBe(200);
+    made.clock.time += 60_000;
+    expect((await replace(first)).status).toBe(200);
+    expect(originalsOf(made, item.id)).toHaveLength(2);
+
+    rmSync(copy);
+    await cleanUpMedia(
+      made.orm,
+      new MediaStore(made.uploadsDir, join(made.root, "backups")),
+      made.clock.time,
+    );
+    expect(originalsOf(made, item.id)).toEqual(original);
   });
 });
 

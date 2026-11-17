@@ -208,6 +208,23 @@ export const media = sqliteTable(
   ],
 );
 
+/**
+ * Originals the site stopped using, when they were deleted forever or replaced. Each stays on
+ * disk while a kept copy of the site's data was taken before then, because restoring that
+ * copy shows it again (PLAN.md §13). There's no foreign key: the media row may be gone.
+ */
+export const retiredOriginals = sqliteTable(
+  "retired_originals",
+  {
+    mediaId: text("media_id").notNull(),
+    /** The version's short hash, as in its file name. */
+    hash: text("hash").notNull(),
+    ext: text("ext").notNull(),
+    retiredAt: integer("retired_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.mediaId, t.hash] })],
+);
+
 /** Earlier values of each setting, for Undo. The last 20 per key are kept. */
 export const settingsHistory = sqliteTable(
   "settings_history",

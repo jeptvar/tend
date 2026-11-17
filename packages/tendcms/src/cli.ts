@@ -35,8 +35,8 @@ import {
 } from "./db/repo/users.ts";
 import { fsyncFile } from "./durable.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
-import { cleanUpMedia } from "./media/library.ts";
-import { clearSizesIfLow, MediaStore } from "./media/store.ts";
+import { cleanUpMedia, removeRetiredOriginals } from "./media/library.ts";
+import { clearSizesIfLow, isNearlyFull, MediaStore } from "./media/store.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
 
@@ -316,7 +316,7 @@ async function start(): Promise<void> {
   });
   // The Trash and automatic history only keep things for so long. Not being able to tidy
   // up is no reason to stop serving the site.
-  const files = new MediaStore(config.uploadsDir);
+  const files = new MediaStore(config.uploadsDir, config.backupsDir);
   const tidyUp = () => {
     try {
       cleanUp(orm, Date.now());
@@ -358,6 +358,8 @@ async function start(): Promise<void> {
   };
   // When the disk is nearly full, picture sizes go first: they're made again as visitors ask
   // for them, and the room they free keeps the site's own changes saving (PLAN.md §13).
+  // If that isn't enough, so do the originals of photos and files deleted lately, which
+  // older copies of the site's data would otherwise show.
   const makeRoom = () => {
     try {
       const freed = clearSizesIfLow(files, diskSpace(config.dataDir));
@@ -367,8 +369,18 @@ async function start(): Promise<void> {
           `The disk is nearly full, so Tend cleared ${megabytes} MB of picture sizes. They're made again as visitors ask for them. Make more room soon: Settings → Backups shows how.`,
         );
       }
+      if (isNearlyFull(diskSpace(config.dataDir))) {
+        const removed = removeRetiredOriginals(orm, files, Date.now(), {
+          evenIfCopiesShowThem: true,
+        });
+        if (removed > 0) {
+          console.warn(
+            `The disk is still nearly full, so Tend removed ${removed} deleted photos and files for good. Copies of the site saved before they were deleted will show them missing.`,
+          );
+        }
+      }
     } catch (error) {
-      console.error(`Couldn't clear picture sizes to make room: ${(error as Error).message}`);
+      console.error(`Couldn't make room on the disk: ${(error as Error).message}`);
     }
   };
   makeRoom();
