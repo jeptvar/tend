@@ -25,6 +25,11 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+      # 1.65.0's WebKit stops 20 browser tests with an "Assertion error" from inside
+      # Playwright as a page loads. Only that version, so a fixed one still comes through.
+      - dependency-name: "@playwright/test"
+        versions:
+          - "1.65.0"
   # Lighthouse's own install, for the nightly check. Its pull requests run that check.
   - package-ecosystem: npm
     directory: /tools/lighthouse
