@@ -188,17 +188,17 @@ export async function closeWhileDown(site: Site, ...pages: Page[]): Promise<void
 }
 
 /**
- * Holds back the page's requests to `url` until the returned function is called: a slow
- * connection that lasts exactly as long as the test needs. A fixed delay can run out before
- * the test is ready, on a busy machine.
+ * Holds back the page's requests to `url`, only those sent with `method` if it's given, until
+ * the returned function is called: a slow connection that lasts exactly as long as the test
+ * needs. A fixed delay can run out before the test is ready, on a busy machine.
  */
-export async function holdRequests(page: Page, url: string): Promise<() => void> {
+export async function holdRequests(page: Page, url: string, method?: string): Promise<() => void> {
   let release = () => {};
   const released = new Promise<void>((resolve) => {
     release = resolve;
   });
   await page.route(url, async (route) => {
-    await released;
+    if (method === undefined || route.request().method() === method) await released;
     await route.fallback();
   });
   return release;
