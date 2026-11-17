@@ -12,6 +12,14 @@ updates:
       tiptap:
         patterns:
           - "@tiptap/*"
+      # Every other minor and patch update comes in one pull request a week, so CI runs once
+      # for them all instead of once each. A major update still gets a pull request of its own.
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
       # Kept at the oldest Node the package supports, so code can't use newer Node APIs.
       - dependency-name: "@types/node"
@@ -25,9 +33,17 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 3
+    groups:
+      lighthouse:
+        patterns:
+          - "*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"
