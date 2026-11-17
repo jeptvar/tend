@@ -149,8 +149,19 @@ jobs:
             --lockfile=pnpm-lock.yaml
             --lockfile=tools/lighthouse/pnpm-lock.yaml
 
+  # The image as it would be published, built on each processor it's published for, each
+  # natively (GitHub's arm64 runners are free for public repositories). PLAN.md §13 and §14.
   docker:
-    runs-on: ubuntu-latest
+    name: docker (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
@@ -169,6 +180,38 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3000/admin/setup | grep --quiet 'id="root"'
           docker exec tend tendcms setup-code | grep --quiet --extended-regexp '^[0-9A-Z]{4}-[0-9A-Z]{4}$'
           test "$(docker exec tend id --user --name)" = node
+          # npm installs Tend and then goes: it isn't needed to run it. (Not `! command`:
+          # a step's -e ignores a negated command, so that could never fail.)
+          if docker exec tend sh -c 'command -v npm'; then
+            echo "npm is still in the image."
+            exit 1
+          fi
+      # A folder from the server, or a volume a host makes (Railway's), belongs to root.
+      - name: Boot against a data folder that belongs to root
+        run: |
+          sudo mkdir /srv/tend-data
+          # As node, Tend can't write there, so it stops and says how to fix it.
+          if docker run --rm --volume /srv/tend-data:/data tend:test > refused.log 2>&1; then
+            echo "Tend started on a data folder it can't write to."
+            exit 1
+          fi
+          grep --quiet 'sudo chown -R 1000:1000' refused.log
+          # As root, the way Railway runs it with RAILWAY_RUN_UID=0, it works.
+          docker run --detach --name tend-root --user 0 --publish 3001:3000             --volume /srv/tend-data:/data tend:test
+          for _ in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:3001/healthz && break
+            sleep 1
+          done
+          curl --fail --silent --show-error http://127.0.0.1:3001/admin/setup | grep --quiet 'id="root"'
+          sudo test -f /srv/tend-data/tend.db
+      # Known vulnerabilities with a fix (PLAN.md §12). The image is Trivy's own, pinned by
+      # digest. Its database comes from AWS's mirror first, since GHCR rate-limits it.
+      - name: Scan the image for known vulnerabilities
+        run: |
+          docker run --rm --volume /var/run/docker.sock:/var/run/docker.sock             aquasec/trivy:0.76.2@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb             image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1             --db-repository public.ecr.aws/aquasecurity/trivy-db,ghcr.io/aquasecurity/trivy-db             tend:test
       - name: Show what Tend printed, if that failed
         if: failure()
-        run: docker logs tend
+        run: |
+          docker logs tend || true
+          docker logs tend-root || true
+          cat refused.log || true
