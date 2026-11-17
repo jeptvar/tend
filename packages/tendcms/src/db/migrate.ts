@@ -33,7 +33,8 @@ export interface MigrateResult {
 export class MigrationError extends Error {}
 
 const SNAPSHOTS_KEPT = 3;
-const SNAPSHOT_TMP_PREFIX = ".tmp-";
+/** Work in the backups folder that isn't finished yet. Anything named so is removed at boot. */
+export const SNAPSHOT_TMP_PREFIX = ".tmp-";
 
 /**
  * Brings tend.db up to date (PLAN.md §13):
@@ -174,7 +175,7 @@ function readMeta(db: SqliteDatabase, key: string): string | undefined {
   return row?.value;
 }
 
-function readSchemaVersion(db: SqliteDatabase): number {
+export function readSchemaVersion(db: SqliteDatabase): number {
   return Number(readMeta(db, "schema_version") ?? 0);
 }
 
@@ -192,12 +193,25 @@ async function takeSnapshot(
 ): Promise<string> {
   const stamp = new Date().toISOString().replace(/[-:]/g, "");
   const name = `pre-${options.appVersion}-from-${fromVersion}-${stamp}.db.gz`;
-  const finalPath = join(options.backupsDir, name);
-  const rawTmp = join(options.backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}.raw`);
-  const gzTmp = join(options.backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}`);
+  return saveSnapshot(db, options.dbPath, options.backupsDir, name);
+}
+
+/**
+ * Saves a gzipped copy of the database in the backups folder as `name`, made with SQLite's
+ * backup API outside any transaction, so the site can keep running while it's made.
+ */
+export async function saveSnapshot(
+  db: SqliteDatabase,
+  dbPath: string,
+  backupsDir: string,
+  name: string,
+): Promise<string> {
+  const finalPath = join(backupsDir, name);
+  const rawTmp = join(backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}.raw`);
+  const gzTmp = join(backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}`);
 
   // Copies hold the same private data, so they get the same protection as the database.
-  const mode = fileMode(options.dbPath);
+  const mode = fileMode(dbPath);
 
   // Only a finished, flushed file gets a real name, so a snapshot that was cut short
   // can't be mistaken for a good one or push a good one out.
@@ -207,7 +221,7 @@ async function takeSnapshot(
     await pipeline(createReadStream(rawTmp), createGzip(), createWriteStream(gzTmp, { mode }));
     fsyncFile(gzTmp);
     renameSync(gzTmp, finalPath);
-    fsyncDir(options.backupsDir);
+    fsyncDir(backupsDir);
   } finally {
     for (const path of [rawTmp, `${rawTmp}-journal`, gzTmp]) rmSync(path, { force: true });
   }
@@ -222,7 +236,8 @@ function removeInterruptedWork(options: MigrateOptions): void {
   rmSync(`${options.dbPath}.restoring`, { force: true });
   for (const file of readdirSync(options.backupsDir)) {
     if (file.startsWith(SNAPSHOT_TMP_PREFIX)) {
-      rmSync(join(options.backupsDir, file), { force: true });
+      // Folders too: a restore unpacks a backup into one before it's checked.
+      rmSync(join(options.backupsDir, file), { recursive: true, force: true });
     }
   }
 }

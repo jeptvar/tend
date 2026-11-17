@@ -34,22 +34,30 @@ export interface MadeApp {
   clock: { time: number };
   code: string;
   uploadsDir: string;
+  /** The data folder: tend.db, backups/ and uploads/ (the key is only in memory). */
+  root: string;
   /** Once everything the site started in the background, like refilling pages, is done. */
   settled: () => Promise<void>;
 }
 
-/** A real app on a real, migrated database, with a clock the test controls. */
-export async function makeApp(overrides: Partial<AppOptions> = {}): Promise<MadeApp> {
-  const root = tempDir();
+/**
+ * A real app on a real, migrated database, with a clock the test controls. `site` can name
+ * a data folder that already holds one, a restored backup say, and the key it uses.
+ */
+export async function makeApp(
+  overrides: Partial<AppOptions> = {},
+  site: { root?: string; secretKey?: Buffer } = {},
+): Promise<MadeApp> {
+  const root = site.root ?? tempDir();
   const backupsDir = join(root, "backups");
-  mkdirSync(backupsDir);
+  mkdirSync(backupsDir, { recursive: true });
   const dbPath = join(root, "tend.db");
   await migrate({ dbPath, backupsDir, migrationsDir, appVersion: "test", log: () => {} });
 
   const db = openDatabase(dbPath);
   open.push(db);
   const orm = createOrm(db);
-  const secretKey = randomBytes(32);
+  const secretKey = site.secretKey ?? randomBytes(32);
   const clock = { time: START_TIME };
   const background = new Set<Promise<unknown>>();
   const app = createApp({
@@ -81,6 +89,7 @@ export async function makeApp(overrides: Partial<AppOptions> = {}): Promise<Made
     clock,
     code: displaySetupCode(secretKey),
     uploadsDir: join(root, "uploads"),
+    root,
     settled: async () => {
       // Work can start more work, so it's done once there's none left.
       while (background.size > 0) await Promise.all([...background]);

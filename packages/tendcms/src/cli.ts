@@ -1,9 +1,13 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { createWriteStream, existsSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { constants } from "node:os";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generatePassword, hashPassword } from "./auth/passwords.ts";
 import { displaySetupCode } from "./auth/setup-code.ts";
+import { backupFileName } from "./backups/format.ts";
+import { BackupError, checkBackup, restoreBackup } from "./backups/restore.ts";
+import { writeBackup } from "./backups/write.ts";
 import {
   type Config,
   ConfigError,
@@ -20,13 +24,15 @@ import { cleanUp } from "./content/entries.ts";
 import { rerenderPublished } from "./content/rerender.ts";
 import { createOrm, openDatabase, type SqliteDatabase } from "./db/client.ts";
 import { acquireLock, type Lock, LockError } from "./db/lock.ts";
-import { MigrationError, migrate, schemaIsCurrent } from "./db/migrate.ts";
+import { MigrationError, migrate, SNAPSHOT_TMP_PREFIX, schemaIsCurrent } from "./db/migrate.ts";
+import { getSetting } from "./db/repo/settings.ts";
 import {
   findUserByEmail,
   listUsers,
   ownerExists,
   resetPasswordAndSignOutEverywhere,
 } from "./db/repo/users.ts";
+import { fsyncFile } from "./durable.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
 import { cleanUpMedia } from "./media/library.ts";
 import { MediaStore } from "./media/store.ts";
@@ -39,6 +45,10 @@ Usage: tendcms <command>
 
 Commands:
   start                    Start Tend. It keeps running until you close the window or press Ctrl+C.
+  backup [file]            Save the site to a zip file: its content, uploads and sign-in secrets.
+                           Keep it private. Tend can keep running while it's saved.
+  restore <file>           Put the site back as it is in a backup. Close Tend first. The site
+                           that was here is saved in the backups folder before it's replaced.
   setup-code               Show the code that first-time setup asks for.
   reset-password <email>   Give an account a new password and sign it out everywhere.
 
@@ -76,6 +86,10 @@ async function main(argv: string[]): Promise<void> {
   switch (command) {
     case "start":
       return start();
+    case "backup":
+      return backup(argument);
+    case "restore":
+      return restore(argument);
     case "setup-code":
       return showSetupCode();
     case "reset-password":
@@ -160,6 +174,70 @@ async function resetPassword(email: string | undefined): Promise<void> {
     console.log("It won't be shown again, and this account has been signed out everywhere.");
   } finally {
     db.close();
+  }
+}
+
+/** Saves the site to a zip file, beside a running Tend or not (PLAN.md §13). */
+async function backup(file: string | undefined): Promise<void> {
+  const config = loadConfig();
+  const db = openExistingDatabase(config);
+  try {
+    const site = (await getSetting(createOrm(db), "site"))?.name ?? "Tend";
+    const now = new Date();
+    const target = resolve(file ?? backupFileName(site, now));
+    // Only a finished file gets the real name, so a backup cut short can't pass for one.
+    const partial = `${target}.partial`;
+    try {
+      const manifest = await writeBackup(
+        {
+          db,
+          backupsDir: config.backupsDir,
+          uploadsDir: config.uploadsDir,
+          secretKeyPath: config.secretKeyPath,
+          appVersion,
+          site,
+        },
+        createWriteStream(partial),
+        now,
+      );
+      fsyncFile(partial);
+      renameSync(partial, target);
+      const uploads = manifest.files.filter((each) => each.path.startsWith("uploads/")).length;
+      console.log(
+        `Saved ${site}, with ${uploads === 1 ? "1 uploaded file" : `${uploads} uploaded files`}, to ${target}`,
+      );
+      console.log("It holds the site's sign-in secrets, so keep it private.");
+    } catch (error) {
+      rmSync(partial, { force: true });
+      throw error;
+    }
+  } finally {
+    db.close();
+  }
+}
+
+/** Puts a site back from a backup zip, once every part of it has been checked. */
+async function restore(file: string | undefined): Promise<void> {
+  if (!file) {
+    throw new ConfigError(
+      "Say which backup to restore, for example: tendcms restore rise-bakery-backup-PRIVATE-2027-11-21.zip",
+    );
+  }
+  const zipPath = resolve(file);
+  if (!existsSync(zipPath)) throw new ConfigError(`There's no file at ${zipPath}.`);
+  const config = loadConfig();
+  const lock = takeDataFolder(config);
+  const folder = join(config.backupsDir, `${SNAPSHOT_TMP_PREFIX}restore-${Date.now()}`);
+  try {
+    const newestSchema = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).length;
+    const checked = await checkBackup(zipPath, folder, newestSchema);
+    const { snapshotPath } = await restoreBackup(checked, config);
+    const { site, createdAt } = checked.manifest;
+    console.log(`Restored ${site} as it was on ${createdAt.slice(0, 10)}. Start Tend to see it.`);
+    if (snapshotPath) console.log(`The site that was here before is saved in ${snapshotPath}.`);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+    lock.release();
   }
 }
 
@@ -288,7 +366,8 @@ main(process.argv.slice(2)).catch((error: unknown) => {
   if (
     error instanceof ConfigError ||
     error instanceof LockError ||
-    error instanceof MigrationError
+    error instanceof MigrationError ||
+    error instanceof BackupError
   ) {
     console.error(`\n${error.message}\n`);
   } else {
