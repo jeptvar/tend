@@ -1090,7 +1090,12 @@ test.describe('the "/" menu and Insert', () => {
     await page.waitForTimeout(100);
     const box = await menu.boundingBox();
     const caret = await page.evaluate(() => {
-      const rect = window.getSelection()?.getRangeAt(0).getBoundingClientRect();
+      // The line the cursor is on: here, its paragraph. WebKit puts the cursor in the
+      // paragraph rather than in its text, and a collapsed range there measures 0, 0, as if
+      // the cursor were at the top of the page.
+      const node = window.getSelection()?.getRangeAt(0).startContainer;
+      const element = node instanceof Element ? node : node?.parentElement;
+      const rect = element?.closest("p")?.getBoundingClientRect();
       return { top: rect?.top ?? 0, bottom: rect?.bottom ?? 0 };
     });
     expect(

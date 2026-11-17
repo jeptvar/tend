@@ -153,6 +153,18 @@ export async function closeWhileDown(site: Site, ...pages: Page[]): Promise<void
   await site.restart();
 }
 
+/**
+ * Whether Tab moves to links in this browser. Safari's skips them until "Press Tab to
+ * highlight each item" is turned on, and WebKit's does on Windows, where Alt+Tab is just Tab.
+ * It replaces what the page shows, so call it before going anywhere.
+ */
+export async function tabReachesLinks(page: Page): Promise<boolean> {
+  await page.setContent('<button id="from">From</button> <a id="to" href="#to">To</a>');
+  await page.locator("#from").focus();
+  await page.keyboard.press("Tab");
+  return page.evaluate(() => document.activeElement?.id === "to");
+}
+
 interface TextNode {
   text?: string;
   content?: TextNode[];

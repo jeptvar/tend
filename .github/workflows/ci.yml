@@ -40,10 +40,18 @@ jobs:
       - run: pnpm build
       - run: pnpm smoke
 
+  # One job per browser, side by side: the tests take most of a quarter of an hour in each.
   browser:
+    name: browser (${{ matrix.browser }})
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      BROWSER: ${{ matrix.browser }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,15 +63,15 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm e2e
+      - run: pnpm exec playwright install --with-deps "$BROWSER"
+      - run: pnpm e2e --project="$BROWSER"
       # Traces show what the page did, which the log alone can't, so a failure can be
       # understood without reproducing it first.
       - name: Keep the traces of failed browser tests
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-traces
+          name: playwright-traces-${{ matrix.browser }}
           path: test-results/
           retention-days: 7
           if-no-files-found: ignore
