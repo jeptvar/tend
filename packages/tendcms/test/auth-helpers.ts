@@ -76,6 +76,13 @@ export async function makeApp(
     themeDir: defaultThemeDir,
     uploadsDir: join(root, "uploads"),
     backupsDir,
+    dataFolder: {
+      dataDir: root,
+      dbPath,
+      backupsDir,
+      uploadsDir: join(root, "uploads"),
+      secretKeyPath: join(root, "secret.key"),
+    },
     pageCacheBytes: 0,
     isPublic: false,
     now: () => clock.time,

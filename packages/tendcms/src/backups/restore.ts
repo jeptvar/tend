@@ -6,17 +6,20 @@ import {
   fsyncSync,
   mkdirSync,
   openSync,
+  readFileSync,
   renameSync,
   rmSync,
   statfsSync,
+  writeFileSync,
   writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import Database from "better-sqlite3";
 import { Unzip, UnzipInflate } from "fflate";
-import { openDatabase } from "../db/client.ts";
-import { readSchemaVersion, saveSnapshot } from "../db/migrate.ts";
-import { fsyncDir } from "../durable.ts";
+import { openDatabase, type SqliteDatabase } from "../db/client.ts";
+import { migrate, readSchemaVersion, saveSnapshot } from "../db/migrate.ts";
+import { fsyncDir, fsyncFile } from "../durable.ts";
 import {
   BACKUP_FORMAT,
   type BackupFile,
@@ -253,17 +256,7 @@ export async function restoreBackup(
     }
   }
 
-  const folders = new Set<string>();
-  for (const file of checked.manifest.files) {
-    if (!file.path.startsWith(ORIGINALS_PREFIX)) continue;
-    const to = join(target.uploadsDir, file.path.slice("uploads/".length));
-    if (existsSync(to)) continue;
-    mkdirSync(dirname(to), { recursive: true });
-    renameSync(join(checked.folder, file.path), to);
-    folders.add(dirname(to));
-  }
-  for (const folder of folders) fsyncDir(folder);
-
+  moveOriginals(checked, target.uploadsDir);
   renameSync(join(checked.folder, KEY_ENTRY), target.secretKeyPath);
   // The site that was here may have left changes in its WAL. They belong to that database.
   for (const leftover of [`${target.dbPath}-wal`, `${target.dbPath}-shm`]) {
@@ -272,6 +265,101 @@ export async function restoreBackup(
   renameSync(join(checked.folder, DATABASE_ENTRY), target.dbPath);
   fsyncDir(target.dataDir);
   return { snapshotPath };
+}
+
+/** Moves a checked backup's originals into the media store. Named by content, so one there is the same. */
+function moveOriginals(checked: CheckedBackup, uploadsDir: string): void {
+  const folders = new Set<string>();
+  for (const file of checked.manifest.files) {
+    if (!file.path.startsWith(ORIGINALS_PREFIX)) continue;
+    const to = join(uploadsDir, file.path.slice("uploads/".length));
+    if (existsSync(to)) continue;
+    mkdirSync(dirname(to), { recursive: true });
+    renameSync(join(checked.folder, file.path), to);
+    folders.add(dirname(to));
+  }
+  for (const folder of folders) fsyncDir(folder);
+}
+
+export interface RunningSite extends RestoreTarget {
+  /** Tend's own connection to the database, which stays open throughout. */
+  db: SqliteDatabase;
+  /** The key Tend is using, changed in place to the backup's. */
+  secretKey: Buffer;
+  migrationsDir: string;
+  appVersion: string;
+}
+
+/**
+ * Puts a checked backup in place of a site that's running, for Start from a backup (J10),
+ * so nothing has to restart. The site as it was is saved first. SQLite's backup API then
+ * copies the backup's data into the database Tend has open, which sees it from its next
+ * query, and data from an older Tend is brought up to date there and then. The key changes
+ * last, on disk and then in memory. If any of that fails, the site as it was is put back.
+ */
+export async function restoreRunning(
+  checked: CheckedBackup,
+  site: RunningSite,
+  now = new Date(),
+): Promise<{ snapshotPath: string }> {
+  const key = readFileSync(join(checked.folder, KEY_ENTRY));
+  if (key.length !== site.secretKey.length) throw new BackupError(NOT_A_BACKUP);
+  const stamp = now.toISOString().replace(/[-:]/g, "");
+  const snapshotPath = await saveSnapshot(
+    site.db,
+    site.dbPath,
+    site.backupsDir,
+    `before-restore-${stamp}.db.gz`,
+  );
+  moveOriginals(checked, site.uploadsDir);
+  const keyTmp = `${site.secretKeyPath}.${process.pid}.tmp`;
+  try {
+    await copyInto(join(checked.folder, DATABASE_ENTRY), site.dbPath);
+    await migrate({
+      dbPath: site.dbPath,
+      backupsDir: site.backupsDir,
+      migrationsDir: site.migrationsDir,
+      appVersion: site.appVersion,
+      log: () => {},
+    });
+    // Inside the try, so the site never keeps the backup's data without the key it was
+    // saved with: if the key can't be written, the site is put back as it was.
+    writeFileSync(keyTmp, key, { mode: 0o600 });
+    fsyncFile(keyTmp);
+    renameSync(keyTmp, site.secretKeyPath);
+  } catch (error) {
+    rmSync(keyTmp, { force: true });
+    await putBack(snapshotPath, site, error);
+    throw error;
+  }
+  site.secretKey.set(key);
+  return { snapshotPath };
+}
+
+/** Copies a database file's data into the one at `dbPath`, which may be open elsewhere. */
+async function copyInto(from: string, dbPath: string): Promise<void> {
+  const source = new Database(from, { readonly: true, fileMustExist: true });
+  try {
+    await source.backup(dbPath);
+  } finally {
+    source.close();
+  }
+}
+
+/** Puts the saved site back after a restore that failed partway. */
+async function putBack(snapshotPath: string, site: RunningSite, cause: unknown): Promise<void> {
+  const unpacked = `${snapshotPath}.${process.pid}.putback`;
+  try {
+    writeFileSync(unpacked, gunzipSync(readFileSync(snapshotPath)), { mode: 0o600 });
+    await copyInto(unpacked, site.dbPath);
+  } catch (error) {
+    throw new BackupError(
+      `The backup couldn't be restored, and putting the site back failed too. The site as it was is saved in ${snapshotPath}.`,
+      { cause: new AggregateError([cause, error]) },
+    );
+  } finally {
+    rmSync(unpacked, { force: true });
+  }
 }
 
 function freeSpace(path: string): number {

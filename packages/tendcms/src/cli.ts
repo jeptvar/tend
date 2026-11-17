@@ -307,6 +307,7 @@ async function start(): Promise<void> {
     themeDir: defaultThemeDir,
     uploadsDir: config.uploadsDir,
     backupsDir: config.backupsDir,
+    dataFolder: config,
     pageCacheBytes: config.pageCacheBytes,
     watchTheme: true,
     siteUrl: config.siteUrl,
