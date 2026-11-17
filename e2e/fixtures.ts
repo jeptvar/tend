@@ -100,7 +100,26 @@ function closeAfterEachAnswer(request: APIRequestContext): void {
   }
 }
 
-export const test = base.extend<{ site: Site; signedIn: Site }>({
+/** Runs Tend on a data folder of its own, for as long as a test needs it. */
+async function runSite(use: (site: Site) => Promise<void>): Promise<void> {
+  const dataDir = mkdtempSync(join(tmpdir(), "tend-e2e-"));
+  const first = await startServer(dataDir);
+  let { child } = first;
+  await use({
+    ...first.site,
+    crash: async () => {
+      await stopped(child, "SIGKILL");
+    },
+    restart: async () => {
+      const again = await startServer(dataDir, new URL(first.site.base).port);
+      child = again.child;
+    },
+  });
+  await stopped(child, "SIGTERM");
+  rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+
+export const test = base.extend<{ site: Site; signedIn: Site; newSite: Site }>({
   // Every page in a test shares its context's request, so this covers them all.
   page: async ({ page }, use) => {
     closeAfterEachAnswer(page.request);
@@ -108,23 +127,11 @@ export const test = base.extend<{ site: Site; signedIn: Site }>({
   },
 
   // biome-ignore lint/correctness/noEmptyPattern: Playwright reads this argument's shape
-  site: async ({}, use) => {
-    const dataDir = mkdtempSync(join(tmpdir(), "tend-e2e-"));
-    const first = await startServer(dataDir);
-    let { child } = first;
-    await use({
-      ...first.site,
-      crash: async () => {
-        await stopped(child, "SIGKILL");
-      },
-      restart: async () => {
-        const again = await startServer(dataDir, new URL(first.site.base).port);
-        child = again.child;
-      },
-    });
-    await stopped(child, "SIGTERM");
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-  },
+  site: async ({}, use) => runSite(use),
+
+  /** Another Tend, new and waiting to be set up: somewhere to move `site` to. */
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright reads this argument's shape
+  newSite: async ({}, use) => runSite(use),
 
   /** A site already set up with the Business starting point, with the page signed in. */
   signedIn: async ({ site, page }, use) => {
