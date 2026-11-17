@@ -6,5 +6,5 @@
     "outDir": ".tsbuild",
     "rootDir": ".."
   },
-  "include": ["*.ts", "../playwright.config.ts"]
+  "include": ["*.ts", "../playwright.config.ts", "../playwright.lighthouse.config.ts"]
 }

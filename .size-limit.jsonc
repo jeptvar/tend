@@ -1,0 +1,23 @@
+// What the theme and the admin may weigh (PLAN.md §11), checked on every pull request after
+// `pnpm build`. The site's pages themselves are checked by e2e/budgets.spec.ts. 1 kB is 1,000
+// bytes. The plan's 60 kB for each of the admin's other routes has nothing to check yet: the
+// admin is one chunk, plus the editor's. Give each new chunk its own entry here.
+[
+  {
+    "name": "Theme CSS, brotli",
+    "path": "themes/meadow/assets/theme.css",
+    "limit": "20 kB"
+  },
+  {
+    "name": "Admin JavaScript on first load, gzip",
+    "path": "packages/admin/dist/assets/index-*.js",
+    "limit": "200 kB",
+    "gzip": true
+  },
+  {
+    "name": "Admin JavaScript for the editor, loaded when it opens, gzip",
+    "path": "packages/admin/dist/assets/Editor-*.js",
+    "limit": "250 kB",
+    "gzip": true
+  }
+]

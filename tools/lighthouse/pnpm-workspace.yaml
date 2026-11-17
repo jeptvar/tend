@@ -1,0 +1,14 @@
+# Its own install, apart from the repo's workspace, with the same rules as the repo's: nothing
+# published in the last week, no package whose publishing got less trustworthy, and no
+# dependency fetched from git or a tarball address.
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+blockExoticSubdeps: true
+savePrefix: ""
+trustPolicyExclude:
+  # Lighthouse needs it through puppeteer-core 25.16.0, which pins exactly this version and
+  # was itself published with provenance. chromium-bidi's versions up to 17.0.2 (July 2026)
+  # had provenance; its Chrome-numbered versions since September, all from the same
+  # chrome-devtools-npm account and GoogleChromeLabs repo, have none. Checked 2026-11-17.
+  # An update that needs another version stops here, to be looked at the same way.
+  - "chromium-bidi@157.0.8090-0"

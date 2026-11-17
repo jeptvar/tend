@@ -17,6 +17,14 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+  # Lighthouse's own install, for the nightly check. Its pull requests run that check.
+  - package-ecosystem: npm
+    directory: /tools/lighthouse
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -1,0 +1,18 @@
+# What e2e/lighthouse.spec.ts holds every starting point and a post to (PLAN.md §11), on
+# the phone and slow 4G connection Lighthouse pretends to have by default. Each value is the
+# median of 5 runs, since timings vary from one run to the next.
+ci:
+  collect:
+    numberOfRuns: 5
+    settings:
+      # Without Chromium's sandbox, as Playwright starts its Chromium by default: a Linux
+      # runner can't always give it the namespaces it needs.
+      chromeFlags: "--headless=new --no-sandbox"
+  assert:
+    assertions:
+      categories:performance: [error, { minScore: 0.95, aggregationMethod: median }]
+      categories:accessibility: [error, { minScore: 1, aggregationMethod: median }]
+      categories:best-practices: [error, { minScore: 0.95, aggregationMethod: median }]
+      categories:seo: [error, { minScore: 1, aggregationMethod: median }]
+      largest-contentful-paint: [error, { maxNumericValue: 1500, aggregationMethod: median }]
+      cumulative-layout-shift: [error, { maxNumericValue: 0.05, aggregationMethod: median }]

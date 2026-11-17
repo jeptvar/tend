@@ -1,0 +1,10 @@
+{
+  "name": "tend-lighthouse",
+  "private": true,
+  "description": "Lighthouse, for the nightly check in e2e/lighthouse.spec.ts. It has its own install and lockfile, so the hundreds of packages it brings are installed only by that check.",
+  "type": "module",
+  "packageManager": "pnpm@12.14.0",
+  "devDependencies": {
+    "@lhci/cli": "0.16.0"
+  }
+}
