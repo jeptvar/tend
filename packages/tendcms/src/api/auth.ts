@@ -30,6 +30,7 @@ import {
   deleteUserSessions,
 } from "../db/repo/sessions.ts";
 import { getSetting } from "../db/repo/settings.ts";
+import { replaceRecoveryKit } from "../db/repo/tokens.ts";
 import {
   findUserByEmail,
   ownerExists,
@@ -37,6 +38,7 @@ import {
   type User,
   upgradePasswordHash,
 } from "../db/repo/users.ts";
+import { registerAccountRoutes } from "./accounts.ts";
 import { ApiError, tendIsBusy, tooManyTries } from "./errors.ts";
 import { registerSetupBackupRoutes } from "./setup-backup.ts";
 
@@ -233,6 +235,35 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     return user;
   }
 
+  /**
+   * A signed-in person's own password, asked for again before something that matters. It's
+   * counted like a sign-in, so a session someone else got hold of can't be used to guess it.
+   */
+  async function confirmPassword(c: Context, user: User, password: string): Promise<void> {
+    const addressKey = rateLimitKey(clientIp(c, trustProxy));
+    const accountKey = `${addressKey}|${user.email.toLowerCase()}`;
+    const perAddress = loginAttemptsPerAddress.take(addressKey);
+    if (!perAddress.allowed) throw tooManyTries(perAddress.retryAfterSeconds);
+    const perAccount = loginAttemptsPerAccount.take(accountKey);
+    if (!perAccount.allowed) throw tooManyTries(perAccount.retryAfterSeconds);
+    if (!passwordChecks.tryEnter(false)) throw tendIsBusy();
+    let matches = false;
+    try {
+      if (user.passwordHash) matches = await verifyPassword(user.passwordHash, password);
+      else await spendVerifyTime(password);
+    } finally {
+      passwordChecks.leave();
+    }
+    if (!matches) {
+      throw new ApiError(400, "password_wrong", "That isn't your password.", {
+        field: "password",
+        fix: "Type the password you sign in with.",
+      });
+    }
+    loginAttemptsPerAddress.refund(addressKey);
+    loginAttemptsPerAccount.refund(accountKey);
+  }
+
   /** Checks the setup code, counting only wrong guesses against the visitor's address. */
   function requireSetupCode(c: Context, code: string): void {
     const key = rateLimitKey(clientIp(c, trustProxy));
@@ -307,10 +338,25 @@ export function createAuthRoutes(options: AuthOptions): Hono {
       throw error;
     }
 
+    // The Owner's recovery kit, shown once at the end of setup (J7).
+    const recoveryCodes = orm.transaction((tx) =>
+      replaceRecoveryKit(tx, secretKey, { userId, now: now() }),
+    );
     options.onSiteChanged();
     await startSession(c, { id: userId, email: owner.email }, passwordHash);
     const user = await findUserByEmail(orm, owner.email);
-    return c.json({ user: user && publicUser(user) }, 201);
+    return c.json({ user: user && publicUser(user), recoveryCodes }, 201);
+  });
+
+  registerAccountRoutes(app, {
+    orm,
+    secretKey,
+    trustProxy,
+    now,
+    startSession,
+    requireUser,
+    confirmPassword,
+    publicUser,
   });
 
   const setupBackup = registerSetupBackupRoutes(app, {

@@ -99,8 +99,8 @@ describe("can", () => {
   });
 
   test("deny is the default: unknown roles and actions are refused", () => {
-    expect(can(actor("admin"), "people:delete" as Action)).toBe(false);
-    expect(can(actor("writer"), "people:delete" as Action, { authorId: "me" })).toBe(false);
+    expect(can(actor("admin"), "billing:delete" as Action)).toBe(false);
+    expect(can(actor("writer"), "billing:delete" as Action, { authorId: "me" })).toBe(false);
     expect(can(actor("superuser" as Actor["role"]), "entry:list")).toBe(false);
   });
 });
@@ -160,6 +160,12 @@ const WHO: Record<string, Who> = {
   "DELETE /redirects": "admins",
   "GET /backups": "admins",
   "GET /backups/download": "owner",
+  "GET /people": "admins",
+  "POST /people/invites": "admins",
+  "DELETE /people/invites/:iid": "admins",
+  "PATCH /people/:pid": "admins",
+  "POST /people/:pid/reset-link": "admins",
+  "DELETE /people/:pid": "admins",
 };
 
 const ROLES = ["writer", "editor", "admin", "owner"] as const;

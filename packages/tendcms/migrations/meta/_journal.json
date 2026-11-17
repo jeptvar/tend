@@ -50,6 +50,13 @@
       "when": 1794901181048,
       "tag": "0006_retired_originals",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794903589122,
+      "tag": "0007_tokens",
+      "breakpoints": true
     }
   ]
 }

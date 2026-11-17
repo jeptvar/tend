@@ -62,6 +62,43 @@ export const sessions = sqliteTable(
   (t) => [index("sessions_user_id").on(t.userId)],
 );
 
+/**
+ * Links and codes that let someone in once: invites, reset links and recovery codes
+ * (PLAN.md §8 and §12). Only a hash of each is kept, so a copy of this table lets nobody in.
+ * 'setup' and 'preview' are for later.
+ */
+export const tokens = sqliteTable(
+  "tokens",
+  {
+    /** SHA-256 of a link's token, or for a recovery code an HMAC with the site's key. */
+    id: text("id").primaryKey(),
+    kind: text("kind", { enum: ["setup", "invite", "reset", "recovery", "preview"] }).notNull(),
+    /** An invite's: who it's for, and what they'll be. */
+    email: textNoCase("email"),
+    role: text("role", { enum: ["admin", "editor", "writer"] }),
+    /** A reset link's or a recovery code's: whose it is. */
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    /** Null for recovery codes, which last until they're used or replaced. */
+    expiresAt: integer("expires_at"),
+    usedAt: integer("used_at"),
+    revokedAt: integer("revoked_at"),
+  },
+  (t) => [
+    check(
+      "tokens_kind_check",
+      sql`${t.kind} IN ('setup', 'invite', 'reset', 'recovery', 'preview')`,
+    ),
+    check(
+      "tokens_role_check",
+      sql`${t.role} IS NULL OR ${t.role} IN ('admin', 'editor', 'writer')`,
+    ),
+    index("tokens_by_user").on(t.userId, t.kind),
+    index("tokens_by_email").on(t.email, t.kind),
+  ],
+);
+
 /** Keys so far: site, setup. See PLAN.md §8 for the rest. */
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),

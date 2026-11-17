@@ -21,6 +21,7 @@ export type Action =
   | "menu:manage"
   | "design:manage"
   | "settings:manage"
+  | "people:manage"
   | "backup:download";
 
 export interface Subject {
@@ -56,6 +57,7 @@ const ADMIN_ONLY_ACTIONS = new Set<Action>([
   "media:delete",
   "design:manage",
   "settings:manage",
+  "people:manage",
 ]);
 
 /**
@@ -101,6 +103,19 @@ export function can(actor: Actor | null | undefined, action: Action, subject?: S
     default:
       return false;
   }
+}
+
+/**
+ * Whether someone can invite, change, send a reset link to or remove a person with this role
+ * (PLAN.md §9, People). The Owner can act on anyone; Admins only on Editors and Writers. The
+ * Owner is never acted on from here: they use a recovery code or the command line.
+ */
+export function canManagePerson(
+  actor: Actor | null | undefined,
+  person: { role: User["role"]; isOwner: number | boolean },
+): boolean {
+  if (!actor || !can(actor, "people:manage") || person.isOwner) return false;
+  return Boolean(actor.isOwner) || person.role === "editor" || person.role === "writer";
 }
 
 /** Whether a list should show only this person's own entries. */
