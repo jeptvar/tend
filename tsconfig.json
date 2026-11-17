@@ -8,6 +8,9 @@
       "path": "packages/admin"
     },
     {
+      "path": "packages/create-tend"
+    },
+    {
       "path": "e2e"
     }
   ]

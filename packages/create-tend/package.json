@@ -1,0 +1,24 @@
+{
+  "name": "create-tend",
+  "version": "0.0.0",
+  "description": "Makes a new Tend CMS site: npm create tend@latest my-site",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tendcms/tend.git",
+    "directory": "packages/create-tend"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "create-tend": "./dist/index.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown"
+  }
+}

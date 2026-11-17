@@ -37,6 +37,7 @@ import { fsyncFile } from "./durable.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
 import { cleanUpMedia, removeRetiredOriginals } from "./media/library.ts";
 import { clearSizesIfLow, isNearlyFull, MediaStore } from "./media/store.ts";
+import { openInBrowser } from "./open-browser.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
 
@@ -45,7 +46,8 @@ const HELP = `Tend ${appVersion}
 Usage: tendcms <command>
 
 Commands:
-  start                    Start Tend. It keeps running until you close the window or press Ctrl+C.
+  start [--open]           Start Tend. It keeps running until you close the window or press Ctrl+C.
+                           With --open, it also opens the site's admin in your browser.
   backup [file]            Save the site to a zip file: its content, uploads and sign-in secrets.
                            Keep it private. Tend can keep running while it's saved.
   restore <file>           Put the site back as it is in a backup. Close Tend first. The site
@@ -65,6 +67,7 @@ function parseCommandLine(argv: string[]) {
       options: {
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
+        open: { type: "boolean" },
       },
     });
   } catch (error) {
@@ -86,7 +89,7 @@ async function main(argv: string[]): Promise<void> {
   process.umask(0o077);
   switch (command) {
     case "start":
-      return start();
+      return start({ open: values.open === true });
     case "backup":
       return backup(argument);
     case "restore":
@@ -246,7 +249,7 @@ const HOUR_MS = 60 * 60 * 1000;
 // How often Tend looks at whether a daily copy is due, and whether the disk is nearly full.
 const CHECK_EVERY_MS = 10 * 60 * 1000;
 
-async function start(): Promise<void> {
+async function start(options: { open: boolean } = { open: false }): Promise<void> {
   const config = loadConfig();
   const lock = takeDataFolder(config);
   process.on("exit", () => lock.release());
@@ -414,6 +417,7 @@ async function start(): Promise<void> {
     // The development runner has its own way to start, so this would only mislead there.
     if (!config.adminDevUrl) console.log(`To start again: cd ${process.cwd()}, then npm start`);
     console.log();
+    if (options.open) openInBrowser(link);
   } else {
     console.log(`Tend ${appVersion} is listening on port ${port} (${config.platform}).`);
     if (setupCode) {
