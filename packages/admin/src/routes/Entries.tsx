@@ -4,7 +4,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, useLocation } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
@@ -46,24 +46,6 @@ function focusRowAt(index: number): void {
   else focusHeading();
 }
 
-/** A little over half a second of frames: the list is long since updated by then. */
-const ROW_GONE_FRAMES = 30;
-
-/**
- * Focuses the row that took the place of `id`, once the list really shows it gone. The list
- * updates when react-query tells it to, on a timer whose order against animation frames
- * differs between browsers: in Safari a single frame came first, so focus went to the
- * departing row's button and was lost with it.
- */
-function focusRowWhenGone(id: string, index: number): void {
-  const attempt = (framesLeft: number) => {
-    const stillThere = document.querySelector(`[data-entry-row="${CSS.escape(id)}"]`) !== null;
-    if (stillThere && framesLeft > 0) requestAnimationFrame(() => attempt(framesLeft - 1));
-    else focusRowAt(index);
-  };
-  requestAnimationFrame(() => attempt(ROW_GONE_FRAMES));
-}
-
 /** What someone needs to know about an entry at a glance, in plain words (PLAN.md P15). */
 function StatusLabel({ entry }: { entry: EntrySummary }) {
   if (entry.url === null) return <FormattedMessage id="status.draft" />;
@@ -98,6 +80,9 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
       ),
   });
   const rows = list.data?.pages.flatMap((page) => page.entries);
+
+  // The row that Restore or Delete forever is taking away, and where it was.
+  const [leaving, setLeaving] = useState<{ id: string; index: number } | null>(null);
 
   function removeRow(id: string): void {
     queryClient.setQueryData<InfiniteData<EntryPage>>(entryListKey(type, trashed), (data) =>
@@ -134,7 +119,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
         }),
       });
       // The row and its button are going, and focus shouldn't go with them.
-      focusRowWhenGone(target.id, target.index);
+      setLeaving({ id: target.id, index: target.index });
     },
   });
 
@@ -149,10 +134,21 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
       refreshLists();
       setConfirmDelete(null);
       showToast({ message: intl.formatMessage({ id: "list.deletedForever" }) });
-      // After the dialog's closed: it hands focus back to a button that's about to go.
-      focusRowWhenGone(target.id, index);
+      // The dialog hands focus back to its button only while that's still on the page.
+      setLeaving({ id: target.id, index });
     },
   });
+
+  // Focus moves to the row that took the leaving one's place in the first render that shows
+  // it gone with Restore or Delete forever finished. Their buttons are disabled until then,
+  // and a disabled button can't take focus. Checking each animation frame for the row alone
+  // could land in between, after the row went but while the buttons were still disabled.
+  const busy = restore.isPending || deleteForever.isPending;
+  useLayoutEffect(() => {
+    if (!leaving || busy || !rows || rows.some((row) => row.id === leaving.id)) return;
+    setLeaving(null);
+    focusRowAt(leaving.index);
+  }, [rows, leaving, busy]);
 
   const error = list.error ?? create.error ?? restore.error;
 
