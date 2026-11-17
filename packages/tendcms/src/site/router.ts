@@ -85,6 +85,12 @@ export interface SiteOptions {
   now?: (() => number) | undefined;
   /** Watches the theme's folder, so an edited template shows straight away (PLAN.md §10). */
   watchTheme?: boolean;
+  /**
+   * Told of work the site does after a change without anyone waiting on it, like making the
+   * homepage ready again. Tests use it to wait for that work instead of guessing how long it
+   * takes, which no fixed wait can know on a slow machine.
+   */
+  onBackgroundWork?: ((work: Promise<unknown>) => void) | undefined;
 }
 
 export interface Site {
@@ -1100,11 +1106,19 @@ export function createSite(options: SiteOptions): Site {
   });
 
   /** Renders and stores a page in the background. It's fine if that fails: the next visitor just waits. */
-  function refill(key: string, render: () => Promise<RenderedPage>): void {
+  function refill(key: string, render: () => Promise<RenderedPage>): Promise<void> {
     const startedAt = generation;
-    void render()
-      .then((page) => store(key, page, startedAt))
+    return render()
+      .then((page) => {
+        store(key, page, startedAt);
+      })
       .catch(() => {});
+  }
+
+  /** Work nobody waits on, started once the change that called for it is answered. */
+  function inBackground(work: () => Promise<unknown>): void {
+    const done = new Promise((resolve) => setImmediate(resolve)).then(work).catch(() => {});
+    options.onBackgroundWork?.(done);
   }
 
   function changed(path?: string): void {
@@ -1112,18 +1126,22 @@ export function createSite(options: SiteOptions): Site {
     if (!cacheOn) return;
     generation++;
     cache.clear();
-    setImmediate(async () => {
+    inBackground(async () => {
       // Only a public site's pages are worth having ready: a hidden one shows them to nobody.
       const current = await settingValue(orm, "visibility").catch(() => undefined);
       if (current?.mode !== "public") return;
       // Without a request there's no address to name in links, unless it's known for sure.
       site = (await getSetting(orm, "site").catch(() => undefined)) ?? site;
       if (!trustedOrigin()) return;
-      refill("/", () => renderHome(undefined, 1));
       const post = path?.match(/^\/blog\/([^/]+)$/)?.[1];
       const single = path?.match(/^\/([^/]+)$/)?.[1];
-      if (path && post) refill(path, () => renderEntry(undefined, "post", post));
-      else if (path && single) refill(path, () => renderEntry(undefined, "page", single));
+      await Promise.all([
+        refill("/", () => renderHome(undefined, 1)),
+        path && post ? refill(path, () => renderEntry(undefined, "post", post)) : undefined,
+        path && !post && single
+          ? refill(path, () => renderEntry(undefined, "page", single))
+          : undefined,
+      ]);
     });
   }
 

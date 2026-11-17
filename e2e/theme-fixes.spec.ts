@@ -1,6 +1,14 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { createEntry, expect, photo, type Site, test, upload } from "./fixtures.ts";
+import {
+  createEntry,
+  expect,
+  photo,
+  type Site,
+  tabReachesLinks,
+  test,
+  upload,
+} from "./fixtures.ts";
 
 // The Meadow theme, measured in a real browser: what visitors can read, see and reach.
 
@@ -132,6 +140,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
 
     test("keyboard focus shows on every link and button", async ({ page, signedIn }) => {
+      // The focus styles are the theme's own CSS, the same in every browser, so a browser
+      // whose Tab skips links can leave them to the others.
+      test.skip(!(await tabReachesLinks(page)), "Tab doesn't move to links in this browser");
       await setBusinessDetails(page, signedIn);
       const url = await publishPage(page, signedIn, "Find us", [
         section("intro", "accent", [
@@ -585,6 +596,7 @@ test.describe("the site menu", () => {
         page,
         signedIn,
       }) => {
+        const tabsToLinks = await tabReachesLinks(page);
         const SIZES = [
           { width: 844, height: 390, links: 8 },
           { width: 915, height: 412, links: 8 },
@@ -603,9 +615,12 @@ test.describe("the site menu", () => {
             // The starting point's homepage is shorter than the list.
             await openAll(page, `${signedIn.base}/`, { width, height });
             expectOnScreen(await openLists(page), name);
-            // Tabbing through it brings each link into view, whole, with nothing over it.
+            // Tabbing through it brings each link into view, whole, with nothing over it, in a
+            // browser whose Tab moves to links. The list's place on screen and its accessibility
+            // are checked in every browser.
+            const walk = tabsToLinks ? ["More", ...items] : [];
             await page.locator(".t-dropdown summary").focus();
-            for (const label of ["More", ...items]) {
+            for (const label of walk) {
               await page.keyboard.press("Tab");
               const focused = await page.evaluate(() => {
                 const element = document.activeElement as HTMLElement;

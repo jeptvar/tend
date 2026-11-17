@@ -4,7 +4,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, useLocation } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
@@ -81,6 +81,9 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
   });
   const rows = list.data?.pages.flatMap((page) => page.entries);
 
+  // The row that Restore or Delete forever is taking away, and where it was.
+  const [leaving, setLeaving] = useState<{ id: string; index: number } | null>(null);
+
   function removeRow(id: string): void {
     queryClient.setQueryData<InfiniteData<EntryPage>>(entryListKey(type, trashed), (data) =>
       withoutEntry(data, id),
@@ -115,8 +118,8 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
           id: target.wasPublished ? "list.restored" : "list.restoredDraft",
         }),
       });
-      // The row and its button have gone, and focus shouldn't go with them.
-      requestAnimationFrame(() => focusRowAt(target.index));
+      // The row and its button are going, and focus shouldn't go with them.
+      setLeaving({ id: target.id, index: target.index });
     },
   });
 
@@ -131,10 +134,21 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
       refreshLists();
       setConfirmDelete(null);
       showToast({ message: intl.formatMessage({ id: "list.deletedForever" }) });
-      // After the dialog's closed: it hands focus back to a button that's about to go.
-      requestAnimationFrame(() => requestAnimationFrame(() => focusRowAt(index)));
+      // The dialog hands focus back to its button only while that's still on the page.
+      setLeaving({ id: target.id, index });
     },
   });
+
+  // Focus moves to the row that took the leaving one's place in the first render that shows
+  // it gone with Restore or Delete forever finished. Their buttons are disabled until then,
+  // and a disabled button can't take focus. Checking each animation frame for the row alone
+  // could land in between, after the row went but while the buttons were still disabled.
+  const busy = restore.isPending || deleteForever.isPending;
+  useLayoutEffect(() => {
+    if (!leaving || busy || !rows || rows.some((row) => row.id === leaving.id)) return;
+    setLeaving(null);
+    focusRowAt(leaving.index);
+  }, [rows, leaving, busy]);
 
   const error = list.error ?? create.error ?? restore.error;
 
@@ -197,7 +211,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
         {rows?.map((entry, index) => (
           <li
             key={entry.id}
-            data-entry-row=""
+            data-entry-row={entry.id}
             className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3"
           >
             <div className="min-w-0">

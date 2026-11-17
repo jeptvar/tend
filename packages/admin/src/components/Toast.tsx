@@ -136,6 +136,15 @@ function ToastRegion({ hidden }: { hidden: boolean }) {
             const from = event.relatedTarget as HTMLElement | null;
             if (from && !event.currentTarget.contains(from)) cameFrom.current = from;
           }}
+          // Safari doesn't focus a button that's clicked, so the focus above never comes. Where
+          // focus is as the press starts, before it can move, is where it goes back to: without
+          // this, it went to the page's heading, which on a long post scrolled to the top.
+          onPointerDown={(event) => {
+            const active = document.activeElement as HTMLElement | null;
+            if (active && active !== document.body && !event.currentTarget.contains(active)) {
+              cameFrom.current = active;
+            }
+          }}
           onBlur={() => setFocused(false)}
           className="pointer-events-auto flex max-w-xl flex-wrap items-center gap-3 rounded-lg border border-ink/20 bg-paper px-4 py-2 shadow-lg"
         >

@@ -17,6 +17,7 @@ import {
   tightenPrivateFiles,
 } from "./config.ts";
 import { cleanUp } from "./content/entries.ts";
+import { rerenderPublished } from "./content/rerender.ts";
 import { createOrm, openDatabase, type SqliteDatabase } from "./db/client.ts";
 import { acquireLock, type Lock, LockError } from "./db/lock.ts";
 import { MigrationError, migrate, schemaIsCurrent } from "./db/migrate.ts";
@@ -201,6 +202,17 @@ async function start(): Promise<void> {
 
   db = openDatabase(config.dbPath);
   const orm = createOrm(db);
+  // Published pages are stored as HTML. If this Tend renders them differently, they're
+  // brought up to date before anyone is answered (PLAN.md §8). Not managing it is no reason
+  // to stop: each page still has the HTML it was published with.
+  try {
+    const { rendered, failed } = await rerenderPublished(orm);
+    if (rendered > 0) console.log(`Updated ${rendered} published pages for this version of Tend.`);
+    if (failed > 0)
+      console.error(`Couldn't update ${failed} published pages; they look as they did.`);
+  } catch (error) {
+    console.error(`Couldn't update published pages: ${(error as Error).message}`);
+  }
   const secretKey = readSecretKey(config);
   const app = createApp({
     version: appVersion,

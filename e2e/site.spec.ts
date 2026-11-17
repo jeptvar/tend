@@ -1,5 +1,15 @@
-import type { Page } from "@playwright/test";
-import { createEntry, expect, OWNER, photo, readEntry, signIn, test, upload } from "./fixtures.ts";
+import type { Page, Request } from "@playwright/test";
+import {
+  createEntry,
+  expect,
+  holdRequests,
+  OWNER,
+  photo,
+  readEntry,
+  signIn,
+  test,
+  upload,
+} from "./fixtures.ts";
 
 // Milestone 3: pictures, the site menu, design, business details and who can see the site.
 
@@ -356,15 +366,15 @@ test.describe("settings", () => {
 });
 
 test.describe("fixes from review", () => {
-  /** Holds uploads back for a while, like a slow connection. */
-  async function slowUploads(page: Page, delayMs: number): Promise<void> {
-    await page.route("**/api/admin/media", async (route) => {
-      if (route.request().method() === "POST") {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
-      await route.fallback();
-    });
-  }
+  /** Holds uploads back until the test lets them go, so they're still on their way till then. */
+  const holdUploads = (page: Page) => holdRequests(page, "**/api/admin/media", "POST");
+
+  const isUpload = (request: Request) =>
+    request.method() === "POST" && new URL(request.url()).pathname === "/api/admin/media";
+
+  /** The answer to an upload, once one comes. Ask before letting it go, so it isn't missed. */
+  const uploadAnswered = (page: Page) =>
+    page.waitForResponse((response) => isUpload(response.request()));
 
   async function dropPhoto(page: Page, base64: string, name = "dropped.jpg"): Promise<void> {
     await page.evaluate(
@@ -395,7 +405,7 @@ test.describe("fixes from review", () => {
     const post = await createEntry(page, signedIn, { title: "Slow", body: "Words." });
     const picture = (await photo(page, 600, 400)).toString("base64");
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await slowUploads(page, 3000);
+    const finishUpload = await holdUploads(page);
     await body(page).click();
     await dropPhoto(page, picture);
     await expect(saveStatus(page)).toContainText("Uploading 1 picture…");
@@ -403,6 +413,7 @@ test.describe("fixes from review", () => {
     const review = page.getByRole("dialog", { name: "Ready to publish?" });
     await expect(review.getByText(/1 picture is still uploading/)).toBeVisible();
     await review.getByRole("button", { name: "Not yet" }).click();
+    finishUpload();
     await expect(saveStatus(page)).not.toContainText("Uploading", { timeout: 10_000 });
   });
 
@@ -413,14 +424,18 @@ test.describe("fixes from review", () => {
     const post = await createEntry(page, signedIn, { title: "Undo me", body: "First line" });
     const picture = (await photo(page, 600, 400)).toString("base64");
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await slowUploads(page, 1500);
+    const finishUpload = await holdUploads(page);
     await body(page).click();
     await dropPhoto(page, picture);
     await expect(page.locator("[data-image-view] progress")).toBeVisible();
     await page.keyboard.press("ControlOrMeta+z");
     await expect(page.locator("[data-image-view]")).toHaveCount(0);
-    // The upload finishes while its placeholder is gone.
-    await page.waitForTimeout(2500);
+    // The upload finishes while its placeholder is gone, and the editor gets a moment to take
+    // the answer before Redo.
+    const answered = uploadAnswered(page);
+    finishUpload();
+    await answered;
+    await page.waitForTimeout(500);
     await page.keyboard.press("ControlOrMeta+Shift+z");
     await expect(page.locator("[data-image-view] img")).toBeVisible();
     await expect(page.locator("[data-image-view] progress")).toHaveCount(0);
@@ -441,11 +456,12 @@ test.describe("fixes from review", () => {
     const post = await createEntry(page, signedIn, { title: "Typing", body: "" });
     const picture = (await photo(page, 600, 400)).toString("base64");
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await slowUploads(page, 1500);
+    const finishUpload = await holdUploads(page);
     await body(page).click();
     await dropPhoto(page, picture);
     await page.keyboard.press("ControlOrMeta+End");
     await page.keyboard.type("Still typing while it uploads");
+    finishUpload();
     // Only once it has arrived: the placeholder shows the picture too, but faded.
     await expect(page.getByRole("button", { name: "Add description" })).toBeVisible({
       timeout: 10_000,
@@ -460,7 +476,7 @@ test.describe("fixes from review", () => {
   }) => {
     await upload(page, signedIn, await photo(page, 600, 400), "first.jpg");
     await page.goto(`${signedIn.base}/admin/media`);
-    await slowUploads(page, 1500);
+    const finishUpload = await holdUploads(page);
     await page.locator('input[type="file"]').setInputFiles({
       name: "second.jpg",
       mimeType: "image/jpeg",
@@ -468,6 +484,8 @@ test.describe("fixes from review", () => {
     });
     await page.getByRole("button", { name: /first\.jpg/ }).click();
     const details = page.getByRole("dialog", { name: "first.jpg" });
+    await expect(details).toBeVisible();
+    finishUpload();
     await expect(
       details.getByRole("status").filter({ hasText: "Uploaded second.jpg." }),
     ).toBeVisible({ timeout: 15_000 });
@@ -481,7 +499,7 @@ test.describe("fixes from review", () => {
   test("closing the picker mid-upload chooses nothing", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Changed my mind", body: "Words." });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await slowUploads(page, 1500);
+    const finishUpload = await holdUploads(page);
     await page.getByText("Address, summary and more").click();
     await page.getByRole("button", { name: "Choose image" }).click();
     const picker = page.getByRole("dialog", { name: "Choose the featured image" });
@@ -490,8 +508,12 @@ test.describe("fixes from review", () => {
       mimeType: "image/jpeg",
       buffer: await photo(page, 600, 400),
     });
+    // Closing stops the upload, so it can't come back and choose itself.
+    const stopped = page.waitForEvent("requestfailed", isUpload);
     await picker.getByRole("button", { name: "Close" }).click();
-    await page.waitForTimeout(2500);
+    await stopped;
+    finishUpload();
+    await page.waitForTimeout(1000);
     await expect(page.getByText("Automatic: the first image")).toBeVisible();
   });
 

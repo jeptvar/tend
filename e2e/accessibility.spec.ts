@@ -181,7 +181,10 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expect(page.getByLabel("Setup code")).toBeVisible();
       await expectNoViolations(page, "code");
 
+      // Only the part after # changes, so the page doesn't load again: the code screen turns
+      // into the welcome screen in its own time, and has no heading for a moment in between.
       await page.goto(site.link);
+      await expect(page.getByRole("link", { name: /Start a new site/ })).toBeVisible();
       await expectNoViolations(page, "welcome");
       await page.getByRole("link", { name: /Start a new site/ }).click();
       await page.getByRole("button", { name: "Continue" }).click();

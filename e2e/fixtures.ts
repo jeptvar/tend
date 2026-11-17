@@ -2,7 +2,14 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test as base, expect, type Page } from "@playwright/test";
+import {
+  type APIRequestContext,
+  type APIResponse,
+  test as base,
+  expect,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 
 export { expect };
 
@@ -72,7 +79,34 @@ function stopped(child: ChildProcess, signal: NodeJS.Signals): Promise<unknown> 
   return exited;
 }
 
+type SendOptions = { headers?: Record<string, string> };
+
+/**
+ * Makes each request a test sends close its connection once it's answered. Playwright keeps an
+ * idle connection with no time limit, while a Node server like Tend's says it keeps one for
+ * 5 s and closes it after 6 (keepAliveTimeout plus keepAliveTimeoutBuffer). A request sent on
+ * it just as it closes is reset: "read ECONNRESET".
+ */
+function closeAfterEachAnswer(request: APIRequestContext): void {
+  for (const name of ["get", "head", "post", "put", "patch", "delete", "fetch"] as const) {
+    const send = request[name].bind(request) as (
+      url: unknown,
+      options?: SendOptions,
+    ) => Promise<APIResponse>;
+    Object.assign(request, {
+      [name]: (url: unknown, options?: SendOptions) =>
+        send(url, { ...options, headers: { connection: "close", ...options?.headers } }),
+    });
+  }
+}
+
 export const test = base.extend<{ site: Site; signedIn: Site }>({
+  // Every page in a test shares its context's request, so this covers them all.
+  page: async ({ page }, use) => {
+    closeAfterEachAnswer(page.request);
+    await use(page);
+  },
+
   // biome-ignore lint/correctness/noEmptyPattern: Playwright reads this argument's shape
   site: async ({}, use) => {
     const dataDir = mkdtempSync(join(tmpdir(), "tend-e2e-"));
@@ -151,6 +185,45 @@ export async function closeWhileDown(site: Site, ...pages: Page[]): Promise<void
   await site.crash();
   for (const page of pages) await page.close();
   await site.restart();
+}
+
+/**
+ * Holds back the page's requests to `url`, only those sent with `method` if it's given, until
+ * the returned function is called: a slow connection that lasts exactly as long as the test
+ * needs. A fixed delay can run out before the test is ready, on a busy machine.
+ */
+export async function holdRequests(page: Page, url: string, method?: string): Promise<() => void> {
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(url, async (route) => {
+    if (method === undefined || route.request().method() === method) await released;
+    await route.fallback();
+  });
+  return release;
+}
+
+/**
+ * Whether Tab moves to links in this browser. Safari's skips them until "Press Tab to
+ * highlight each item" is turned on, and WebKit's does on Windows, where Alt+Tab is just Tab.
+ * It replaces what the page shows, so call it before going anywhere.
+ */
+export async function tabReachesLinks(page: Page): Promise<boolean> {
+  await page.setContent('<button id="from">From</button> <a id="to" href="#to">To</a>');
+  await page.locator("#from").focus();
+  await page.keyboard.press("Tab");
+  return page.evaluate(() => document.activeElement?.id === "to");
+}
+
+/**
+ * Types where a link or button goes, in its dialog, and waits for the search that starts to
+ * find nothing. Until then the pages listed above Done can still go, moving Done up, and a
+ * click on Done as they go is released somewhere else and does nothing.
+ */
+export async function typeAddress(dialog: Locator, address: string): Promise<void> {
+  await dialog.getByLabel("Search your pages, or paste an address").fill(address);
+  await expect(dialog.getByText("Nothing found")).toBeAttached();
 }
 
 interface TextNode {

@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, expect, test } from "vitest";
 import { entryPath, isReservedPageAddress, slugify } from "../src/content/address.ts";
 import { type Doc, linkedEntryIds, parseDoc, textToDoc } from "../src/content/doc.ts";
 import {
   leadText,
   placeholderIds,
+  RENDER_VERSION,
   renderDoc,
   resolvePlaceholders,
   summarize,
@@ -345,6 +347,22 @@ describe("rendering every kind of content", () => {
       content: [{ type: "paragraph", content: [text("Hi")] }],
     },
   );
+
+  test("a change to what the renderer makes comes with a new RENDER_VERSION", () => {
+    // Published pages keep the HTML they were published with until Tend renders them again
+    // at start-up, which it does only when RENDER_VERSION changes (content/rerender.ts). So
+    // when this fails because the output changed, raise RENDER_VERSION in render-doc.ts and
+    // add its fingerprint here. Don't edit an old one: it records what that version made.
+    const made = renderDoc(parseDoc(everything, { allowSections: true }));
+    const fingerprint = createHash("sha256")
+      .update(made.html)
+      .update("\0")
+      .update(made.text)
+      .digest("hex")
+      .slice(0, 16);
+    const madeBy: Record<number, string> = { 1: "b36765501ca69a07" };
+    expect(fingerprint, `RENDER_VERSION is ${RENDER_VERSION}`).toBe(madeBy[RENDER_VERSION]);
+  });
 
   test("each one comes out as the right safe HTML", () => {
     const { html, text: plain } = renderDoc(parseDoc(everything, { allowSections: true }));

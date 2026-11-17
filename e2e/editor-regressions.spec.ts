@@ -4,10 +4,12 @@ import {
   closeWhileDown,
   createEntry,
   expect,
+  holdRequests,
   readEntry,
   type Site,
   signIn,
   test,
+  typeAddress,
 } from "./fixtures.ts";
 
 // Each of these is something an independent review found going wrong, kept so it can't return.
@@ -699,14 +701,13 @@ test.describe("undo", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "Binned" });
     await openPost(page, signedIn, post.id);
-    await page.route("**/trash", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      await route.fallback();
-    });
+    const answer = await holdRequests(page, "**/trash");
     await openSettings(page);
     await page.getByRole("button", { name: "Move to Trash" }).click();
     await expect(body(page)).not.toBeEditable();
     await expect(page.getByLabel("Title", { exact: true })).not.toBeEditable();
+    answer();
+    await expect(page.getByText("Moved to the Trash.")).toBeVisible();
   });
 });
 
@@ -911,7 +912,7 @@ test.describe("links and buttons", () => {
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("ControlOrMeta+k");
     const dialog = page.getByRole("dialog", { name: "Add a link" });
-    await dialog.getByLabel(/Search your pages/).fill("hello@example.com");
+    await typeAddress(dialog, "hello@example.com");
     await dialog.getByRole("button", { name: "Done" }).click();
     await expect(body(page).locator("a")).toHaveAttribute("href", "mailto:hello@example.com");
     await expect(body(page)).toBeFocused();
@@ -1090,7 +1091,12 @@ test.describe('the "/" menu and Insert', () => {
     await page.waitForTimeout(100);
     const box = await menu.boundingBox();
     const caret = await page.evaluate(() => {
-      const rect = window.getSelection()?.getRangeAt(0).getBoundingClientRect();
+      // The line the cursor is on: here, its paragraph. WebKit puts the cursor in the
+      // paragraph rather than in its text, and a collapsed range there measures 0, 0, as if
+      // the cursor were at the top of the page.
+      const node = window.getSelection()?.getRangeAt(0).startContainer;
+      const element = node instanceof Element ? node : node?.parentElement;
+      const rect = element?.closest("p")?.getBoundingClientRect();
       return { top: rect?.top ?? 0, bottom: rect?.bottom ?? 0 };
     });
     expect(

@@ -26,6 +26,8 @@ export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDi
   siteUrl?: string | undefined;
   /** How long an upload can send nothing before Tend gives up on it. Tests make it short. */
   uploadIdleMs?: number;
+  /** See SiteOptions.onBackgroundWork: tests wait for it rather than for a guessed time. */
+  onBackgroundWork?: ((work: Promise<unknown>) => void) | undefined;
 }
 
 const AUTH_BODY_LIMIT_BYTES = 64 * 1024;
@@ -290,6 +292,7 @@ export function createApp(options: AppOptions): Hono {
     trustProxy: options.trustProxy,
     now: options.now,
     watchTheme: options.watchTheme ?? false,
+    onBackgroundWork: options.onBackgroundWork,
   });
   const onSiteChanged = (path?: string) => site.changed(path);
 
