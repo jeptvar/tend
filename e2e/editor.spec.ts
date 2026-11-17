@@ -8,6 +8,7 @@ import {
   type Site,
   signIn,
   test,
+  typeAddress,
 } from "./fixtures.ts";
 
 const SAVE_PATH = "**/api/admin/entries/*";
@@ -434,7 +435,7 @@ test.describe("formatting", () => {
     await dialog.getByRole("button", { name: "Done" }).click();
     await expect(dialog.getByText("Type some words for the button.")).toBeVisible();
     await dialog.getByLabel("Words on the button").fill("Order bread");
-    await dialog.getByLabel("Search your pages, or paste an address").fill("https://example.com/");
+    await typeAddress(dialog, "https://example.com/");
     await dialog.getByRole("button", { name: "Done" }).click();
     await expect(page.getByText("Order bread").first()).toBeVisible();
 

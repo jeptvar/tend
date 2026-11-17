@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test as base, expect, type Page } from "@playwright/test";
+import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
 export { expect };
 
@@ -163,6 +163,16 @@ export async function tabReachesLinks(page: Page): Promise<boolean> {
   await page.locator("#from").focus();
   await page.keyboard.press("Tab");
   return page.evaluate(() => document.activeElement?.id === "to");
+}
+
+/**
+ * Types where a link or button goes, in its dialog, and waits for the search that starts to
+ * find nothing. Until then the pages listed above Done can still go, moving Done up, and a
+ * click on Done as they go is released somewhere else and does nothing.
+ */
+export async function typeAddress(dialog: Locator, address: string): Promise<void> {
+  await dialog.getByLabel("Search your pages, or paste an address").fill(address);
+  await expect(dialog.getByText("Nothing found")).toBeAttached();
 }
 
 interface TextNode {

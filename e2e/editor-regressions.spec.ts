@@ -8,6 +8,7 @@ import {
   type Site,
   signIn,
   test,
+  typeAddress,
 } from "./fixtures.ts";
 
 // Each of these is something an independent review found going wrong, kept so it can't return.
@@ -911,7 +912,7 @@ test.describe("links and buttons", () => {
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("ControlOrMeta+k");
     const dialog = page.getByRole("dialog", { name: "Add a link" });
-    await dialog.getByLabel(/Search your pages/).fill("hello@example.com");
+    await typeAddress(dialog, "hello@example.com");
     await dialog.getByRole("button", { name: "Done" }).click();
     await expect(body(page).locator("a")).toHaveAttribute("href", "mailto:hello@example.com");
     await expect(body(page)).toBeFocused();
