@@ -1,9 +1,11 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { crc32 } from "node:zlib";
 import sharp from "sharp";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ApiError } from "../src/api/errors.ts";
 import {
+  cleanUpMedia,
   deleteMediaForever,
   downloadName,
   getMedia,
@@ -22,6 +24,7 @@ import {
 } from "../src/media/process.ts";
 import { MediaStore } from "../src/media/store.ts";
 import { makeApp, setUp } from "./auth-helpers.ts";
+import { tempDir } from "./helpers.ts";
 
 const MEDIA = "/api/admin/media";
 const MiB = 1024 * 1024;
@@ -431,6 +434,8 @@ describe("media-7 and media-10: an original named like a size or an icon", () =>
     const served = await made.app.request(icon.url);
     expect(served.status).toBe(200);
     expect(served.headers.get("content-disposition")).toContain("icon-32-original.png");
+    // A picture shows in the browser. Only other files, like PDFs, are saved instead.
+    expect(served.headers.get("content-disposition")).toMatch(/^inline;/);
     const iconMeta = await sharp(Buffer.from(await served.arrayBuffer())).metadata();
     expect([iconMeta.width, iconMeta.height]).toEqual([64, 64]);
 
@@ -1076,5 +1081,39 @@ describe("a server with many cores", () => {
     } finally {
       sharp.concurrency(before);
     }
+  });
+});
+
+describe("files a failed or interrupted write leaves", () => {
+  test("a write that fails leaves nothing half written behind", () => {
+    const root = tempDir();
+    const store = new MediaStore(root);
+    // A folder where the file should go, so taking its real name fails at the last step.
+    const target = join(root, "originals", "aa", "x.png");
+    mkdirSync(target, { recursive: true });
+    expect(() => store.write(target, Buffer.from("picture"))).toThrow();
+    expect(readdirSync(join(root, "originals", "aa"))).toEqual(["x.png"]);
+  });
+
+  test("ones a crash left go an hour later, and nothing else does", async () => {
+    const made = await makeApp();
+    const store = new MediaStore(made.uploadsDir);
+    const folder = join(made.uploadsDir, "originals", "aa");
+    mkdirSync(folder, { recursive: true });
+    const now = made.clock.time;
+    const file = (name: string, ageMs: number) => {
+      const path = join(folder, name);
+      writeFileSync(path, "x");
+      const when = new Date(now - ageMs);
+      utimesSync(path, when, when);
+      return path;
+    };
+    const left = file("a.0123456789ab.png.4321.1700000000000.tmp", 2 * 60 * 60 * 1000);
+    const writing = file("b.0123456789ab.png.4321.1700000000001.tmp", 60 * 1000);
+    const picture = file("c.0123456789ab.png", 2 * 60 * 60 * 1000);
+    await cleanUpMedia(made.orm, store, now);
+    expect(existsSync(left)).toBe(false);
+    expect(existsSync(writing)).toBe(true);
+    expect(existsSync(picture)).toBe(true);
   });
 });

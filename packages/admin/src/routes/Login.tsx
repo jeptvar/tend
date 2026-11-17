@@ -11,6 +11,7 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Field, PasswordField } from "../components/fields.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
+import { nextPath } from "../lib/next-path.ts";
 import { confirmSignedIn, useMe, useSetupStatus } from "../lib/queries.ts";
 import { useSetup } from "../lib/setup-state.tsx";
 
@@ -38,7 +39,11 @@ export function Login() {
     onSuccess: () => {
       rememberedEmail = "";
       setup.setClosedElsewhere(false);
-      navigate("/", { replace: true });
+      // A Private site sends visitors here from the page they wanted, so that's where they
+      // go back to. It's outside the admin, so it's a whole new page, not a route in here.
+      const next = nextPath(window.location.search, window.location.origin);
+      if (next) window.location.assign(next);
+      else navigate("/", { replace: true });
     },
     onError: (error) => {
       // Only a password that was judged wrong is worth clearing. After a dropped

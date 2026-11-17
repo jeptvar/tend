@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { createEntry, expect, photo, readEntry, test, upload } from "./fixtures.ts";
+import { createEntry, expect, OWNER, photo, readEntry, signIn, test, upload } from "./fixtures.ts";
 
 // Milestone 3: pictures, the site menu, design, business details and who can see the site.
 
@@ -559,5 +559,32 @@ test.describe("fixes from review", () => {
     const review = page.getByRole("dialog", { name: "Ready to publish?" });
     await expect(review.getByText(/1 image has no description/)).toBeVisible();
     await expect(review.getByLabel("Show in site menu")).toHaveCount(0);
+  });
+});
+
+test.describe("who can see the site", () => {
+  test("Private sends a visitor to sign in, then back to the page they wanted", async ({
+    page,
+    signedIn,
+    browser,
+  }) => {
+    const hidden = await page.request.put(`${signedIn.base}/api/admin/settings/visibility`, {
+      data: { mode: "private" },
+    });
+    expect(hidden.status()).toBe(200);
+    const visitor = await (await browser.newContext()).newPage();
+    await visitor.goto(`${signedIn.base}/contact`);
+    await expect(visitor).toHaveURL(/\/admin\/login\?next=%2Fcontact$/);
+    await visitor.getByLabel("Email").fill(OWNER.email);
+    await visitor.getByLabel("Password", { exact: true }).fill(OWNER.password);
+    await visitor.getByRole("button", { name: "Sign in" }).click();
+    await expect(visitor).toHaveURL(`${signedIn.base}/contact`);
+    await expect(visitor.getByRole("heading", { level: 1 })).toBeVisible();
+  });
+
+  test("signing in never leads to another website", async ({ signedIn, browser }) => {
+    const visitor = await (await browser.newContext()).newPage();
+    await signIn(visitor, signedIn, `/admin/login?next=${encodeURIComponent("//evil.example/x")}`);
+    expect(new URL(visitor.url()).origin).toBe(signedIn.base);
   });
 });

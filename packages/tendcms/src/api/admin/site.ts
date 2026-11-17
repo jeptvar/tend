@@ -5,6 +5,7 @@ import {
   addManualRedirect,
   cleanFrom,
   cleanTo,
+  isTendsOwnAddress,
   listRedirects,
   removeRedirect,
 } from "../../content/redirects.ts";
@@ -24,7 +25,7 @@ import {
   visibilitySchema,
   writeSetting,
 } from "../../content/settings.ts";
-import { createTag, listTags } from "../../content/tags.ts";
+import { countLivePostsWithTag, createTag, findTag, listTags } from "../../content/tags.ts";
 import { getSetting, type SiteSettings } from "../../db/repo/settings.ts";
 import { describeMenuItems, type MenuName, menuSetting } from "../../site/menus.ts";
 import type { ThemeSetting } from "../../site/theme.ts";
@@ -285,6 +286,26 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
       .filter((host): host is string => Boolean(host))
       .map((host) => host.toLowerCase());
     const to = cleanTo(body.to, ownHosts);
+    if (isTendsOwnAddress(from)) {
+      throw new ApiError(
+        400,
+        "needs_fixing",
+        `Tend uses ${from} itself, so nobody would be sent on from it.`,
+        {
+          field: "from",
+          fix: "Use the old page's own address, like /old-page.",
+        },
+      );
+    }
+    // A tag with published posts has its page there now, and pages always win over redirects.
+    const tagSlug = from.match(/^\/tag\/([^/]+)$/)?.[1];
+    const tag = tagSlug ? await findTag(orm, tagSlug) : undefined;
+    if (tag && (await countLivePostsWithTag(orm, tag.id)) > 0) {
+      throw new ApiError(409, "address_taken", `Your posts tagged ${tag.name} are at ${from}.`, {
+        field: "from",
+        fix: "Use the old page's own address, like /old-page.",
+      });
+    }
     if (await isLivePath(orm, from)) {
       throw new ApiError(409, "address_taken", `Something on your site is already at ${from}.`, {
         field: "from",

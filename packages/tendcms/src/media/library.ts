@@ -568,8 +568,15 @@ export async function deleteMediaForever(
   store.removeAllSizes(item.id);
 }
 
-/** Empties the Trash after 30 days, except what a published page still uses. */
+/** Long after any write that started then could still be going. */
+const LEFTOVER_AGE_MS = 60 * 60 * 1000;
+
+/**
+ * Empties the Trash after 30 days, except what a published page still uses, and removes
+ * files a crash left half written.
+ */
 export async function cleanUpMedia(orm: Orm, store: MediaStore, now: number): Promise<void> {
+  store.removeLeftovers(now - LEFTOVER_AGE_MS);
   const expired = orm
     .select({ id: media.id })
     .from(media)

@@ -471,6 +471,49 @@ describe("redirects", () => {
     ]);
   });
 
+  test("a redirect from one of Tend's own addresses is refused, as it could never be used", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    for (const from of [
+      "/blog",
+      "/BLOG",
+      "/feed",
+      "/rss.xml",
+      "/sitemap.xml",
+      "/robots.txt",
+      "/healthz",
+      "/admin",
+      "/admin/posts",
+      "/api/admin/entries",
+      "/media/x/y/480.webp",
+      "/assets/meadow/x/theme.css",
+    ]) {
+      const reply = await owner.post("/api/admin/redirects", { from, to: "/contact" });
+      expect(reply.status, from).toBe(400);
+      expect((await reply.json()).error.field, from).toBe("from");
+    }
+    expect((await (await owner.get("/api/admin/redirects")).json()).redirects).toEqual([]);
+    // Only as far as Tend's own: an old page called /blogging or /media-kit is fine.
+    for (const from of ["/blogging", "/media-kit"]) {
+      expect((await owner.post("/api/admin/redirects", { from, to: "/contact" })).status).toBe(201);
+    }
+  });
+
+  test("a tag's page is taken while it has posts, and free to lead on from when it hasn't", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const news = await (await owner.post("/api/admin/tags", { name: "News" })).json();
+    await publish(owner, "post", { title: "Opening day", tagIds: [news.id] });
+    const taken = await owner.post("/api/admin/redirects", { from: "/tag/news", to: "/contact" });
+    expect((await taken.json()).error.code).toBe("address_taken");
+
+    const old = await owner.post("/api/admin/redirects", { from: "/tag/specials", to: "/blog" });
+    expect(old.status).toBe(201);
+    const reply = await made.app.request("/tag/specials");
+    expect(reply.status).toBe(301);
+    expect(reply.headers.get("location")).toBe("/blog");
+  });
+
   test("a redirect added by hand works, but never over a page that's there", async () => {
     const made = await makeApp();
     const owner = await setUp(made);
@@ -968,6 +1011,36 @@ describe("fixes from review", () => {
     const first = await unknown.app.request("http://rise.example/");
     expect(first.headers.get("server-timing")).toContain("miss");
     expect(await first.text()).not.toContain("http://localhost");
+  });
+
+  test("a Private site's pictures are only for people signed in, except its logo", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const photo = await picture(owner, 600, 400);
+    const logo = await picture(owner, 600, 200);
+    const design = await (await owner.get("/api/admin/design")).json();
+    await owner.put("/api/admin/design", { ...design.value, logoId: logo.id });
+    const smallest = (item: { srcset: string }) => item.srcset.split(" ")[0] as string;
+    await owner.put("/api/admin/settings/visibility", { mode: "private" });
+
+    for (const url of [photo.url, smallest(photo)]) {
+      const visitor = await made.app.request(url);
+      expect(visitor.status, url).toBe(404);
+      const signedIn = await owner.get(url);
+      expect(signedIn.status, url).toBe(200);
+      // For that person only: a shared cache mustn't hand it to the next visitor.
+      expect(signedIn.headers.get("cache-control"), url).toBe(
+        "private, max-age=31536000, immutable",
+      );
+    }
+    expect((await made.app.request(smallest(logo))).status).toBe(200);
+
+    // Coming soon shows the logo and links to nothing else, so nothing changes there.
+    await owner.put("/api/admin/settings/visibility", { mode: "coming_soon" });
+    expect((await made.app.request(smallest(photo))).status).toBe(200);
+    await owner.put("/api/admin/settings/visibility", { mode: "public" });
+    const open = await made.app.request(smallest(photo));
+    expect(open.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 
   test("a missing picture or file gets a plain 404, even on a private site", async () => {
