@@ -76,8 +76,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # PLAN.md §11's budgets that can be counted exactly: what visitors download from pages
-  # made with each starting point.
+  # PLAN.md §11's budgets that can be counted exactly: what the admin and the theme weigh,
+  # and what visitors download from pages made with each starting point.
   budgets:
     runs-on: ubuntu-latest
     permissions:
@@ -93,6 +93,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - run: pnpm size
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm e2e --project=budgets
       - name: Keep the traces and measurements of failed budget checks
