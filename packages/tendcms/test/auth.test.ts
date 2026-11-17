@@ -393,7 +393,16 @@ describe("signing in", () => {
     const cookie = owner.jar.get("tend_device") as string;
     const client = browser(made.app);
 
-    client.jar.set("tend_device", `${cookie.slice(0, -2)}xx`);
+    // One bit of the signature changed. Rewriting its last two characters as "xx" didn't
+    // always change it: base64url's last character carries 2 bits that decoding ignores, so
+    // about one cookie in 1,024 got the same signature back, spelled differently.
+    const [account, expiresAt, nonce, signed] = cookie.split(".");
+    const forged = Buffer.from(signed as string, "base64url");
+    forged.writeUInt8(forged.readUInt8(0) ^ 1, 0);
+    client.jar.set(
+      "tend_device",
+      [account, expiresAt, nonce, forged.toString("base64url")].join("."),
+    );
     expect(
       (await client.post("/api/auth/login", { email: OWNER_EMAIL, password: GOOD_PASSWORD }))
         .status,
