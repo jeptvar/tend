@@ -1,8 +1,9 @@
 import type { Page } from "@playwright/test";
 import { expect, OWNER, type Site, upload } from "./fixtures.ts";
 
-// Sites made from each starting point and filled in the way an owner soon would, for the
-// check that measures what visitors get on every pull request: e2e/budgets.spec.ts.
+// Sites made from each starting point, as they come or filled in the way an owner soon
+// would, for the checks that measure what visitors get: e2e/budgets.spec.ts on every pull
+// request, and e2e/lighthouse.spec.ts nightly.
 
 export const STARTERS = ["blog", "business", "blank"] as const;
 export type Starter = (typeof STARTERS)[number];
@@ -135,11 +136,16 @@ async function publish(
 }
 
 /**
- * Sets up a site from a starting point and fills it in: a Big intro with a photo on the
- * Business homepage, and photos on the Blog's first post. Blank stays as it comes.
- * Returns the addresses to measure: the homepage, and for the Blog its first post.
+ * Sets up a site from a starting point, either as it comes or filled in: a Big intro with
+ * a photo on the Business homepage, and photos on the Blog's first post. Blank stays as it
+ * comes. Returns the addresses to measure: the homepage, and for the Blog its first post.
  */
-export async function buildStarterSite(page: Page, site: Site, starter: Starter) {
+export async function buildStarterSite(
+  page: Page,
+  site: Site,
+  starter: Starter,
+  state: "as it comes" | "filled in",
+) {
   const setup = await page.request.post(`${site.base}/api/auth/setup`, {
     data: {
       code: site.code,
@@ -151,6 +157,10 @@ export async function buildStarterSite(page: Page, site: Site, starter: Starter)
   expect(setup.status()).toBe(201);
   const home = `${site.base}/`;
   if (starter === "blank") return [home];
+  if (state === "as it comes") {
+    if (starter === "business") return [home];
+    return [home, `${site.base}${(await find(page, site, "post", "welcome")).url}`];
+  }
 
   const loaves = await picture(page, site, 1, "Loaves cooling on a rack by the window");
   const counter = await picture(page, site, 2, "The counter in the morning, full of pastries");

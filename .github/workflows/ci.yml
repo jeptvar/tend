@@ -77,7 +77,8 @@ jobs:
           if-no-files-found: ignore
 
   # PLAN.md §11's budgets that can be counted exactly: what the admin and the theme weigh,
-  # and what visitors download from pages made with each starting point.
+  # and what visitors download from pages made with each starting point. Lighthouse's scores
+  # and timings vary from run to run, so they're checked nightly instead (lighthouse.yml).
   budgets:
     runs-on: ubuntu-latest
     permissions:
@@ -105,8 +106,9 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # Known vulnerabilities in anything the lockfile installs, the published package's bundled
-  # libraries included (PLAN.md §12). An ignore needs a date and a reason, in osv-scanner.toml.
+  # Known vulnerabilities in anything the lockfiles install, the published package's bundled
+  # libraries included (PLAN.md §12), and Lighthouse's own install for the nightly check. An
+  # ignore needs a date and a reason, in osv-scanner.toml.
   vulnerabilities:
     runs-on: ubuntu-latest
     permissions:
@@ -120,6 +122,7 @@ jobs:
           scan-args: |-
             --config=osv-scanner.toml
             --lockfile=pnpm-lock.yaml
+            --lockfile=tools/lighthouse/pnpm-lock.yaml
 
   docker:
     runs-on: ubuntu-latest

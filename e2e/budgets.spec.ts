@@ -101,7 +101,7 @@ for (const starter of STARTERS) {
     site,
     browser,
   }) => {
-    const [home, ...others] = await buildStarterSite(page, site, starter);
+    const [home, ...others] = await buildStarterSite(page, site, starter, "filled in");
     for (const url of [home as string, ...others]) {
       const where = `${starter} ${new URL(url).pathname}`;
       const measured = await visit(browser, url);

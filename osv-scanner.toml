@@ -2,3 +2,21 @@
 id = "GHSA-67mh-4wv8-2f99"
 ignoreUntil = 2027-04-30
 reason = "esbuild <0.25 dev server, pulled in only by drizzle-kit (devDependency used to generate SQL). Never shipped or served."
+
+# basic-ftp 5.3.1, in Lighthouse's own install for the nightly check only (tools/lighthouse).
+# It's reached through proxy-agent, to fetch a proxy's PAC file from an ftp:// address. The
+# check sets no proxy, so it never runs.
+[[IgnoredVulns]]
+id = "GHSA-c475-qrg2-pj4r"
+ignoreUntil = 2027-02-28
+reason = "basic-ftp in tools/lighthouse only, used for a proxy PAC file at an ftp:// address. The nightly Lighthouse check sets no proxy."
+
+[[IgnoredVulns]]
+id = "GHSA-r4jh-29pc-gfqr"
+ignoreUntil = 2027-02-28
+reason = "basic-ftp in tools/lighthouse only, used for a proxy PAC file at an ftp:// address. The nightly Lighthouse check sets no proxy."
+
+[[IgnoredVulns]]
+id = "GHSA-5pm8-86m8-9m6r"
+ignoreUntil = 2027-02-28
+reason = "basic-ftp in tools/lighthouse only, used for a proxy PAC file at an ftp:// address. The nightly Lighthouse check sets no proxy."
