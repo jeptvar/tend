@@ -11,6 +11,7 @@ import {
 import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
+import Database from "better-sqlite3";
 import { fsyncDir, fsyncFile } from "../durable.ts";
 import { openDatabase, type SqliteDatabase } from "./client.ts";
 
@@ -33,7 +34,8 @@ export interface MigrateResult {
 export class MigrationError extends Error {}
 
 const SNAPSHOTS_KEPT = 3;
-const SNAPSHOT_TMP_PREFIX = ".tmp-";
+/** Work in the backups folder that isn't finished yet. Anything named so is removed at boot. */
+export const SNAPSHOT_TMP_PREFIX = ".tmp-";
 
 /**
  * Brings tend.db up to date (PLAN.md §13):
@@ -174,7 +176,7 @@ function readMeta(db: SqliteDatabase, key: string): string | undefined {
   return row?.value;
 }
 
-function readSchemaVersion(db: SqliteDatabase): number {
+export function readSchemaVersion(db: SqliteDatabase): number {
   return Number(readMeta(db, "schema_version") ?? 0);
 }
 
@@ -192,26 +194,56 @@ async function takeSnapshot(
 ): Promise<string> {
   const stamp = new Date().toISOString().replace(/[-:]/g, "");
   const name = `pre-${options.appVersion}-from-${fromVersion}-${stamp}.db.gz`;
-  const finalPath = join(options.backupsDir, name);
-  const rawTmp = join(options.backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}.raw`);
-  const gzTmp = join(options.backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}`);
+  return saveSnapshot(db, options.dbPath, options.backupsDir, name);
+}
+
+/**
+ * Saves a gzipped copy of the database in the backups folder as `name`, made with SQLite's
+ * backup API outside any transaction, so the site can keep running while it's made. With
+ * `check`, the copy must pass quick_check first, as the automatic daily ones must.
+ */
+export async function saveSnapshot(
+  db: SqliteDatabase,
+  dbPath: string,
+  backupsDir: string,
+  name: string,
+  options: { check?: boolean } = {},
+): Promise<string> {
+  const finalPath = join(backupsDir, name);
+  const rawTmp = join(backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}.raw`);
+  const gzTmp = join(backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}`);
 
   // Copies hold the same private data, so they get the same protection as the database.
-  const mode = fileMode(options.dbPath);
+  const mode = fileMode(dbPath);
 
   // Only a finished, flushed file gets a real name, so a snapshot that was cut short
   // can't be mistaken for a good one or push a good one out.
   try {
     writeFileSync(rawTmp, "", { mode });
     await db.backup(rawTmp);
+    if (options.check) quickCheck(rawTmp);
     await pipeline(createReadStream(rawTmp), createGzip(), createWriteStream(gzTmp, { mode }));
     fsyncFile(gzTmp);
     renameSync(gzTmp, finalPath);
-    fsyncDir(options.backupsDir);
+    fsyncDir(backupsDir);
   } finally {
-    for (const path of [rawTmp, `${rawTmp}-journal`, gzTmp]) rmSync(path, { force: true });
+    // The copy is in WAL mode like the database, so checking it leaves a -wal and -shm.
+    for (const path of [rawTmp, `${rawTmp}-journal`, `${rawTmp}-wal`, `${rawTmp}-shm`, gzTmp]) {
+      rmSync(path, { force: true });
+    }
   }
   return finalPath;
+}
+
+/** Throws unless a copy of the database passes quick_check. */
+export function quickCheck(path: string): void {
+  const copy = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    const result = copy.pragma("quick_check", { simple: true });
+    if (result !== "ok") throw new Error(`The copy of the site's data failed its check: ${result}`);
+  } finally {
+    copy.close();
+  }
 }
 
 function fileMode(path: string): number {
@@ -222,7 +254,8 @@ function removeInterruptedWork(options: MigrateOptions): void {
   rmSync(`${options.dbPath}.restoring`, { force: true });
   for (const file of readdirSync(options.backupsDir)) {
     if (file.startsWith(SNAPSHOT_TMP_PREFIX)) {
-      rmSync(join(options.backupsDir, file), { force: true });
+      // Folders too: a restore unpacks a backup into one before it's checked.
+      rmSync(join(options.backupsDir, file), { recursive: true, force: true });
     }
   }
 }

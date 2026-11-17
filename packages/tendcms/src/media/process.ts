@@ -875,6 +875,27 @@ export async function makeIcon(source: Buffer, size: number): Promise<Buffer> {
   );
 }
 
+/**
+ * One size of a picture, made again from its stored original. Sizes are a cache: backups
+ * leave them out (PLAN.md §13), so after a restore each is made again the first time it's
+ * asked for. The original was turned upright and saved again when it was uploaded, so it's
+ * only resized here, the way it was then.
+ */
+export async function makeVariant(original: Buffer, width: number): Promise<Buffer> {
+  const found = sniff(original);
+  if (found?.kind !== "image") throw cannotRead();
+  const { format } = found;
+  const load = { inputBytes: original.length, threads: threadsFor(PLAN) };
+  const meta = await readHeader(original, format, PLAN.budget, load);
+  const animated = isAnimated(meta, format);
+  return inTurn(workingSet(meta, format, load), load.threads, () =>
+    sharp(original, { limitInputPixels: MAX_PIXELS, failOn: "error", animated })
+      .resize({ width, withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer(),
+  );
+}
+
 export function isIconSize(size: number): boolean {
   return ICON_SIZES.has(size);
 }

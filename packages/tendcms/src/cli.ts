@@ -1,9 +1,14 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
+import { createWriteStream, existsSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { constants } from "node:os";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { generatePassword, hashPassword } from "./auth/passwords.ts";
 import { displaySetupCode } from "./auth/setup-code.ts";
+import { backupFileName } from "./backups/format.ts";
+import { BackupError, checkBackup, restoreBackup } from "./backups/restore.ts";
+import { diskSpace, takeDailySnapshot } from "./backups/snapshots.ts";
+import { writeBackup } from "./backups/write.ts";
 import {
   type Config,
   ConfigError,
@@ -20,16 +25,18 @@ import { cleanUp } from "./content/entries.ts";
 import { rerenderPublished } from "./content/rerender.ts";
 import { createOrm, openDatabase, type SqliteDatabase } from "./db/client.ts";
 import { acquireLock, type Lock, LockError } from "./db/lock.ts";
-import { MigrationError, migrate, schemaIsCurrent } from "./db/migrate.ts";
+import { MigrationError, migrate, SNAPSHOT_TMP_PREFIX, schemaIsCurrent } from "./db/migrate.ts";
+import { getSetting } from "./db/repo/settings.ts";
 import {
   findUserByEmail,
   listUsers,
   ownerExists,
   resetPasswordAndSignOutEverywhere,
 } from "./db/repo/users.ts";
+import { fsyncFile } from "./durable.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
-import { cleanUpMedia } from "./media/library.ts";
-import { MediaStore } from "./media/store.ts";
+import { cleanUpMedia, removeRetiredOriginals } from "./media/library.ts";
+import { clearSizesIfLow, isNearlyFull, MediaStore } from "./media/store.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
 
@@ -39,6 +46,10 @@ Usage: tendcms <command>
 
 Commands:
   start                    Start Tend. It keeps running until you close the window or press Ctrl+C.
+  backup [file]            Save the site to a zip file: its content, uploads and sign-in secrets.
+                           Keep it private. Tend can keep running while it's saved.
+  restore <file>           Put the site back as it is in a backup. Close Tend first. The site
+                           that was here is saved in the backups folder before it's replaced.
   setup-code               Show the code that first-time setup asks for.
   reset-password <email>   Give an account a new password and sign it out everywhere.
 
@@ -76,6 +87,10 @@ async function main(argv: string[]): Promise<void> {
   switch (command) {
     case "start":
       return start();
+    case "backup":
+      return backup(argument);
+    case "restore":
+      return restore(argument);
     case "setup-code":
       return showSetupCode();
     case "reset-password":
@@ -163,7 +178,73 @@ async function resetPassword(email: string | undefined): Promise<void> {
   }
 }
 
+/** Saves the site to a zip file, beside a running Tend or not (PLAN.md §13). */
+async function backup(file: string | undefined): Promise<void> {
+  const config = loadConfig();
+  const db = openExistingDatabase(config);
+  try {
+    const site = (await getSetting(createOrm(db), "site"))?.name ?? "Tend";
+    const now = new Date();
+    const target = resolve(file ?? backupFileName(site, now));
+    // Only a finished file gets the real name, so a backup cut short can't pass for one.
+    const partial = `${target}.partial`;
+    try {
+      const manifest = await writeBackup(
+        {
+          db,
+          backupsDir: config.backupsDir,
+          uploadsDir: config.uploadsDir,
+          secretKey: readSecretKey(config),
+          appVersion,
+          site,
+        },
+        createWriteStream(partial),
+        now,
+      );
+      fsyncFile(partial);
+      renameSync(partial, target);
+      const uploads = manifest.files.filter((each) => each.path.startsWith("uploads/")).length;
+      console.log(
+        `Saved ${site}, with ${uploads === 1 ? "1 uploaded file" : `${uploads} uploaded files`}, to ${target}`,
+      );
+      console.log("It holds the site's sign-in secrets, so keep it private.");
+    } catch (error) {
+      rmSync(partial, { force: true });
+      throw error;
+    }
+  } finally {
+    db.close();
+  }
+}
+
+/** Puts a site back from a backup zip, once every part of it has been checked. */
+async function restore(file: string | undefined): Promise<void> {
+  if (!file) {
+    throw new ConfigError(
+      "Say which backup to restore, for example: tendcms restore rise-bakery-backup-PRIVATE-2027-11-21.zip",
+    );
+  }
+  const zipPath = resolve(file);
+  if (!existsSync(zipPath)) throw new ConfigError(`There's no file at ${zipPath}.`);
+  const config = loadConfig();
+  const lock = takeDataFolder(config);
+  const folder = join(config.backupsDir, `${SNAPSHOT_TMP_PREFIX}restore-${Date.now()}`);
+  try {
+    const newestSchema = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).length;
+    const checked = await checkBackup(zipPath, folder, newestSchema);
+    const { snapshotPath } = await restoreBackup(checked, config);
+    const { site, createdAt } = checked.manifest;
+    console.log(`Restored ${site} as it was on ${createdAt.slice(0, 10)}. Start Tend to see it.`);
+    if (snapshotPath) console.log(`The site that was here before is saved in ${snapshotPath}.`);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+    lock.release();
+  }
+}
+
 const HOUR_MS = 60 * 60 * 1000;
+// How often Tend looks at whether a daily copy is due, and whether the disk is nearly full.
+const CHECK_EVERY_MS = 10 * 60 * 1000;
 
 async function start(): Promise<void> {
   const config = loadConfig();
@@ -226,6 +307,8 @@ async function start(): Promise<void> {
     trustProxy: config.trustProxy,
     themeDir: defaultThemeDir,
     uploadsDir: config.uploadsDir,
+    backupsDir: config.backupsDir,
+    dataFolder: config,
     pageCacheBytes: config.pageCacheBytes,
     watchTheme: true,
     siteUrl: config.siteUrl,
@@ -233,7 +316,7 @@ async function start(): Promise<void> {
   });
   // The Trash and automatic history only keep things for so long. Not being able to tidy
   // up is no reason to stop serving the site.
-  const files = new MediaStore(config.uploadsDir);
+  const files = new MediaStore(config.uploadsDir, config.backupsDir);
   const tidyUp = () => {
     try {
       cleanUp(orm, Date.now());
@@ -247,6 +330,65 @@ async function start(): Promise<void> {
   };
   tidyUp();
   setInterval(tidyUp, HOUR_MS).unref();
+
+  // A copy of the site's data each day at 03:00 its time (PLAN.md §13). Looked at often, so
+  // it's made soon after, and soon after Tend starts if it wasn't running then.
+  const openDb = db;
+  let snapshotting = false;
+  const snapshotIfDue = async () => {
+    if (snapshotting) return;
+    snapshotting = true;
+    try {
+      // Until setup, there's no site to keep a copy of.
+      const site = await getSetting(orm, "site");
+      if (!site) return;
+      const made = await takeDailySnapshot({
+        db: openDb,
+        dbPath: config.dbPath,
+        backupsDir: config.backupsDir,
+        timeZone: site.timezone,
+        now: Date.now(),
+      });
+      if (made) console.log(`Saved today's copy of the site's data: ${made.id}.db.gz`);
+    } catch (error) {
+      console.error(`Couldn't save today's copy of the site's data: ${(error as Error).message}`);
+    } finally {
+      snapshotting = false;
+    }
+  };
+  // When the disk is nearly full, picture sizes go first: they're made again as visitors ask
+  // for them, and the room they free keeps the site's own changes saving (PLAN.md §13).
+  // If that isn't enough, so do the originals of photos and files deleted lately, which
+  // older copies of the site's data would otherwise show.
+  const makeRoom = () => {
+    try {
+      const freed = clearSizesIfLow(files, diskSpace(config.dataDir));
+      if (freed > 0) {
+        const megabytes = Math.ceil(freed / (1024 * 1024));
+        console.warn(
+          `The disk is nearly full, so Tend cleared ${megabytes} MB of picture sizes. They're made again as visitors ask for them. Make more room soon: Settings → Backups shows how.`,
+        );
+      }
+      if (isNearlyFull(diskSpace(config.dataDir))) {
+        const removed = removeRetiredOriginals(orm, files, Date.now(), {
+          evenIfCopiesShowThem: true,
+        });
+        if (removed > 0) {
+          console.warn(
+            `The disk is still nearly full, so Tend removed ${removed} deleted photos and files for good. Copies of the site saved before they were deleted will show them missing.`,
+          );
+        }
+      }
+    } catch (error) {
+      console.error(`Couldn't make room on the disk: ${(error as Error).message}`);
+    }
+  };
+  makeRoom();
+  void snapshotIfDue();
+  setInterval(() => {
+    makeRoom();
+    void snapshotIfDue();
+  }, CHECK_EVERY_MS).unref();
 
   const ports = portsToTry(config);
   listening = await listen(app.fetch, ports, config.hosts);
@@ -288,7 +430,8 @@ main(process.argv.slice(2)).catch((error: unknown) => {
   if (
     error instanceof ConfigError ||
     error instanceof LockError ||
-    error instanceof MigrationError
+    error instanceof MigrationError ||
+    error instanceof BackupError
   ) {
     console.error(`\n${error.message}\n`);
   } else {

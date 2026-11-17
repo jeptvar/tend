@@ -20,7 +20,8 @@ export type Action =
   | "tag:create"
   | "menu:manage"
   | "design:manage"
-  | "settings:manage";
+  | "settings:manage"
+  | "backup:download";
 
 export interface Subject {
   /** Who made it: the author of a post, or whoever uploaded a file. */
@@ -58,6 +59,12 @@ const ADMIN_ONLY_ACTIONS = new Set<Action>([
 ]);
 
 /**
+ * Only for the Owner. A backup holds every account's password hash and the site's secret
+ * key, so taking one away is theirs to do, like restoring one (PLAN.md §6).
+ */
+const OWNER_ONLY_ACTIONS = new Set<Action>(["backup:download"]);
+
+/**
  * A Writer (v0.3) works on their own posts, adds pictures and describes their own, and can't
  * publish (PLAN.md §6). Media's routes also stop them describing a picture the site already
  * shows, since that would reach visitors without anyone looking it over.
@@ -78,6 +85,7 @@ const WRITER_OWN_ACTIONS = new Set<Action>(["entry:read", "entry:update", "media
  */
 export function can(actor: Actor | null | undefined, action: Action, subject?: Subject): boolean {
   if (!actor) return false;
+  if (OWNER_ONLY_ACTIONS.has(action)) return actor.role === "admin" && Boolean(actor.isOwner);
   switch (actor.role) {
     case "admin":
       return EDITOR_ACTIONS.has(action) || ADMIN_ONLY_ACTIONS.has(action);

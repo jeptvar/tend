@@ -12,6 +12,8 @@ export interface Me {
   site: { name: string; tagline: string };
   starter: "blog" | "business" | "blank" | null;
   siteIsPublic: boolean;
+  /** Whether the site knows its own address, rather than following the one each page is asked for. */
+  addressKnown: boolean;
 }
 
 export type EntryType = "post" | "page";

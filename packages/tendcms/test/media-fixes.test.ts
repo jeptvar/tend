@@ -553,7 +553,7 @@ describe("media-11: replacing while something else changes the same picture", ()
       data: await png(2600, 1700, "#aa0000"),
       now: made.clock.time,
     });
-    await deleteMediaForever(made.orm, store, { id: item.id });
+    await deleteMediaForever(made.orm, store, { id: item.id, now: made.clock.time });
     const error = await refusalOf(() => replacing);
     expect(error.status).toBe(404);
     expect(await getMedia(made.orm, item.id)).toBeUndefined();
@@ -571,7 +571,7 @@ describe("media-11: replacing while something else changes the same picture", ()
     const nextHash = next.sha256.slice(0, 12);
 
     // Delete forever reads the picture straight away, then waits while it looks up uses...
-    const deleting = deleteMediaForever(made.orm, store, { id: item.id });
+    const deleting = deleteMediaForever(made.orm, store, { id: item.id, now: made.clock.time });
     // ...and meanwhile a replace finishes: its files are written, the row points at them, and
     // the old version goes.
     store.write(store.originalPath(item.id, nextHash, "png"), next.original);
@@ -596,6 +596,7 @@ describe("media-11: replacing while something else changes the same picture", ()
     const files = storedFiles(made.uploadsDir);
     const deleting = deleteMediaForever(made.orm, new MediaStore(made.uploadsDir), {
       id: item.id,
+      now: made.clock.time,
     });
     made.db.prepare("UPDATE media SET trashed_at = NULL WHERE id = ?").run(item.id);
     const error = await refusalOf(() => deleting);

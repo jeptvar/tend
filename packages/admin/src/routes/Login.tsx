@@ -88,6 +88,15 @@ export function Login() {
           <FormattedMessage id="login.closedElsewhere" />
         </p>
       )}
+      {setup.restored && (
+        <p className="mt-3 text-lg text-muted">
+          {setup.restored.site ? (
+            <FormattedMessage id="login.restored" values={{ site: setup.restored.site }} />
+          ) : (
+            <FormattedMessage id="login.restoredUnnamed" />
+          )}
+        </p>
+      )}
       <form onSubmit={onSubmit} noValidate className="mt-8 grid gap-6">
         <Field
           ref={emailRef}

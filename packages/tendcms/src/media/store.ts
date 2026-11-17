@@ -9,10 +9,25 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { listSnapshots } from "../backups/snapshots.ts";
 import { fsyncDir, fsyncFile } from "../durable.ts";
 
 /** The name write() gives a file until it's complete: <name>.<process>.<time>.tmp. */
 const TEMPORARY = /\.\d+\.\d+\.tmp$/;
+
+/** How full a disk gets before Tend clears what it can to make room (PLAN.md §13). */
+export const NEARLY_FULL = 0.9;
+
+/**
+ * How far back a copy of the site's data holds on to the originals it shows. The daily and
+ * weekly copies reach back five weeks or so. A copy kept from before an update can be far
+ * older, and keeping every original deleted since then would hold on to space for months.
+ */
+const COPIES_HOLD_ORIGINALS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
+
+export function isNearlyFull(space: { total: number; free: number }): boolean {
+  return space.total > 0 && (space.total - space.free) / space.total >= NEARLY_FULL;
+}
 
 /**
  * Where uploads live in the data folder (PLAN.md §8). Originals are spread over folders by
@@ -22,9 +37,27 @@ const TEMPORARY = /\.\d+\.\d+\.tmp$/;
  */
 export class MediaStore {
   readonly #root: string;
+  readonly #copiesDir: string | undefined;
 
-  constructor(uploadsDir: string) {
+  /**
+   * `copiesDir` is where copies of the site's data are kept (backups/). An original the site
+   * stops using stays while one of them could bring it back. Without it, none does.
+   */
+  constructor(uploadsDir: string, copiesDir?: string) {
     this.#root = uploadsDir;
+    this.#copiesDir = copiesDir;
+  }
+
+  /**
+   * When the oldest copy of the site's data that still holds on to originals was taken: the
+   * oldest one kept from the last six weeks. Undefined if there's none.
+   */
+  oldestCopyAt(now: number): number | undefined {
+    if (!this.#copiesDir) return undefined;
+    const holding = listSnapshots(this.#copiesDir).filter(
+      (copy) => copy.takenAt >= now - COPIES_HOLD_ORIGINALS_MS,
+    );
+    return holding.at(-1)?.takenAt;
   }
 
   originalPath(id: string, hash: string, ext: string): string {
@@ -98,7 +131,16 @@ export class MediaStore {
 
   /** Removes one version: its original and its sizes. */
   removeVersion(id: string, hash: string, ext: string): void {
+    this.removeOriginal(id, hash, ext);
+    this.removeSizes(id, hash);
+  }
+
+  removeOriginal(id: string, hash: string, ext: string): void {
     rmSync(this.originalPath(id, hash, ext), { force: true });
+  }
+
+  /** Removes one version's sizes. They can be made again from its original. */
+  removeSizes(id: string, hash: string): void {
     rmSync(this.versionDir(id, hash), { recursive: true, force: true });
   }
 
@@ -106,6 +148,31 @@ export class MediaStore {
   removeAllSizes(id: string): void {
     rmSync(join(this.#root, "variants", id), { recursive: true, force: true });
   }
+
+  /** Removes every size of every picture, and says how many bytes that freed. */
+  removeEverySize(): number {
+    const folder = join(this.#root, "variants");
+    let bytes = 0;
+    try {
+      for (const entry of readdirSync(folder, { recursive: true, withFileTypes: true })) {
+        if (entry.isFile()) bytes += statSync(join(entry.parentPath, entry.name)).size;
+      }
+    } catch {
+      // There's nothing there yet, or a size went while it was counted.
+    }
+    // A size being made right now can recreate a folder underneath this, hence the retries.
+    rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
+    return bytes;
+  }
+}
+
+/**
+ * Clears every picture size once the disk they're on is nearly full. They're made again when
+ * they're next asked for, so they go before anything that can't be (PLAN.md §13). Returns the
+ * bytes freed.
+ */
+export function clearSizesIfLow(store: MediaStore, space: { total: number; free: number }): number {
+  return isNearlyFull(space) ? store.removeEverySize() : 0;
 }
 
 /** The short form of a content hash used in addresses. */

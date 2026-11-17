@@ -169,6 +169,7 @@ async function adminScreens(page: Page, site: Site): Promise<[string, string][]>
     ["settings: business details", "/admin/settings/business"],
     ["settings: search and social", "/admin/settings/search"],
     ["settings: advanced", "/admin/settings/advanced"],
+    ["settings: backups", "/admin/settings/backups"],
   ];
 }
 
@@ -199,6 +200,11 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.getByRole("radio", { name: /Blog/ })).toBeVisible();
       await expectNoViolations(page, "starting point");
+
+      await page.goto(`${site.base}/admin/setup/backup`);
+      await page.getByRole("button", { name: "Restore this backup" }).click();
+      await expect(page.getByText("Choose your backup file.")).toBeVisible();
+      await expectNoViolations(page, "start from a backup, with an error showing");
     });
 
     test("admin screens have no accessibility violations", async ({ page, signedIn }) => {

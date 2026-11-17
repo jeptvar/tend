@@ -319,7 +319,7 @@ export function registerMediaRoutes(routing: Routing, options: AdminOptions): vo
   });
 
   itemRoute("delete", "/media/:mid", "media:delete", async (c, _user, item) => {
-    await deleteMediaForever(orm, store, { id: item.id });
+    await deleteMediaForever(orm, store, { id: item.id, now: now() });
     return c.body(null, 204);
   });
 }

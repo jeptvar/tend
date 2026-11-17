@@ -19,6 +19,8 @@ import {
 import { AccountBackoff, TokenBuckets, WorkGate } from "../auth/ratelimit.ts";
 import { completeSetup, loadStarter, SetupClosedError } from "../auth/setup.ts";
 import { type SetupCodeSource, setupCodeMatches } from "../auth/setup-code.ts";
+import type { RestoreTarget } from "../backups/restore.ts";
+import { isLocalAddress } from "../config.ts";
 import { isLocale } from "../content/settings.ts";
 import type { Orm } from "../db/client.ts";
 import {
@@ -36,6 +38,7 @@ import {
   upgradePasswordHash,
 } from "../db/repo/users.ts";
 import { ApiError, tendIsBusy, tooManyTries } from "./errors.ts";
+import { registerSetupBackupRoutes } from "./setup-backup.ts";
 
 export interface AuthOptions extends SetupCodeSource {
   orm: Orm;
@@ -48,6 +51,10 @@ export interface AuthOptions extends SetupCodeSource {
   onSiteChanged: () => void;
   /** Whether the site has a real public address. */
   isPublic: boolean;
+  /** The address pages name as their own, when it's known for sure. See Config.siteUrl. */
+  siteUrl?: string | undefined;
+  /** The data folder, which Start from a backup restores into. Absent in some tests. */
+  dataFolder?: RestoreTarget | undefined;
 }
 
 const SETUP_CODE_ATTEMPTS_PER_MINUTE = 5;
@@ -247,6 +254,8 @@ export function createAuthRoutes(options: AuthOptions): Hono {
   }
 
   async function requireSetupOpen(): Promise<void> {
+    // A backup being restored is about to become the site, so nothing is set up meanwhile.
+    setupBackup.requireNotRestoring();
     if (await ownerExists(orm)) {
       throw new ApiError(409, "setup_closed", "This site is already set up.", {
         fix: "Sign in instead.",
@@ -302,6 +311,15 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     await startSession(c, { id: userId, email: owner.email }, passwordHash);
     const user = await findUserByEmail(orm, owner.email);
     return c.json({ user: user && publicUser(user) }, 201);
+  });
+
+  const setupBackup = registerSetupBackupRoutes(app, {
+    orm,
+    secretKey,
+    dataFolder: options.dataFolder,
+    onSiteChanged: options.onSiteChanged,
+    requireSetupOpen,
+    requireSetupCode,
   });
 
   app.post("/login", async (c) => {
@@ -392,11 +410,14 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     const user = await requireUser(c);
     const site = await getSetting(orm, "site");
     const setup = await getSetting(orm, "setup");
+    const confirmed = site?.address_confirmed && site.address ? site.address : undefined;
     return c.json({
       user: publicUser(user),
       site: { name: site?.name ?? "", tagline: site?.tagline ?? "" },
       starter: setup?.starter ?? null,
-      siteIsPublic: options.isPublic,
+      siteIsPublic: options.isPublic || Boolean(confirmed && !isLocalAddress(confirmed)),
+      // Until it's known, Overview asks whether the address in the browser is the site's.
+      addressKnown: Boolean(options.siteUrl ?? confirmed),
     });
   });
 

@@ -6,6 +6,7 @@ import { createAdminRoutes } from "./api/admin/index.ts";
 import { notSignedIn } from "./api/admin/routing.ts";
 import { type AuthOptions, createAuthRoutes } from "./api/auth.ts";
 import { ApiError } from "./api/errors.ts";
+import { BACKUP_PART_BYTES, BACKUP_PART_PATH } from "./api/setup-backup.ts";
 import { isForeignRequest } from "./auth/csrf.ts";
 import { currentUser } from "./auth/current-user.ts";
 import { MAX_UPLOAD_BYTES } from "./media/process.ts";
@@ -20,10 +21,10 @@ export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDi
   publicUrl: string | undefined;
   themeDir: string;
   uploadsDir: string;
+  /** Where Tend keeps copies of the site, for Settings → Backups. */
+  backupsDir?: string | undefined;
   pageCacheBytes: number;
   watchTheme?: boolean;
-  /** The address pages name as their own, when it's known for sure. See Config.siteUrl. */
-  siteUrl?: string | undefined;
   /** How long an upload can send nothing before Tend gives up on it. Tests make it short. */
   uploadIdleMs?: number;
   /** See SiteOptions.onBackgroundWork: tests wait for it rather than for a guessed time. */
@@ -51,6 +52,11 @@ const UPLOAD_IDLE_MS = 30_000;
 /** The routes that take a file as it is, rather than JSON. */
 function isUpload(method: string, path: string): boolean {
   return method === "POST" && UPLOAD_ROUTE.test(path);
+}
+
+/** A part of a backup sent at setup, which is a file as it is too. */
+function isBackupPart(method: string, path: string): boolean {
+  return method === "POST" && path === BACKUP_PART_PATH;
 }
 
 function needsLength(): ApiError {
@@ -208,7 +214,7 @@ export function createApp(options: AppOptions): Hono {
       // either without asking first, which Tend never allows. So this also stops most
       // cross-site tricks by itself.
       const type = c.req.header("content-type")?.toLowerCase() ?? "";
-      if (isUpload(c.req.method, c.req.path)) {
+      if (isUpload(c.req.method, c.req.path) || isBackupPart(c.req.method, c.req.path)) {
         if (!type.startsWith("application/octet-stream")) {
           throw new ApiError(415, "needs_file", "Tend expected a file here.");
         }
@@ -245,7 +251,11 @@ export function createApp(options: AppOptions): Hono {
         },
       ),
   );
-  app.use("/api/auth/*", limitBody(AUTH_BODY_LIMIT_BYTES));
+  const authLimit = limitBody(AUTH_BODY_LIMIT_BYTES);
+  const backupPartLimit = limitBody(BACKUP_PART_BYTES + 64 * 1024);
+  app.use("/api/auth/*", (c, next) =>
+    isBackupPart(c.req.method, c.req.path) ? backupPartLimit(c, next) : authLimit(c, next),
+  );
 
   const places = uploadPlaces(UPLOADS_AT_ONCE, UPLOADS_PER_ACCOUNT);
   const uploadIdleMs = options.uploadIdleMs ?? UPLOAD_IDLE_MS;
@@ -281,7 +291,7 @@ export function createApp(options: AppOptions): Hono {
     isUpload(c.req.method, c.req.path) ? uploadLimit(c, next) : adminLimit(c, next),
   );
 
-  const store = new MediaStore(options.uploadsDir);
+  const store = new MediaStore(options.uploadsDir, options.backupsDir);
   const site = createSite({
     orm: options.orm,
     store,
@@ -310,6 +320,10 @@ export function createApp(options: AppOptions): Hono {
       themeSettings: () => site.theme.settings,
       designValues: (chosen) => site.theme.designValues(chosen),
       previewDesign: (design) => site.previewDesign(design),
+      backupsDir: options.backupsDir,
+      uploadsDir: options.uploadsDir,
+      secretKey: options.secretKey,
+      version: options.version,
     }).app,
   );
 
