@@ -7,6 +7,9 @@ RUN npm install --global --ignore-scripts pnpm@12.14.0
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm build
+# The same shrinkwrap as the npm package (PLAN.md §12), so the image and npm install the
+# same versions of everything.
+RUN node scripts/shrinkwrap.mjs
 RUN mkdir /pack && cd packages/tendcms && npm pack --pack-destination /pack
 
 # The final image installs the packed package, the same way a person's npm install
@@ -18,11 +21,22 @@ ENV NODE_ENV=production \
     TEND_PLATFORM=docker \
     PATH=/opt/tend/node_modules/.bin:$PATH
 WORKDIR /opt/tend
+# Security fixes Debian has published since the base image was made. CI's Trivy scan
+# fails on any it could have had.
+RUN apt-get update \
+    && apt-get upgrade --yes --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /pack/ /tmp/pack/
+# npm installs Tend here and then goes: nothing needs it to run Tend, and what isn't in
+# the image can't have a vulnerability.
 RUN npm init --yes >/dev/null \
     && npm install --omit=dev --ignore-scripts /tmp/pack/tendcms-*.tgz \
-    && rm -rf /tmp/pack
-# Before VOLUME, so a new named volume starts out owned by the node user.
+    && rm -rf /tmp/pack /root/.npm \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+        /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+# Before VOLUME, so a new named volume starts out owned by the node user (1000). A
+# folder from the server, or a volume a host makes, can belong to root instead: Tend
+# then says what to do, and on Railway it runs as root (RAILWAY_RUN_UID=0).
 RUN mkdir -p /data && chown node:node /data
 VOLUME /data
 USER node
