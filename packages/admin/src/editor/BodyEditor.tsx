@@ -14,6 +14,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 import { FormattedMessage, useIntl } from "react-intl";
 import { MediaPicker } from "../components/MediaPicker.tsx";
 import { showToast } from "../components/Toast.tsx";
@@ -37,6 +38,19 @@ export interface BodyHandle {
 
 // A pressed button shows it with the whole background, because a faint tint can't be told
 // apart at the 3:1 that WCAG asks of something that shows state.
+/**
+ * Closes a dialog and puts the keyboard back in the text, at once, before the text changes.
+ * Otherwise focus comes back a moment after the dialog closes, with the cursor where it was
+ * before the dialog opened, and the first letters typed in that moment don't end up where
+ * the cursor then goes: "Next line" became "xt line". Until Tiptap 3.33, drawing an inserted
+ * button or picture happened to close the dialog early enough. Only call this from an event,
+ * like a click: React can't close anything while it's drawing.
+ */
+function backToText(editor: Editor, close: () => void): void {
+  flushSync(close);
+  editor.view.focus();
+}
+
 const toolClass =
   "inline-flex min-h-11 min-w-11 items-center justify-center rounded px-2 hover:bg-ink/10 focus-visible:outline-3 focus-visible:outline-brand aria-disabled:opacity-40 aria-pressed:bg-ink aria-pressed:text-paper";
 
@@ -683,7 +697,9 @@ export function BodyEditor({
 
   function insertPicked(item: MediaItem) {
     const use = picking?.use;
-    setPicking(null);
+    // A section's picture hands focus back to whatever chose it, as the picker does.
+    if (use) setPicking(null);
+    else backToText(editor, () => setPicking(null));
     if (!item.alt && !item.decorative) setDescribing((current) => current ?? item.id);
     if (use) {
       use(item.id);
@@ -691,7 +707,6 @@ export function BodyEditor({
     }
     editor
       .chain()
-      .focus()
       .insertContent({ type: "image", attrs: { mediaId: item.id } })
       .run();
     leaveRoomToType(false);
@@ -799,8 +814,7 @@ export function BodyEditor({
   );
 
   function closeAsk() {
-    setAsk(null);
-    editor.commands.focus();
+    backToText(editor, () => setAsk(null));
   }
 
   /** The dialog hands focus back to the Edit button, so the page stays where it is. */
@@ -823,24 +837,18 @@ export function BodyEditor({
             ? {}
             : {
                 onFiles: (files: File[]) => {
-                  setPicking(null);
+                  backToText(editor, () => setPicking(null));
                   insertUploads(files, editor.state.selection.from);
                 },
               })}
-          onClose={() => {
-            setPicking(null);
-            editor.commands.focus();
-          }}
+          onClose={() => backToText(editor, () => setPicking(null))}
         />
       )}
       {describing && (
         <DescribeImage
           key={describing}
           mediaId={describing}
-          onClose={() => {
-            setDescribing(null);
-            editor.commands.focus();
-          }}
+          onClose={() => backToText(editor, () => setDescribing(null))}
         />
       )}
       {ask?.kind === "link" && (
@@ -851,13 +859,13 @@ export function BodyEditor({
           onRemove={
             ask.canRemove
               ? () => {
-                  setAsk(null);
-                  editor.chain().focus().extendMarkRange("link").unsetLink().run();
+                  backToText(editor, () => setAsk(null));
+                  editor.chain().extendMarkRange("link").unsetLink().run();
                 }
               : undefined
           }
           onSubmit={({ href, title }) => {
-            setAsk(null);
+            backToText(editor, () => setAsk(null));
             if (editor.state.selection.empty && !editor.isActive("link")) {
               // Nothing selected, so the link brings its own words. Never an internal ID.
               const words = href.startsWith("entry:")
@@ -865,7 +873,6 @@ export function BodyEditor({
                 : href.replace(/^(?:mailto:|tel:|https?:\/\/)/, "");
               editor
                 .chain()
-                .focus()
                 .insertContent({
                   type: "text",
                   text: words,
@@ -873,7 +880,7 @@ export function BodyEditor({
                 })
                 .run();
             } else {
-              editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
+              editor.chain().extendMarkRange("link").setLink({ href }).run();
             }
           }}
         />
@@ -885,11 +892,10 @@ export function BodyEditor({
           label=""
           onClose={closeAsk}
           onSubmit={({ href, label }) => {
-            setAsk(null);
+            backToText(editor, () => setAsk(null));
             // With a new line after it, so typing carries on rather than landing on the button.
             editor
               .chain()
-              .focus()
               .insertContent([{ type: "button", attrs: { href, label } }, { type: "paragraph" }])
               .run();
           }}
@@ -903,12 +909,12 @@ export function BodyEditor({
           onClose={closeButtonAsk}
           onRemove={() => {
             const { position } = ask;
-            setAsk(null);
+            // The Edit button goes with the button, so the keyboard goes back to the text.
+            backToText(editor, () => setAsk(null));
             const node = editor.state.doc.nodeAt(position);
             if (node) {
               editor
                 .chain()
-                .focus()
                 .deleteRange({ from: position, to: position + node.nodeSize })
                 .run();
             }
