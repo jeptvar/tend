@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";
 import { describe, expect, test } from "vitest";
@@ -280,6 +280,34 @@ describe("serving pictures", () => {
     parts[3] = "000000000000";
     expect((await made.app.request(parts.join("/"))).status).toBe(302);
     expect((await made.app.request("/media/not-an-id/x/480.webp")).status).toBe(404);
+  });
+
+  test("a size that's gone is made again from the original, as after a restore", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const uploaded = await withPicture(owner);
+    const url: string = uploaded.srcset.split(", ")[1].split(" ")[0];
+    expect(url).toMatch(/\/960\.webp$/);
+    const before = Buffer.from(await (await made.app.request(url)).arrayBuffer());
+    // Backups leave the sizes out, so after a restore there are none.
+    const variants = join(made.uploadsDir, "variants");
+    rmSync(variants, { recursive: true, force: true });
+
+    // Two visitors at once: it's made once, and both get it.
+    const [first, second] = await Promise.all([made.app.request(url), made.app.request(url)]);
+    for (const served of [first, second]) {
+      expect(served.status).toBe(200);
+      expect(served.headers.get("content-type")).toBe("image/webp");
+      // From the same original, made the same way, so it's the very file it was.
+      expect(Buffer.from(await served.arrayBuffer()).equals(before)).toBe(true);
+    }
+    // And kept, so the next visitor doesn't wait for it.
+    const kept = readdirSync(variants, { recursive: true }).map(String);
+    expect(kept.filter((name) => name.endsWith("960.webp"))).toHaveLength(1);
+
+    // With the original gone as well, there's nothing to make it from.
+    rmSync(join(made.uploadsDir, "originals"), { recursive: true, force: true });
+    expect((await made.app.request(url.replace("/960.webp", "/480.webp"))).status).toBe(404);
   });
 
   test("replacing a picture keeps its place, and old addresses lead to the new one", async () => {
