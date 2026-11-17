@@ -170,6 +170,8 @@ async function adminScreens(page: Page, site: Site): Promise<[string, string][]>
     ["settings: search and social", "/admin/settings/search"],
     ["settings: advanced", "/admin/settings/advanced"],
     ["settings: backups", "/admin/settings/backups"],
+    ["people", "/admin/people"],
+    ["account", "/admin/account"],
   ];
 }
 
@@ -205,6 +207,33 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Restore this backup" }).click();
       await expect(page.getByText("Choose your backup file.")).toBeVisible();
       await expectNoViolations(page, "start from a backup, with an error showing");
+    });
+
+    test("screens for getting in have no accessibility violations", async ({
+      page,
+      browser,
+      signedIn,
+    }) => {
+      const reply = await page.request.post(`${signedIn.base}/api/admin/people/invites`, {
+        data: { email: "ed@example.com", role: "editor" },
+      });
+      const { token } = await reply.json();
+      const context = await browser.newContext({ colorScheme });
+      const visitor = await context.newPage();
+      await visitor.goto(`${signedIn.base}/admin/invite#${token}`);
+      await expect(visitor.getByRole("heading", { name: "Join Rise Bakery" })).toBeVisible();
+      await expectNoViolations(visitor, "accepting an invite");
+      await visitor.goto(`${signedIn.base}/admin/login/forgot`);
+      await expect(visitor.getByRole("link", { name: "Use a recovery code" })).toBeVisible();
+      await expectNoViolations(visitor, "forgot password");
+      await visitor.getByRole("link", { name: "Use a recovery code" }).click();
+      await visitor.getByRole("button", { name: "Continue" }).click();
+      await expect(visitor.getByText("Type your email address.")).toBeVisible();
+      await expectNoViolations(visitor, "recovery code, with an error showing");
+      await visitor.goto(`${signedIn.base}/admin/reset#not-a-real-link-at-all`);
+      await expect(visitor.getByRole("heading", { name: "This link can't be used" })).toBeVisible();
+      await expectNoViolations(visitor, "a link that can't be used");
+      await context.close();
     });
 
     test("admin screens have no accessibility violations", async ({ page, signedIn }) => {
