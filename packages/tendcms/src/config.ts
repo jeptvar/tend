@@ -143,7 +143,8 @@ function parseTrustProxy(value: string | undefined, platform: Platform): number 
   return hops;
 }
 
-function isLocalAddress(url: string): boolean {
+/** Whether an address only reaches this computer. */
+export function isLocalAddress(url: string): boolean {
   const { hostname } = new URL(url);
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }

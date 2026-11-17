@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { expect, OWNER, photo, test, upload } from "./fixtures.ts";
+import { expect, OWNER, photo, signIn, test, upload } from "./fixtures.ts";
 
 // J10 (PLAN.md): moving a site. A backup downloaded from one site starts another, at another
 // address, with everything in it, and nothing on the new site names the old address.
@@ -88,4 +88,31 @@ test("a backup moves a site to a new address: its pages, pictures and sign-ins",
   const sitemap = await (await page.request.get(`${base}/sitemap.xml`)).text();
   expect(sitemap).toContain(`<loc>${base}/blog/fresh-loaves</loc>`);
   expect(sitemap).not.toContain("localhost");
+});
+
+test("a site that's online is asked once whether the address it's at is its own", async ({
+  page,
+  signedIn,
+}) => {
+  // Browsers send any name under .localhost to this computer, and the admin doesn't count
+  // one as local, so here the site looks online.
+  const base = signedIn.base.replace("//localhost:", "//rise.localhost:");
+  await signIn(page, { ...signedIn, base }, "/admin/login");
+  const question = page.getByRole("region", { name: "Your site's address" });
+  await expect(question).toContainText(`Your site is now at ${base}. Use this address?`);
+  // Until it's confirmed, each page names the address it was asked for.
+  const before = await (await page.request.get(`${signedIn.base}/`)).text();
+  expect(before).toContain(`<link rel="canonical" href="${signedIn.base}/">`);
+
+  await question.getByRole("button", { name: "Use this address" }).click();
+  await expect(question.getByRole("status")).toHaveText(
+    `Done. Links to your site now use ${base}.`,
+  );
+  await expect(question.getByRole("heading")).toBeFocused();
+  // Every page names it now, whatever address it's asked for, and it isn't asked again.
+  const after = await (await page.request.get(`${signedIn.base}/`)).text();
+  expect(after).toContain(`<link rel="canonical" href="${base}/">`);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(question).toBeHidden();
 });

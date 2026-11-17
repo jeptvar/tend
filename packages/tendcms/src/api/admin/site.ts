@@ -74,6 +74,11 @@ const redirectSchema = z.object({
   to: z.string().max(2048, "That address is too long: use a shorter one."),
 });
 
+/** The address the admin is open at, as the browser names it: scheme, host and port. */
+const addressSchema = z.object({
+  address: z.string().max(2048, "That address is too long."),
+});
+
 function unknownSetting(): ApiError {
   return new ApiError(404, "not_found", "There's no setting by that name.");
 }
@@ -160,6 +165,46 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
     });
     if (saved) options.onSiteChanged();
     return c.json({ ...(await settingJson(name)), saved });
+  });
+
+  // The site's address (PLAN.md J10). Until it's known, links follow the address each page
+  // was asked for. Overview asks whether the one the admin is open at is the site's, and
+  // only that one can be confirmed: the browser names it in Origin, which reached Tend
+  // through Host, so it's an address that leads here.
+  route("post", "/address", "settings:manage", async (c, user) => {
+    const { address } = parseBody(addressSchema, await readJson(c));
+    if (options.publicUrl) {
+      throw new ApiError(409, "address_set", "This site's address is already set.", {
+        fix: `It's ${options.publicUrl}, set where Tend runs.`,
+      });
+    }
+    const origin = c.req.header("origin");
+    const host = c.req.header("host");
+    let opened: URL | undefined;
+    try {
+      opened = origin ? new URL(origin) : undefined;
+    } catch {
+      opened = undefined;
+    }
+    if (
+      !opened ||
+      opened.origin !== address ||
+      opened.host !== host ||
+      !["http:", "https:"].includes(opened.protocol)
+    ) {
+      throw new ApiError(400, "address_mismatch", "That isn't the address this page is open at.", {
+        fix: "Open Overview at your site's address, then try again. If Tend is behind a proxy, set TEND_PUBLIC_URL instead.",
+      });
+    }
+    const site = (await getSetting(orm, "site")) as SiteSettings;
+    await writeSetting(orm, {
+      key: "site",
+      value: { ...site, address: opened.origin, address_confirmed: true },
+      userId: user.id,
+      now: now(),
+    });
+    options.onSiteChanged();
+    return c.json({ address: opened.origin });
   });
 
   route("post", "/settings/:key/undo", "settings:manage", async (c, user) => {

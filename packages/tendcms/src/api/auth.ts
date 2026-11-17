@@ -20,6 +20,7 @@ import { AccountBackoff, TokenBuckets, WorkGate } from "../auth/ratelimit.ts";
 import { completeSetup, loadStarter, SetupClosedError } from "../auth/setup.ts";
 import { type SetupCodeSource, setupCodeMatches } from "../auth/setup-code.ts";
 import type { RestoreTarget } from "../backups/restore.ts";
+import { isLocalAddress } from "../config.ts";
 import { isLocale } from "../content/settings.ts";
 import type { Orm } from "../db/client.ts";
 import {
@@ -50,6 +51,8 @@ export interface AuthOptions extends SetupCodeSource {
   onSiteChanged: () => void;
   /** Whether the site has a real public address. */
   isPublic: boolean;
+  /** The address pages name as their own, when it's known for sure. See Config.siteUrl. */
+  siteUrl?: string | undefined;
   /** The data folder, which Start from a backup restores into. Absent in some tests. */
   dataFolder?: RestoreTarget | undefined;
 }
@@ -407,11 +410,14 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     const user = await requireUser(c);
     const site = await getSetting(orm, "site");
     const setup = await getSetting(orm, "setup");
+    const confirmed = site?.address_confirmed && site.address ? site.address : undefined;
     return c.json({
       user: publicUser(user),
       site: { name: site?.name ?? "", tagline: site?.tagline ?? "" },
       starter: setup?.starter ?? null,
-      siteIsPublic: options.isPublic,
+      siteIsPublic: options.isPublic || Boolean(confirmed && !isLocalAddress(confirmed)),
+      // Until it's known, Overview asks whether the address in the browser is the site's.
+      addressKnown: Boolean(options.siteUrl ?? confirmed),
     });
   });
 

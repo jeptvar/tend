@@ -25,8 +25,6 @@ export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDi
   backupsDir?: string | undefined;
   pageCacheBytes: number;
   watchTheme?: boolean;
-  /** The address pages name as their own, when it's known for sure. See Config.siteUrl. */
-  siteUrl?: string | undefined;
   /** How long an upload can send nothing before Tend gives up on it. Tests make it short. */
   uploadIdleMs?: number;
   /** See SiteOptions.onBackgroundWork: tests wait for it rather than for a guessed time. */

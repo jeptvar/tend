@@ -147,6 +147,7 @@ const WHO: Record<string, Who> = {
   "GET /settings/:key": "admins",
   "PUT /settings/:key": "admins",
   "POST /settings/:key/undo": "admins",
+  "POST /address": "admins",
   "GET /menus": "editors",
   "PUT /menus/:name": "editors",
   "POST /menus/:name/undo": "editors",

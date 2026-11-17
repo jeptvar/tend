@@ -1139,3 +1139,60 @@ describe("fixes from review", () => {
     expect(menus.main.items).toHaveLength(30);
   });
 });
+
+describe("the site's address (PLAN.md J10)", () => {
+  // Where the admin is open, as the browser says when it sends a change.
+  const AT = {
+    Origin: "https://rise.example.com",
+    Host: "rise.example.com",
+    "Sec-Fetch-Site": "same-origin",
+  };
+
+  test("is confirmed from the address the admin is open at, and then names every page", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const me = async () => (await owner.get("/api/auth/me")).json();
+    expect(await me()).toMatchObject({ addressKnown: false, siteIsPublic: false });
+    // Until then, each page names the address it was asked for.
+    expect((await page(made, "http://other.example.net/")).html).toContain(
+      'rel="canonical" href="http://other.example.net/"',
+    );
+
+    // Only the address the admin is open at, and only if that's how the request arrived.
+    const elsewhere = await owner.post(
+      "/api/admin/address",
+      { address: "https://elsewhere.example.com" },
+      AT,
+    );
+    expect(elsewhere.status).toBe(400);
+    expect((await elsewhere.json()).error.code).toBe("address_mismatch");
+    const throughProxy = await owner.post(
+      "/api/admin/address",
+      { address: AT.Origin },
+      { ...AT, Host: "127.0.0.1:3000" },
+    );
+    expect(throughProxy.status).toBe(400);
+
+    const confirmed = await owner.post("/api/admin/address", { address: AT.Origin }, AT);
+    expect(confirmed.status).toBe(200);
+    expect(await confirmed.json()).toEqual({ address: "https://rise.example.com" });
+    expect(await me()).toMatchObject({ addressKnown: true, siteIsPublic: true });
+    // Every page names it now, whichever address it was asked for.
+    expect((await page(made, "http://other.example.net/")).html).toContain(
+      'rel="canonical" href="https://rise.example.com/"',
+    );
+    // Changing the site's name later keeps it.
+    const general = await (await owner.get("/api/admin/settings/general")).json();
+    await owner.put("/api/admin/settings/general", { ...general.value, name: "Rise" });
+    expect(await me()).toMatchObject({ addressKnown: true });
+  });
+
+  test("isn't asked about when it's set where Tend runs", async () => {
+    const made = await makeApp({ siteUrl: "https://rise.up.railway.app" });
+    const owner = await setUp(made);
+    expect(await (await owner.get("/api/auth/me")).json()).toMatchObject({ addressKnown: true });
+    const reply = await owner.post("/api/admin/address", { address: AT.Origin }, AT);
+    expect(reply.status).toBe(409);
+    expect((await reply.json()).error.code).toBe("address_set");
+  });
+});
