@@ -2,7 +2,14 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test as base, expect, type Locator, type Page } from "@playwright/test";
+import {
+  type APIRequestContext,
+  type APIResponse,
+  test as base,
+  expect,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 
 export { expect };
 
@@ -72,7 +79,34 @@ function stopped(child: ChildProcess, signal: NodeJS.Signals): Promise<unknown> 
   return exited;
 }
 
+type SendOptions = { headers?: Record<string, string> };
+
+/**
+ * Makes each request a test sends close its connection once it's answered. Playwright keeps an
+ * idle connection with no time limit, while a Node server like Tend's says it keeps one for
+ * 5 s and closes it after 6 (keepAliveTimeout plus keepAliveTimeoutBuffer). A request sent on
+ * it just as it closes is reset: "read ECONNRESET".
+ */
+function closeAfterEachAnswer(request: APIRequestContext): void {
+  for (const name of ["get", "head", "post", "put", "patch", "delete", "fetch"] as const) {
+    const send = request[name].bind(request) as (
+      url: unknown,
+      options?: SendOptions,
+    ) => Promise<APIResponse>;
+    Object.assign(request, {
+      [name]: (url: unknown, options?: SendOptions) =>
+        send(url, { ...options, headers: { connection: "close", ...options?.headers } }),
+    });
+  }
+}
+
 export const test = base.extend<{ site: Site; signedIn: Site }>({
+  // Every page in a test shares its context's request, so this covers them all.
+  page: async ({ page }, use) => {
+    closeAfterEachAnswer(page.request);
+    await use(page);
+  },
+
   // biome-ignore lint/correctness/noEmptyPattern: Playwright reads this argument's shape
   site: async ({}, use) => {
     const dataDir = mkdtempSync(join(tmpdir(), "tend-e2e-"));
