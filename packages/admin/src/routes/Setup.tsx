@@ -28,6 +28,7 @@ import {
   type SetupStatus,
   useSetupStatus,
 } from "../lib/queries.ts";
+import { holdFreshKit } from "../lib/recovery-kit.ts";
 import { type Starter, useSetup } from "../lib/setup-state.tsx";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -470,7 +471,7 @@ export function SetupStart() {
 
   const finish = useMutation({
     mutationFn: async () => {
-      await api("/auth/setup", {
+      const { recoveryCodes } = await api<{ recoveryCodes: string[] }>("/auth/setup", {
         method: "POST",
         body: {
           code: setup.code,
@@ -484,10 +485,13 @@ export function SetupStart() {
         },
       });
       await confirmSignedIn(queryClient, intl.formatMessage({ id: "auth.cookieRefused" }));
+      return recoveryCodes;
     },
-    onSuccess: () => {
+    onSuccess: (recoveryCodes) => {
+      // The Owner's recovery kit comes first, shown this once (J7), then Overview.
+      holdFreshKit(recoveryCodes, "/");
       // Navigate first: updating this would otherwise send the gate above elsewhere.
-      navigate("/", { replace: true });
+      navigate("/account", { replace: true });
       queryClient.setQueryData<SetupStatus>(SETUP_STATUS_KEY, (status) =>
         status ? { ...status, needsSetup: false } : status,
       );

@@ -45,6 +45,7 @@ const NAV: { href: string; id: string; roles?: string[] }[] = [
   { href: "/media", id: "nav.media" },
   { href: "/menu", id: "nav.menu", roles: ["admin", "editor"] },
   { href: "/design", id: "nav.design", roles: ["admin"] },
+  { href: "/people", id: "nav.people", roles: ["admin"] },
   { href: "/settings", id: "nav.settings", roles: ["admin"] },
 ];
 
@@ -106,7 +107,7 @@ export function AdminLayout({
   return (
     <div className="min-h-dvh">
       <title>{intl.formatMessage({ id: `${screen}.pageTitle` })}</title>
-      <header className="border-b border-ink/10">
+      <header className="border-b border-ink/10 print:hidden">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2">
           <nav aria-label={intl.formatMessage({ id: "nav.label" })}>
             <ul className="-ml-2 flex flex-wrap items-center">
@@ -133,6 +134,13 @@ export function AdminLayout({
             <span className="px-2 text-sm text-muted">
               <FormattedMessage id="nav.signedInAs" values={{ name: me.user.name }} />
             </span>
+            <Link
+              href="/account"
+              aria-current={location === "/account" ? "page" : undefined}
+              className={`${navLinkClass} ${location === "/account" ? "font-semibold" : "text-muted"}`}
+            >
+              <FormattedMessage id="nav.account" />
+            </Link>
             <a href="/" target="_blank" rel="noopener" className={`${navLinkClass} text-brand`}>
               <FormattedMessage id="nav.viewSite" />
             </a>
