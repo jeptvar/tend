@@ -7,6 +7,7 @@ import { generatePassword, hashPassword } from "./auth/passwords.ts";
 import { displaySetupCode } from "./auth/setup-code.ts";
 import { backupFileName } from "./backups/format.ts";
 import { BackupError, checkBackup, restoreBackup } from "./backups/restore.ts";
+import { takeDailySnapshot } from "./backups/snapshots.ts";
 import { writeBackup } from "./backups/write.ts";
 import {
   type Config,
@@ -193,7 +194,7 @@ async function backup(file: string | undefined): Promise<void> {
           db,
           backupsDir: config.backupsDir,
           uploadsDir: config.uploadsDir,
-          secretKeyPath: config.secretKeyPath,
+          secretKey: readSecretKey(config),
           appVersion,
           site,
         },
@@ -242,6 +243,7 @@ async function restore(file: string | undefined): Promise<void> {
 }
 
 const HOUR_MS = 60 * 60 * 1000;
+const SNAPSHOT_CHECK_MS = 10 * 60 * 1000;
 
 async function start(): Promise<void> {
   const config = loadConfig();
@@ -304,6 +306,7 @@ async function start(): Promise<void> {
     trustProxy: config.trustProxy,
     themeDir: defaultThemeDir,
     uploadsDir: config.uploadsDir,
+    backupsDir: config.backupsDir,
     pageCacheBytes: config.pageCacheBytes,
     watchTheme: true,
     siteUrl: config.siteUrl,
@@ -325,6 +328,34 @@ async function start(): Promise<void> {
   };
   tidyUp();
   setInterval(tidyUp, HOUR_MS).unref();
+
+  // A copy of the site's data each day at 03:00 its time (PLAN.md §13). Looked at often, so
+  // it's made soon after, and soon after Tend starts if it wasn't running then.
+  const openDb = db;
+  let snapshotting = false;
+  const snapshotIfDue = async () => {
+    if (snapshotting) return;
+    snapshotting = true;
+    try {
+      // Until setup, there's no site to keep a copy of.
+      const site = await getSetting(orm, "site");
+      if (!site) return;
+      const made = await takeDailySnapshot({
+        db: openDb,
+        dbPath: config.dbPath,
+        backupsDir: config.backupsDir,
+        timeZone: site.timezone,
+        now: Date.now(),
+      });
+      if (made) console.log(`Saved today's copy of the site's data: ${made.id}.db.gz`);
+    } catch (error) {
+      console.error(`Couldn't save today's copy of the site's data: ${(error as Error).message}`);
+    } finally {
+      snapshotting = false;
+    }
+  };
+  void snapshotIfDue();
+  setInterval(() => void snapshotIfDue(), SNAPSHOT_CHECK_MS).unref();
 
   const ports = portsToTry(config);
   listening = await listen(app.fetch, ports, config.hosts);

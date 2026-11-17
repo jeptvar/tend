@@ -15,6 +15,11 @@ import sharp from "sharp";
 import { describe, expect, test } from "vitest";
 import { backupFileName } from "../src/backups/format.ts";
 import { BackupError, checkBackup, restoreBackup } from "../src/backups/restore.ts";
+import {
+  dailySnapshotDue,
+  snapshotsToRemove,
+  takeDailySnapshot,
+} from "../src/backups/snapshots.ts";
 import { writeBackup } from "../src/backups/write.ts";
 import { migrate } from "../src/db/migrate.ts";
 import { migrationsDir } from "../src/paths.ts";
@@ -25,12 +30,13 @@ import {
   makeApp,
   OWNER_EMAIL,
   setUp,
+  signedInAs,
 } from "./auth-helpers.ts";
 import { tempDir } from "./helpers.ts";
 
 const NEWEST = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).length;
 
-/** A site with a picture, set up the way an owner would, with its key on disk. */
+/** A site with a picture, set up the way an owner would. */
 async function siteWithPicture() {
   const made = await makeApp();
   const owner = await setUp(made);
@@ -41,8 +47,7 @@ async function siteWithPicture() {
     .toBuffer();
   const reply = await owner.upload("/api/admin/media", png, "Sunny day.png");
   expect(reply.status).toBe(201);
-  writeFileSync(join(made.root, "secret.key"), made.secretKey);
-  return { made, uploaded: await reply.json() };
+  return { made, owner, uploaded: await reply.json() };
 }
 
 async function backUp(made: MadeApp): Promise<string> {
@@ -52,7 +57,7 @@ async function backUp(made: MadeApp): Promise<string> {
       db: made.db,
       backupsDir: join(made.root, "backups"),
       uploadsDir: made.uploadsDir,
-      secretKeyPath: join(made.root, "secret.key"),
+      secretKey: made.secretKey,
       appVersion: "test",
       site: "Rise Bakery",
     },
@@ -254,5 +259,124 @@ describe("a backup is checked before anything is restored", () => {
     const zip = join(tempDir(), "notes.zip");
     writeFileSync(zip, "These are my notes, not a backup.");
     expect(await refusal(zip)).toMatch(/isn't a Tend backup/);
+  });
+});
+
+describe("Settings → Backups", () => {
+  test("the Owner downloads the whole site, as a private zip that restores", async () => {
+    const { made, owner } = await siteWithPicture();
+    const reply = await owner.get("/api/admin/backups/download");
+    expect(reply.status).toBe(200);
+    expect(reply.headers.get("content-type")).toBe("application/zip");
+    expect(reply.headers.get("content-disposition")).toMatch(
+      /^attachment; filename="rise-bakery-backup-PRIVATE-\d{4}-\d{2}-\d{2}\.zip"$/,
+    );
+    const zip = join(tempDir(), "downloaded.zip");
+    writeFileSync(zip, await reply.bytes());
+    const { checked } = await restoreInto(zip);
+    expect(checked.manifest.site).toBe("Rise Bakery");
+    expect(checked.manifest.files).toHaveLength(3);
+    // Counted once the last of it has gone, for the reminder on Overview.
+    await expect
+      .poll(async () => (await (await owner.get("/api/admin/backups")).json()).lastDownloadAt)
+      .toBe(made.clock.time);
+  });
+
+  test("only the Owner can download one, and only from the admin itself", async () => {
+    const { made, owner } = await siteWithPicture();
+    const { client: admin } = await signedInAs(made, "admin");
+    expect((await admin.get("/api/admin/backups/download")).status).toBe(403);
+    // An Admin still sees the copies kept here, and the disk.
+    expect((await admin.get("/api/admin/backups")).status).toBe(200);
+    // A link on another site can't make the server start one.
+    const foreign = await owner.get("/api/admin/backups/download", {
+      "Sec-Fetch-Site": "cross-site",
+    });
+    expect(foreign.status).toBe(403);
+    expect((await foreign.json()).error.code).toBe("foreign_request");
+  });
+
+  test("lists the copies kept here and the space on the disk", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const takenAt = Date.parse("2027-11-21T04:00:00Z");
+    await takeDailySnapshot({
+      db: made.db,
+      dbPath: join(made.root, "tend.db"),
+      backupsDir: join(made.root, "backups"),
+      timeZone: "UTC",
+      now: takenAt,
+    });
+    const info = await (await owner.get("/api/admin/backups")).json();
+    expect(info.snapshots).toEqual([
+      { id: "daily-20271121T040000.000Z", kind: "daily", takenAt, bytes: expect.any(Number) },
+    ]);
+    expect(info.disk.free).toBeGreaterThan(0);
+    expect(info.disk.total).toBeGreaterThan(info.disk.free);
+    expect(info.lastDownloadAt).toBeNull();
+  });
+});
+
+describe("daily copies", () => {
+  const at = (iso: string) => Date.parse(iso);
+
+  test("one a day, from 03:00 where the site is", () => {
+    // Manila is UTC+8 all year.
+    const manila = "Asia/Manila";
+    expect(dailySnapshotDue([], at("2027-11-20T18:30:00Z"), manila)).toBe(false);
+    expect(dailySnapshotDue([], at("2027-11-20T19:30:00Z"), manila)).toBe(true);
+    // Made at 03:05 there, so not again that day.
+    expect(dailySnapshotDue([at("2027-11-20T19:05:00Z")], at("2027-11-20T23:00:00Z"), manila)).toBe(
+      false,
+    );
+    // One from the evening before is yesterday's.
+    expect(dailySnapshotDue([at("2027-11-20T12:00:00Z")], at("2027-11-20T19:30:00Z"), manila)).toBe(
+      true,
+    );
+    // A time zone Tend can't use counts as UTC.
+    expect(dailySnapshotDue([], at("2027-11-21T03:30:00Z"), "Not/A_Zone")).toBe(true);
+    expect(dailySnapshotDue([], at("2027-11-21T02:30:00Z"), "Not/A_Zone")).toBe(false);
+  });
+
+  test("a week of daily copies and four weekly ones, in no more than a fifth of the disk", () => {
+    const day = 24 * 60 * 60 * 1000;
+    // Day 0 is a Monday.
+    const daily = Array.from({ length: 60 }, (_, index) => ({
+      id: `daily-${index}`,
+      kind: "daily" as const,
+      takenAt: at("2027-01-04T03:00:00Z") + index * day,
+      bytes: 1000,
+    }));
+    const keptOn = (diskBytes: number) => {
+      const removed = new Set(snapshotsToRemove(daily, diskBytes).map((each) => each.id));
+      return daily.filter((each) => !removed.has(each.id)).map((each) => each.id);
+    };
+    // Days 53 to 59, then the newest of each of the four weeks before (Sundays: 48, 41, 34, 27).
+    const expected = [27, 34, 41, 48, 53, 54, 55, 56, 57, 58, 59].map((index) => `daily-${index}`);
+    expect(keptOn(1_000_000)).toEqual(expected);
+    // A fifth of 50 kB is 10 kB, so the oldest goes.
+    expect(keptOn(50_000)).toEqual(expected.slice(1));
+    // However small the disk, the newest stays.
+    expect(keptOn(1000)).toEqual(["daily-59"]);
+  });
+
+  test("today's copy is made once, checked, and opens as the site's data", async () => {
+    const made = await makeApp();
+    await setUp(made);
+    const options = {
+      db: made.db,
+      dbPath: join(made.root, "tend.db"),
+      backupsDir: join(made.root, "backups"),
+      timeZone: "UTC",
+      now: at("2027-11-21T03:10:00Z"),
+    };
+    const first = await takeDailySnapshot(options);
+    expect(first?.id).toBe("daily-20271121T031000.000Z");
+    expect(await takeDailySnapshot({ ...options, now: options.now + 60_000 })).toBeUndefined();
+    // Nothing else is left behind: checking the copy opened it, which makes a -wal and -shm.
+    expect(readdirSync(options.backupsDir)).toEqual([`${first?.id}.db.gz`]);
+    const copy = join(tempDir(), "copy.db");
+    writeFileSync(copy, gunzipSync(readFileSync(join(options.backupsDir, `${first?.id}.db.gz`))));
+    expect(siteName(copy)).toBe("Rise Bakery");
   });
 });

@@ -169,6 +169,7 @@ async function adminScreens(page: Page, site: Site): Promise<[string, string][]>
     ["settings: business details", "/admin/settings/business"],
     ["settings: search and social", "/admin/settings/search"],
     ["settings: advanced", "/admin/settings/advanced"],
+    ["settings: backups", "/admin/settings/backups"],
   ];
 }
 

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
-import { FormattedMessage, useIntl } from "react-intl";
+import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useParams } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import {
@@ -16,6 +16,9 @@ import { useMediaItems } from "../lib/media.ts";
 import { ME_KEY, type Me } from "../lib/queries.ts";
 import { settleScreenDraft, useScreenDraft } from "../lib/screen-drafts.ts";
 import {
+  BACKUP_DOWNLOAD_URL,
+  BACKUPS_KEY,
+  type BackupsInfo,
   type Business,
   type CodeSettings,
   DAYS,
@@ -28,7 +31,7 @@ import {
   type Visibility,
 } from "../lib/site.ts";
 
-const SECTIONS = ["general", "business", "search", "advanced"] as const;
+const SECTIONS = ["general", "business", "search", "advanced", "backups"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const inputClass =
@@ -778,6 +781,164 @@ function AdvancedSection() {
   );
 }
 
+const BYTE_UNITS = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"] as const;
+
+/** A size the way phones and computers show it, in the site's language: 2.4 GB. */
+function bytesText(intl: ReturnType<typeof useIntl>, bytes: number): string {
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1000 && unit < BYTE_UNITS.length - 1) {
+    value /= 1000;
+    unit++;
+  }
+  return intl.formatNumber(value, {
+    style: "unit",
+    unit: BYTE_UNITS[unit],
+    unitDisplay: "short",
+    maximumFractionDigits: unit > 0 && value < 10 ? 1 : 0,
+  });
+}
+
+/** Space used before the disk counts as running low, then as nearly full (PLAN.md §13). */
+const LOW_DISK = 0.8;
+const VERY_LOW_DISK = 0.9;
+
+/**
+ * Settings → Backups (PLAN.md §13): the whole site as one private download, the copies Tend
+ * keeps on this server, and how much space is left on it.
+ */
+function BackupsSection({ me }: { me: Me }) {
+  const intl = useIntl();
+  const downloadId = useId();
+  const diskId = useId();
+  const copiesId = useId();
+  const query = useQuery({
+    queryKey: BACKUPS_KEY,
+    queryFn: () => api<BackupsInfo>("/admin/backups"),
+  });
+  if (query.error) {
+    return (
+      <p role="alert" className="font-medium text-danger">
+        {errorText(query.error, intl.formatMessage({ id: "offline.body" }))}
+      </p>
+    );
+  }
+  if (!query.data) {
+    return (
+      <Loading>
+        <FormattedMessage id="common.loading" />
+      </Loading>
+    );
+  }
+  const { snapshots, disk, lastDownloadAt } = query.data;
+  const used = Math.max(0, disk.total - disk.free);
+  const share = disk.total > 0 ? used / disk.total : 0;
+  return (
+    <div className="grid gap-10">
+      <section aria-labelledby={downloadId} className="grid gap-3">
+        <h2 id={downloadId} className="text-xl font-semibold">
+          <FormattedMessage id="backups.download.heading" />
+        </h2>
+        <p>
+          <FormattedMessage id="backups.download.body" />
+        </p>
+        <p className="rounded-lg border border-danger p-3">
+          <FormattedMessage id="backups.download.private" />
+        </p>
+        {me.user.isOwner ? (
+          <div>
+            <a
+              href={BACKUP_DOWNLOAD_URL}
+              download
+              className={`${primaryButtonClass} inline-flex items-center`}
+            >
+              <FormattedMessage id="backups.download.button" />
+            </a>
+          </div>
+        ) : (
+          <p className="text-muted">
+            <FormattedMessage id="backups.download.ownerOnly" />
+          </p>
+        )}
+        <p className="text-muted">
+          {lastDownloadAt === null ? (
+            <FormattedMessage id="backups.download.never" />
+          ) : (
+            <FormattedMessage
+              id="backups.download.last"
+              values={{ date: <FormattedDate value={lastDownloadAt} dateStyle="long" /> }}
+            />
+          )}
+        </p>
+      </section>
+
+      <section aria-labelledby={diskId} className="grid gap-3">
+        <h2 id={diskId} className="text-xl font-semibold">
+          <FormattedMessage id="backups.disk.heading" />
+        </h2>
+        {/* The sentence below says the same, so the bar is only for the eye. */}
+        <div aria-hidden="true" className="h-3 w-full overflow-hidden rounded bg-muted/30">
+          <div
+            className={`h-full ${share >= LOW_DISK ? "bg-danger" : "bg-brand"}`}
+            style={{ width: `${Math.round(share * 100)}%` }}
+          />
+        </div>
+        <p>
+          <FormattedMessage
+            id="backups.disk.used"
+            values={{
+              used: bytesText(intl, used),
+              total: bytesText(intl, disk.total),
+              percent: intl.formatNumber(share, { style: "percent" }),
+            }}
+          />
+        </p>
+        {share >= LOW_DISK && (
+          <p className="font-medium text-danger">
+            <FormattedMessage
+              id={share >= VERY_LOW_DISK ? "backups.disk.veryLow" : "backups.disk.low"}
+            />
+          </p>
+        )}
+      </section>
+
+      <section aria-labelledby={copiesId} className="grid gap-3">
+        <h2 id={copiesId} className="text-xl font-semibold">
+          <FormattedMessage id="backups.copies.heading" />
+        </h2>
+        <p>
+          <FormattedMessage id="backups.copies.body" />
+        </p>
+        {snapshots.length === 0 ? (
+          <p className="text-muted">
+            <FormattedMessage id="backups.copies.none" />
+          </p>
+        ) : (
+          <ul className="grid gap-1">
+            {snapshots.map((snapshot) => (
+              <li key={snapshot.id}>
+                <FormattedMessage
+                  id={`backups.copies.${snapshot.kind}`}
+                  values={{
+                    date: (
+                      <FormattedDate
+                        value={snapshot.takenAt}
+                        dateStyle="medium"
+                        timeStyle="short"
+                      />
+                    ),
+                    size: bytesText(intl, snapshot.bytes),
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function SettingsScreen({ me, section }: { me: Me; section: Section }) {
   const intl = useIntl();
   return (
@@ -806,6 +967,7 @@ function SettingsScreen({ me, section }: { me: Me; section: Section }) {
         {section === "business" && <BusinessSection />}
         {section === "search" && <SearchSection />}
         {section === "advanced" && <AdvancedSection />}
+        {section === "backups" && <BackupsSection me={me} />}
       </div>
     </AdminLayout>
   );

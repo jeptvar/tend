@@ -11,6 +11,7 @@ import {
 import { basename, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
+import Database from "better-sqlite3";
 import { fsyncDir, fsyncFile } from "../durable.ts";
 import { openDatabase, type SqliteDatabase } from "./client.ts";
 
@@ -198,13 +199,15 @@ async function takeSnapshot(
 
 /**
  * Saves a gzipped copy of the database in the backups folder as `name`, made with SQLite's
- * backup API outside any transaction, so the site can keep running while it's made.
+ * backup API outside any transaction, so the site can keep running while it's made. With
+ * `check`, the copy must pass quick_check first, as the automatic daily ones must.
  */
 export async function saveSnapshot(
   db: SqliteDatabase,
   dbPath: string,
   backupsDir: string,
   name: string,
+  options: { check?: boolean } = {},
 ): Promise<string> {
   const finalPath = join(backupsDir, name);
   const rawTmp = join(backupsDir, `${SNAPSHOT_TMP_PREFIX}${name}.raw`);
@@ -218,14 +221,29 @@ export async function saveSnapshot(
   try {
     writeFileSync(rawTmp, "", { mode });
     await db.backup(rawTmp);
+    if (options.check) quickCheck(rawTmp);
     await pipeline(createReadStream(rawTmp), createGzip(), createWriteStream(gzTmp, { mode }));
     fsyncFile(gzTmp);
     renameSync(gzTmp, finalPath);
     fsyncDir(backupsDir);
   } finally {
-    for (const path of [rawTmp, `${rawTmp}-journal`, gzTmp]) rmSync(path, { force: true });
+    // The copy is in WAL mode like the database, so checking it leaves a -wal and -shm.
+    for (const path of [rawTmp, `${rawTmp}-journal`, `${rawTmp}-wal`, `${rawTmp}-shm`, gzTmp]) {
+      rmSync(path, { force: true });
+    }
   }
   return finalPath;
+}
+
+/** Throws unless a copy of the database passes quick_check. */
+export function quickCheck(path: string): void {
+  const copy = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    const result = copy.pragma("quick_check", { simple: true });
+    if (result !== "ok") throw new Error(`The copy of the site's data failed its check: ${result}`);
+  } finally {
+    copy.close();
+  }
 }
 
 function fileMode(path: string): number {

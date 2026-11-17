@@ -7,7 +7,7 @@ import { finished } from "node:stream/promises";
 import Database from "better-sqlite3";
 import { Zip, ZipDeflate } from "fflate";
 import type { SqliteDatabase } from "../db/client.ts";
-import { readSchemaVersion, SNAPSHOT_TMP_PREFIX } from "../db/migrate.ts";
+import { quickCheck, readSchemaVersion, SNAPSHOT_TMP_PREFIX } from "../db/migrate.ts";
 import {
   BACKUP_FORMAT,
   type BackupFile,
@@ -23,7 +23,7 @@ export interface BackupSource {
   db: SqliteDatabase;
   backupsDir: string;
   uploadsDir: string;
-  secretKeyPath: string;
+  secretKey: Buffer;
   appVersion: string;
   site: string;
 }
@@ -54,9 +54,8 @@ export async function writeBackup(
     await source.db.backup(copy);
     const schemaVersion = checkCopy(copy);
     const database = await zip.addFile(DATABASE_ENTRY, copy, 6);
-    const key = await zip.addFile(KEY_ENTRY, source.secretKeyPath, 6);
-    if (!database || !key) throw new Error(`There's no ${KEY_ENTRY} in the data folder.`);
-    const files: BackupFile[] = [database, key];
+    if (!database) throw new Error("The copy of the site's data went missing.");
+    const files: BackupFile[] = [database, await zip.addData(KEY_ENTRY, source.secretKey)];
     for (const name of originalsIn(source.uploadsDir)) {
       const path = join(source.uploadsDir, "originals", name);
       // One deleted forever since the list was made is no longer part of the site.
@@ -86,10 +85,9 @@ export async function writeBackup(
 
 /** The copy's schema version, once it has passed quick_check. */
 function checkCopy(path: string): number {
+  quickCheck(path);
   const copy = new Database(path, { readonly: true, fileMustExist: true });
   try {
-    const result = copy.pragma("quick_check", { simple: true });
-    if (result !== "ok") throw new Error(`The copy of the site's data failed its check: ${result}`);
     return readSchemaVersion(copy);
   } finally {
     copy.close();
@@ -168,11 +166,16 @@ class ZipWriter {
     }
   }
 
-  async addData(name: string, data: Buffer): Promise<void> {
+  async addData(name: string, data: Buffer): Promise<BackupFile> {
     const entry = new ZipDeflate(name, { level: 6 });
     this.#zip.add(entry);
     entry.push(data, true);
     await this.#caughtUp();
+    return {
+      path: name,
+      bytes: data.length,
+      sha256: createHash("sha256").update(data).digest("hex"),
+    };
   }
 
   async end(): Promise<void> {

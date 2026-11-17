@@ -3,9 +3,7 @@ import { describe, expect, test } from "vitest";
 import { createAdminRoutes } from "../src/api/admin/index.ts";
 import type { RoutePolicy } from "../src/api/admin/routing.ts";
 import { type Action, type Actor, can } from "../src/auth/policy.ts";
-import { createSessionIfPasswordUnchanged } from "../src/db/repo/sessions.ts";
-import { uuidv7 } from "../src/ids.ts";
-import { browser, type MadeApp, makeApp, setUp } from "./auth-helpers.ts";
+import { browser, makeApp, setUp, signedInAs } from "./auth-helpers.ts";
 
 const ALL_ACTIONS: Action[] = [
   "entry:list",
@@ -26,8 +24,10 @@ const ALL_ACTIONS: Action[] = [
   "menu:manage",
   "design:manage",
   "settings:manage",
+  "backup:download",
 ];
 const ADMIN_ONLY: Action[] = ["entry:delete", "media:delete", "design:manage", "settings:manage"];
+const OWNER_ONLY: Action[] = ["backup:download"];
 
 function actor(role: Actor["role"], id = "me"): Actor {
   return { id, role, isOwner: 0 };
@@ -42,9 +42,19 @@ describe("can", () => {
   });
 
   test.each(["admin", "editor"] as const)("%s can work on any content", (role) => {
-    for (const action of ALL_ACTIONS.filter((name) => !ADMIN_ONLY.includes(name))) {
+    const forEveryone = (name: Action) => !ADMIN_ONLY.includes(name) && !OWNER_ONLY.includes(name);
+    for (const action of ALL_ACTIONS.filter(forEveryone)) {
       expect(can(actor(role), action, { authorId: "someone-else" })).toBe(true);
       expect(can(actor(role), action, { authorId: "someone-else", type: "page" })).toBe(true);
+    }
+  });
+
+  test("only the Owner can download a backup: it holds everyone's sign-in details", () => {
+    for (const action of OWNER_ONLY) {
+      expect(can({ id: "me", role: "admin", isOwner: 1 }, action)).toBe(true);
+      expect(can(actor("admin"), action)).toBe(false);
+      expect(can(actor("editor"), action)).toBe(false);
+      expect(can(actor("writer"), action)).toBe(false);
     }
   });
 
@@ -95,27 +105,6 @@ describe("can", () => {
   });
 });
 
-/** Adds someone with a role directly, and returns a browser signed in as them. */
-async function signedInAs(made: MadeApp, role: Actor["role"]) {
-  const id = uuidv7(made.clock.time);
-  const hash = `hash-${id}`;
-  made.db
-    .prepare(
-      "INSERT INTO users (id, email, name, role, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-    )
-    .run(id, `${role}@example.com`, role, role, hash, made.clock.time);
-  const token = await createSessionIfPasswordUnchanged(made.orm, {
-    userId: id,
-    verifiedHash: hash,
-    userAgent: null,
-    ipPrefix: null,
-    now: made.clock.time,
-  });
-  const client = browser(made.app);
-  client.jar.set("tend_session", token as string);
-  return { client, id };
-}
-
 /**
  * Who each route is for, written out by hand from PLAN.md §6 rather than read from the routes,
  * so a route guarded by the wrong action fails here.
@@ -123,8 +112,9 @@ async function signedInAs(made: MadeApp, role: Actor["role"]) {
  * - own: Writers only on their own posts and pictures; everyone else on anything.
  * - editors: Editors, Admins and the Owner.
  * - admins: Admins and the Owner.
+ * - owner: the Owner alone.
  */
-type Who = "anyone" | "own" | "editors" | "admins";
+type Who = "anyone" | "own" | "editors" | "admins" | "owner";
 const WHO: Record<string, Who> = {
   "GET /link-targets": "anyone",
   "GET /entries": "anyone",
@@ -167,6 +157,8 @@ const WHO: Record<string, Who> = {
   "GET /redirects": "admins",
   "POST /redirects": "admins",
   "DELETE /redirects": "admins",
+  "GET /backups": "admins",
+  "GET /backups/download": "owner",
 };
 
 const ROLES = ["writer", "editor", "admin", "owner"] as const;
@@ -183,6 +175,8 @@ function allowed(who: Who, role: Role, writersOwn: boolean): boolean {
       return role !== "writer";
     case "admins":
       return role === "admin" || role === "owner";
+    case "owner":
+      return role === "owner";
   }
 }
 
@@ -318,7 +312,12 @@ describe("every admin route", () => {
         const query = policy.method === "GET" && policy.subject === null ? "?type=post" : "";
         const url = `/api/admin${path}${query}`;
         if (isUpload) return client.upload(url, picture, "dot.png");
-        if (policy.method === "GET") return client.get(url);
+        if (policy.method === "GET") {
+          const reply = await client.get(url);
+          // A download is read to its end, so the backup it started finishes.
+          if (reply.headers.get("content-type") === "application/zip") await reply.bytes();
+          return reply;
+        }
         if (policy.method === "DELETE") return client.delete(url);
         // The newest version, so an action that's let through really runs.
         const current = await (await owner.get(`/api/admin/entries/${row.entryId}`)).json();

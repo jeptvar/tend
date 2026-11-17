@@ -20,6 +20,8 @@ export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDi
   publicUrl: string | undefined;
   themeDir: string;
   uploadsDir: string;
+  /** Where Tend keeps copies of the site, for Settings → Backups. */
+  backupsDir?: string | undefined;
   pageCacheBytes: number;
   watchTheme?: boolean;
   /** The address pages name as their own, when it's known for sure. See Config.siteUrl. */
@@ -310,6 +312,10 @@ export function createApp(options: AppOptions): Hono {
       themeSettings: () => site.theme.settings,
       designValues: (chosen) => site.theme.designValues(chosen),
       previewDesign: (design) => site.previewDesign(design),
+      backupsDir: options.backupsDir,
+      uploadsDir: options.uploadsDir,
+      secretKey: options.secretKey,
+      version: options.version,
     }).app,
   );
 

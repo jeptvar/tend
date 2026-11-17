@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FormattedMessage, useIntl } from "react-intl";
+import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, useLocation } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import {
@@ -9,8 +9,46 @@ import {
 } from "../components/AuthLayout.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { type EntrySummary, entriesKey, type Me } from "../lib/queries.ts";
+import { BACKUPS_KEY, type BackupsInfo } from "../lib/site.ts";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** How often the Owner is reminded to download a backup (PLAN.md §13): once a month. */
+const BACKUP_REMINDER_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * A reminder to download a backup, for the Owner, who alone can: a month after the last
+ * one, or a month after setup if there hasn't been one.
+ */
+function BackupReminder() {
+  const backups = useQuery({
+    queryKey: BACKUPS_KEY,
+    queryFn: () => api<BackupsInfo>("/admin/backups"),
+  });
+  const info = backups.data;
+  const since = info?.lastDownloadAt ?? info?.setUpAt;
+  if (!info || since == null || Date.now() - since < BACKUP_REMINDER_MS) return null;
+  return (
+    <section aria-labelledby="overview-backup" className="mt-8 rounded-lg border border-muted p-4">
+      <h2 id="overview-backup" className="text-lg font-semibold">
+        <FormattedMessage id="overview.backup.heading" />
+      </h2>
+      <p className="mt-1">
+        {info.lastDownloadAt === null ? (
+          <FormattedMessage id="overview.backup.never" />
+        ) : (
+          <FormattedMessage
+            id="overview.backup.since"
+            values={{ date: <FormattedDate value={info.lastDownloadAt} dateStyle="long" /> }}
+          />
+        )}
+      </p>
+      <Link href="/settings/backups" className={textLinkClass}>
+        <FormattedMessage id="overview.backup.link" />
+      </Link>
+    </section>
+  );
+}
 
 /** Says only what's true about who can see the site (PLAN.md P15). */
 function siteStatusId(me: Me): string {
@@ -70,6 +108,7 @@ function OverviewScreen({ me }: { me: Me }) {
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
         {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}
       </p>
+      {me.user.isOwner && <BackupReminder />}
       <section aria-labelledby="overview-next" className="mt-10">
         <h2 id="overview-next" className="text-xl font-semibold">
           <FormattedMessage id="overview.nextHeading" />
