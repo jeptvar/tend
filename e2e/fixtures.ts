@@ -154,6 +154,23 @@ export async function closeWhileDown(site: Site, ...pages: Page[]): Promise<void
 }
 
 /**
+ * Holds back the page's requests to `url` until the returned function is called: a slow
+ * connection that lasts exactly as long as the test needs. A fixed delay can run out before
+ * the test is ready, on a busy machine.
+ */
+export async function holdRequests(page: Page, url: string): Promise<() => void> {
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(url, async (route) => {
+    await released;
+    await route.fallback();
+  });
+  return release;
+}
+
+/**
  * Whether Tab moves to links in this browser. Safari's skips them until "Press Tab to
  * highlight each item" is turned on, and WebKit's does on Windows, where Alt+Tab is just Tab.
  * It replaces what the page shows, so call it before going anywhere.

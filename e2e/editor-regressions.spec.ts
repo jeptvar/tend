@@ -4,6 +4,7 @@ import {
   closeWhileDown,
   createEntry,
   expect,
+  holdRequests,
   readEntry,
   type Site,
   signIn,
@@ -700,14 +701,13 @@ test.describe("undo", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "Binned" });
     await openPost(page, signedIn, post.id);
-    await page.route("**/trash", async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      await route.fallback();
-    });
+    const answer = await holdRequests(page, "**/trash");
     await openSettings(page);
     await page.getByRole("button", { name: "Move to Trash" }).click();
     await expect(body(page)).not.toBeEditable();
     await expect(page.getByLabel("Title", { exact: true })).not.toBeEditable();
+    answer();
+    await expect(page.getByText("Moved to the Trash.")).toBeVisible();
   });
 });
 

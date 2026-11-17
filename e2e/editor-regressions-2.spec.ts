@@ -4,6 +4,7 @@ import {
   closeWhileDown,
   createEntry,
   expect,
+  holdRequests,
   readEntry,
   type Site,
   test,
@@ -351,13 +352,14 @@ test.describe("Undo after leaving", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "T", body: "Live", publish: true });
     await openPost(page, signedIn, post.id);
-    await page.route("**/unpublish", async (route) => {
-      await new Promise((done) => setTimeout(done, 700));
-      await route.fallback();
-    });
+    const answer = await holdRequests(page, "**/unpublish");
     await page.getByText("Address, summary and more").click();
     await page.getByRole("button", { name: "Unpublish" }).click();
     await postsLink(page).click();
+    // The answer comes once the list is showing. An Undo already showing when the editor
+    // closes goes with it, so arriving first would be a different test.
+    await expect(page.getByRole("heading", { name: "Posts", level: 1 })).toBeVisible();
+    answer();
     await toast(page).getByRole("button", { name: "Undo" }).click();
     await expect(page.getByText("It's back on your site.")).toBeVisible();
     expect((await readEntry(page, signedIn, post.id)).url).toBe(post.url);
