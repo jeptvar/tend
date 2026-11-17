@@ -51,6 +51,14 @@ interface SetupContextValue {
   /** Set when someone else finished setup first, so sign-in can explain what happened. */
   closedElsewhere: boolean;
   setClosedElsewhere: (closed: boolean) => void;
+  /** Set when setup ended with a backup restored, so sign-in can say the site is back. */
+  restored: Restored | null;
+  setRestored: (restored: Restored) => void;
+}
+
+/** A site brought back from a backup, by name if Tend said which. */
+export interface Restored {
+  site: string | null;
 }
 
 const SetupContext = createContext<SetupContextValue | null>(null);
@@ -75,6 +83,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
   const [starter, setStarter] = useState(DEFAULT_STARTER);
   const [fieldError, setFieldError] = useState<FieldError | null>(null);
   const [closedElsewhere, setClosedElsewhere] = useState(false);
+  const [restored, setRestored] = useState<Restored | null>(null);
 
   const rejectCode = useCallback((error: unknown) => {
     forgetSetupCode();
@@ -150,6 +159,8 @@ export function SetupProvider({ children }: { children: ReactNode }) {
       setFieldError,
       closedElsewhere,
       setClosedElsewhere,
+      restored,
+      setRestored,
     }),
     [
       code,
@@ -162,6 +173,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
       starter,
       fieldError,
       closedElsewhere,
+      restored,
     ],
   );
   return <SetupContext.Provider value={value}>{children}</SetupContext.Provider>;

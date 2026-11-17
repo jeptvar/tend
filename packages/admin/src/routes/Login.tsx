@@ -88,6 +88,15 @@ export function Login() {
           <FormattedMessage id="login.closedElsewhere" />
         </p>
       )}
+      {setup.restored && (
+        <p className="mt-3 text-lg text-muted">
+          {setup.restored.site ? (
+            <FormattedMessage id="login.restored" values={{ site: setup.restored.site }} />
+          ) : (
+            <FormattedMessage id="login.restoredUnnamed" />
+          )}
+        </p>
+      )}
       <form onSubmit={onSubmit} noValidate className="mt-8 grid gap-6">
         <Field
           ref={emailRef}
@@ -140,18 +149,39 @@ export function Login() {
   );
 }
 
+/** J7: the ways back in, the one that needs nobody else first. */
 export function ForgotPassword() {
   return (
     <AuthLayout screen="forgot">
-      <p className="mt-3 text-lg text-muted">
-        <FormattedMessage id="forgot.intro" />
-      </p>
-      <pre className="mt-4 rounded-lg border border-muted/50 bg-white/60 p-3 text-sm break-all whitespace-pre-wrap dark:bg-white/5">
-        <code>npx tendcms reset-password you@example.com</code>
-      </pre>
-      <p className="mt-4 text-muted">
-        <FormattedMessage id="forgot.after" />
-      </p>
+      <ol className="mt-6 grid list-decimal gap-6 pl-6 text-lg">
+        <li>
+          <Link href="/recover" className="font-medium text-brand underline underline-offset-4">
+            <FormattedMessage id="forgot.code" />
+          </Link>
+          <p className="mt-1 text-base text-muted">
+            <FormattedMessage id="forgot.codeHint" />
+          </p>
+        </li>
+        <li>
+          <span className="font-medium">
+            <FormattedMessage id="forgot.someone" />
+          </span>
+          <p className="mt-1 text-base text-muted">
+            <FormattedMessage id="forgot.someoneHint" />
+          </p>
+        </li>
+        <li>
+          <span className="font-medium">
+            <FormattedMessage id="forgot.developer" />
+          </span>
+          <p className="mt-1 text-base text-muted">
+            <FormattedMessage id="forgot.developerHint" />
+          </p>
+          <pre className="mt-2 rounded-lg border border-muted/50 bg-white/60 p-3 text-sm break-all whitespace-pre-wrap dark:bg-white/5">
+            <code>npx tendcms reset-password you@example.com</code>
+          </pre>
+        </li>
+      </ol>
       <div className="mt-8">
         <Link href="/login" className={textLinkClass}>
           <FormattedMessage id="forgot.back" />

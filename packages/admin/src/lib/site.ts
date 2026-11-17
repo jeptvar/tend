@@ -224,3 +224,21 @@ export function readableOnLight(color: string): string {
   }
   return "#000000";
 }
+
+/** Settings → Backups: the copies Tend keeps, the disk, and the last download. */
+export interface BackupsInfo {
+  snapshots: {
+    id: string;
+    kind: "daily" | "update" | "restore";
+    takenAt: number;
+    bytes: number;
+  }[];
+  disk: { total: number; free: number };
+  lastDownloadAt: number | null;
+  setUpAt: number | null;
+}
+
+export const BACKUPS_KEY = ["backups"];
+
+/** Where the browser downloads the whole site from. Only the Owner may. */
+export const BACKUP_DOWNLOAD_URL = "/api/admin/backups/download";

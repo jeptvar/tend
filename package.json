@@ -10,6 +10,8 @@
     "dev": "node scripts/dev.mjs",
     "build": "pnpm -r build",
     "smoke": "node scripts/smoke-dist.mjs",
+    "smoke:create": "node scripts/smoke-create.mjs",
+    "shrinkwrap": "node scripts/shrinkwrap.mjs",
     "size": "size-limit",
     "typecheck": "tsc -b",
     "lint": "biome check . && node scripts/lint-migrations.mjs",

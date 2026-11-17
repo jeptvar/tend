@@ -2,7 +2,7 @@
 // checks the things only the built output can get wrong: finding its migrations,
 // finding the admin, serving the real files, and running setup. Run after `pnpm build`.
 // Zero dependencies and no shell, so it runs the same on every OS.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -125,6 +125,25 @@ try {
     (await fetch(`${base}/blog/welcome`)).status === 200,
     "the starter's first post is published",
   );
+
+  // A backup is made beside the running site and restores into a new data folder, which
+  // proves the bundled zip code and both commands work as published (PLAN.md §13).
+  const run = (command, argument, dataDir) => {
+    const result = spawnSync(process.execPath, [cli, command, argument], {
+      cwd,
+      env: { ...process.env, TEND_ADMIN_DEV_URL: "", TEND_DATA_DIR: dataDir },
+      encoding: "utf8",
+    });
+    if (result.status !== 0) {
+      throw new Error(`tendcms ${command} failed:\n${result.stdout}${result.stderr}`);
+    }
+  };
+  const zip = join(cwd, "smoke-backup-PRIVATE.zip");
+  run("backup", zip, join(cwd, "data"));
+  check(existsSync(zip), "tendcms backup saves the running site to a zip");
+  const restored = join(cwd, "restored");
+  run("restore", zip, restored);
+  check(existsSync(join(restored, "tend.db")), "tendcms restore puts it in a new data folder");
 } catch (error) {
   failed = true;
   console.error(`\nSmoke test failed: ${error.message}\n\nTend's output:\n${output}`);

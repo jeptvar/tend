@@ -20,9 +20,30 @@ export interface SetupSettings {
   completed_at: number;
 }
 
+/** When a backup was last downloaded, for the monthly reminder on Overview. */
+export interface BackupSettings {
+  last_download_at: number;
+}
+
 export interface SettingValues {
   site: SiteSettings;
   setup: SetupSettings;
+  backups: BackupSettings;
+}
+
+/** Saves something Tend keeps track of, which isn't anyone's change to undo. */
+export function putSetting<K extends keyof SettingValues>(
+  orm: Orm,
+  key: K,
+  value: SettingValues[K],
+  now: number,
+  userId: string | null,
+): void {
+  orm
+    .insert(settings)
+    .values({ key, value, updatedAt: now, updatedBy: userId })
+    .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now, updatedBy: userId } })
+    .run();
 }
 
 export async function getSetting<K extends keyof SettingValues>(

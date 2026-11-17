@@ -53,7 +53,7 @@ import {
   originalUrl,
   variantUrl,
 } from "../media/library.ts";
-import { isIconSize, makeIcon } from "../media/process.ts";
+import { isIconSize, makeIcon, makeVariant } from "../media/process.ts";
 import type { MediaStore } from "../media/store.ts";
 import { contentTypeFor, resolveInside } from "../static-files.ts";
 import { type CachedPage, PageCache, pageEtag, type RenderedPage } from "./cache.ts";
@@ -971,7 +971,10 @@ export function createSite(options: SiteOptions): Site {
 
   /** Makes and keeps one icon file. False if the picture's own files are gone. */
   async function writeIcon(item: Media, hash: string, size: number, path: string) {
-    const source = files.read(iconSourcePath(item, hash, size));
+    // Its sizes can be missing after a restore, since backups leave them out.
+    const source =
+      files.read(iconSourcePath(item, hash, size)) ??
+      files.read(files.originalPath(item.id, hash, item.ext));
     if (!source) return false;
     files.write(path, await makeIcon(source, size));
     return true;
@@ -979,6 +982,40 @@ export function createSite(options: SiteOptions): Site {
 
   /** Icons being made right now, by file, so a burst of requests for one makes it once. */
   const iconsInProgress = new Map<string, Promise<boolean>>();
+
+  /** Sizes being made again right now, by file, so a burst of requests for one makes it once. */
+  const variantsInProgress = new Map<string, Promise<boolean>>();
+
+  /** Makes one size again from the original and keeps it. False if the original is gone. */
+  async function writeVariant(item: Media, hash: string, width: number, path: string) {
+    const original = files.read(files.originalPath(item.id, hash, item.ext));
+    if (!original) return false;
+    files.write(path, await makeVariant(original, width));
+    return true;
+  }
+
+  /**
+   * One size of a picture. Sizes are a cache: backups leave them out (PLAN.md §13), so one
+   * that's missing is made again from the original the first time it's asked for.
+   */
+  async function sendVariant(
+    c: Context,
+    item: Media,
+    hash: string,
+    width: number,
+    privately: boolean,
+  ): Promise<Response | undefined> {
+    const path = files.variantPath(item.id, hash, `${width}.webp`);
+    const kept = sendFile(c, path, "image/webp", { privately });
+    if (kept) return kept;
+    let making = variantsInProgress.get(path);
+    if (!making) {
+      making = writeVariant(item, hash, width, path).finally(() => variantsInProgress.delete(path));
+      variantsInProgress.set(path, making);
+    }
+    if (!(await making)) return undefined;
+    return sendFile(c, path, "image/webp", { privately });
+  }
 
   /** A site icon, made from its picture the first time it's asked for, then kept. */
   async function sendIcon(c: Context, item: Media, size: number): Promise<Response | undefined> {
@@ -1038,8 +1075,7 @@ export function createSite(options: SiteOptions): Site {
         const nearest = widths.find((size) => size >= width) ?? widths.at(-1);
         return nearest === undefined ? fileNotFound(c) : moved(variantUrl(item, nearest));
       }
-      const path = files.variantPath(item.id, current, `${width}.webp`);
-      return sendFile(c, path, "image/webp", { privately }) ?? fileNotFound(c);
+      return (await sendVariant(c, item, current, width, privately)) ?? fileNotFound(c);
     }
     if (hash !== current || file !== downloadName(item)) return moved(originalUrl(item));
     const path = files.originalPath(item.id, current, item.ext);

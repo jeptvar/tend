@@ -20,7 +20,9 @@ export type Action =
   | "tag:create"
   | "menu:manage"
   | "design:manage"
-  | "settings:manage";
+  | "settings:manage"
+  | "people:manage"
+  | "backup:download";
 
 export interface Subject {
   /** Who made it: the author of a post, or whoever uploaded a file. */
@@ -55,7 +57,14 @@ const ADMIN_ONLY_ACTIONS = new Set<Action>([
   "media:delete",
   "design:manage",
   "settings:manage",
+  "people:manage",
 ]);
+
+/**
+ * Only for the Owner. A backup holds every account's password hash and the site's secret
+ * key, so taking one away is theirs to do, like restoring one (PLAN.md §6).
+ */
+const OWNER_ONLY_ACTIONS = new Set<Action>(["backup:download"]);
 
 /**
  * A Writer (v0.3) works on their own posts, adds pictures and describes their own, and can't
@@ -78,6 +87,7 @@ const WRITER_OWN_ACTIONS = new Set<Action>(["entry:read", "entry:update", "media
  */
 export function can(actor: Actor | null | undefined, action: Action, subject?: Subject): boolean {
   if (!actor) return false;
+  if (OWNER_ONLY_ACTIONS.has(action)) return actor.role === "admin" && Boolean(actor.isOwner);
   switch (actor.role) {
     case "admin":
       return EDITOR_ACTIONS.has(action) || ADMIN_ONLY_ACTIONS.has(action);
@@ -93,6 +103,19 @@ export function can(actor: Actor | null | undefined, action: Action, subject?: S
     default:
       return false;
   }
+}
+
+/**
+ * Whether someone can invite, change, send a reset link to or remove a person with this role
+ * (PLAN.md §9, People). The Owner can act on anyone; Admins only on Editors and Writers. The
+ * Owner is never acted on from here: they use a recovery code or the command line.
+ */
+export function canManagePerson(
+  actor: Actor | null | undefined,
+  person: { role: User["role"]; isOwner: number | boolean },
+): boolean {
+  if (!actor || !can(actor, "people:manage") || person.isOwner) return false;
+  return Boolean(actor.isOwner) || person.role === "editor" || person.role === "writer";
 }
 
 /** Whether a list should show only this person's own entries. */

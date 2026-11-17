@@ -62,6 +62,43 @@ export const sessions = sqliteTable(
   (t) => [index("sessions_user_id").on(t.userId)],
 );
 
+/**
+ * Links and codes that let someone in once: invites, reset links and recovery codes
+ * (PLAN.md §8 and §12). Only a hash of each is kept, so a copy of this table lets nobody in.
+ * 'setup' and 'preview' are for later.
+ */
+export const tokens = sqliteTable(
+  "tokens",
+  {
+    /** SHA-256 of a link's token, or for a recovery code an HMAC with the site's key. */
+    id: text("id").primaryKey(),
+    kind: text("kind", { enum: ["setup", "invite", "reset", "recovery", "preview"] }).notNull(),
+    /** An invite's: who it's for, and what they'll be. */
+    email: textNoCase("email"),
+    role: text("role", { enum: ["admin", "editor", "writer"] }),
+    /** A reset link's or a recovery code's: whose it is. */
+    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    /** Null for recovery codes, which last until they're used or replaced. */
+    expiresAt: integer("expires_at"),
+    usedAt: integer("used_at"),
+    revokedAt: integer("revoked_at"),
+  },
+  (t) => [
+    check(
+      "tokens_kind_check",
+      sql`${t.kind} IN ('setup', 'invite', 'reset', 'recovery', 'preview')`,
+    ),
+    check(
+      "tokens_role_check",
+      sql`${t.role} IS NULL OR ${t.role} IN ('admin', 'editor', 'writer')`,
+    ),
+    index("tokens_by_user").on(t.userId, t.kind),
+    index("tokens_by_email").on(t.email, t.kind),
+  ],
+);
+
 /** Keys so far: site, setup. See PLAN.md §8 for the rest. */
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
@@ -206,6 +243,23 @@ export const media = sqliteTable(
     index("media_newest").on(t.createdAt),
     index("media_trashed").on(t.trashedAt),
   ],
+);
+
+/**
+ * Originals the site stopped using, when they were deleted forever or replaced. Each stays on
+ * disk while a kept copy of the site's data was taken before then, because restoring that
+ * copy shows it again (PLAN.md §13). There's no foreign key: the media row may be gone.
+ */
+export const retiredOriginals = sqliteTable(
+  "retired_originals",
+  {
+    mediaId: text("media_id").notNull(),
+    /** The version's short hash, as in its file name. */
+    hash: text("hash").notNull(),
+    ext: text("ext").notNull(),
+    retiredAt: integer("retired_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.mediaId, t.hash] })],
 );
 
 /** Earlier values of each setting, for Undo. The last 20 per key are kept. */

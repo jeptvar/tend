@@ -2,9 +2,12 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach } from "vitest";
+import type { Actor } from "../src/auth/policy.ts";
 import { displaySetupCode } from "../src/auth/setup-code.ts";
 import { createOrm, type Orm, openDatabase, type SqliteDatabase } from "../src/db/client.ts";
 import { migrate } from "../src/db/migrate.ts";
+import { createSessionIfPasswordUnchanged } from "../src/db/repo/sessions.ts";
+import { uuidv7 } from "../src/ids.ts";
 import { defaultThemeDir, migrationsDir } from "../src/paths.ts";
 import { type AppOptions, createApp } from "../src/server.ts";
 import { tempDir } from "./helpers.ts";
@@ -34,22 +37,30 @@ export interface MadeApp {
   clock: { time: number };
   code: string;
   uploadsDir: string;
+  /** The data folder: tend.db, backups/ and uploads/ (the key is only in memory). */
+  root: string;
   /** Once everything the site started in the background, like refilling pages, is done. */
   settled: () => Promise<void>;
 }
 
-/** A real app on a real, migrated database, with a clock the test controls. */
-export async function makeApp(overrides: Partial<AppOptions> = {}): Promise<MadeApp> {
-  const root = tempDir();
+/**
+ * A real app on a real, migrated database, with a clock the test controls. `site` can name
+ * a data folder that already holds one, a restored backup say, and the key it uses.
+ */
+export async function makeApp(
+  overrides: Partial<AppOptions> = {},
+  site: { root?: string; secretKey?: Buffer } = {},
+): Promise<MadeApp> {
+  const root = site.root ?? tempDir();
   const backupsDir = join(root, "backups");
-  mkdirSync(backupsDir);
+  mkdirSync(backupsDir, { recursive: true });
   const dbPath = join(root, "tend.db");
   await migrate({ dbPath, backupsDir, migrationsDir, appVersion: "test", log: () => {} });
 
   const db = openDatabase(dbPath);
   open.push(db);
   const orm = createOrm(db);
-  const secretKey = randomBytes(32);
+  const secretKey = site.secretKey ?? randomBytes(32);
   const clock = { time: START_TIME };
   const background = new Set<Promise<unknown>>();
   const app = createApp({
@@ -64,6 +75,14 @@ export async function makeApp(overrides: Partial<AppOptions> = {}): Promise<Made
     trustProxy: 0,
     themeDir: defaultThemeDir,
     uploadsDir: join(root, "uploads"),
+    backupsDir,
+    dataFolder: {
+      dataDir: root,
+      dbPath,
+      backupsDir,
+      uploadsDir: join(root, "uploads"),
+      secretKeyPath: join(root, "secret.key"),
+    },
     pageCacheBytes: 0,
     isPublic: false,
     now: () => clock.time,
@@ -81,6 +100,7 @@ export async function makeApp(overrides: Partial<AppOptions> = {}): Promise<Made
     clock,
     code: displaySetupCode(secretKey),
     uploadsDir: join(root, "uploads"),
+    root,
     settled: async () => {
       // Work can start more work, so it's done once there's none left.
       while (background.size > 0) await Promise.all([...background]);
@@ -94,6 +114,8 @@ export interface Reply {
   cookies: string[];
   // biome-ignore lint/suspicious/noExplicitAny: every test checks the shape it reads
   json: () => Promise<any>;
+  /** The whole body, read to its end: a download, say. */
+  bytes: () => Promise<Buffer>;
 }
 
 /** Acts like one browser: same cookies from request to request, unless told otherwise. */
@@ -129,6 +151,7 @@ export function browser(app: ReturnType<typeof createApp>) {
       headers: response.headers,
       cookies,
       json: () => response.json(),
+      bytes: async () => Buffer.from(await response.arrayBuffer()),
     };
   }
 
@@ -161,6 +184,7 @@ export function browser(app: ReturnType<typeof createApp>) {
         headers: response.headers,
         cookies: response.headers.getSetCookie(),
         json: () => response.json(),
+        bytes: async () => Buffer.from(await response.arrayBuffer()),
       };
     },
   };
@@ -175,3 +199,24 @@ export async function setUp(made: MadeApp, overrides: Record<string, unknown> = 
 }
 
 export const OWNER_EMAIL = "tom@example.com";
+
+/** Adds someone with a role directly, and returns a browser signed in as them. */
+export async function signedInAs(made: MadeApp, role: Actor["role"]) {
+  const id = uuidv7(made.clock.time);
+  const hash = `hash-${id}`;
+  made.db
+    .prepare(
+      "INSERT INTO users (id, email, name, role, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .run(id, `${role}@example.com`, role, role, hash, made.clock.time);
+  const token = await createSessionIfPasswordUnchanged(made.orm, {
+    userId: id,
+    verifiedHash: hash,
+    userAgent: null,
+    ipPrefix: null,
+    now: made.clock.time,
+  });
+  const client = browser(made.app);
+  client.jar.set("tend_session", token as string);
+  return { client, id };
+}

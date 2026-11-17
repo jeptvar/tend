@@ -19,6 +19,8 @@ import {
 import { AccountBackoff, TokenBuckets, WorkGate } from "../auth/ratelimit.ts";
 import { completeSetup, loadStarter, SetupClosedError } from "../auth/setup.ts";
 import { type SetupCodeSource, setupCodeMatches } from "../auth/setup-code.ts";
+import type { RestoreTarget } from "../backups/restore.ts";
+import { isLocalAddress } from "../config.ts";
 import { isLocale } from "../content/settings.ts";
 import type { Orm } from "../db/client.ts";
 import {
@@ -28,6 +30,7 @@ import {
   deleteUserSessions,
 } from "../db/repo/sessions.ts";
 import { getSetting } from "../db/repo/settings.ts";
+import { replaceRecoveryKit } from "../db/repo/tokens.ts";
 import {
   findUserByEmail,
   ownerExists,
@@ -35,7 +38,9 @@ import {
   type User,
   upgradePasswordHash,
 } from "../db/repo/users.ts";
+import { registerAccountRoutes } from "./accounts.ts";
 import { ApiError, tendIsBusy, tooManyTries } from "./errors.ts";
+import { registerSetupBackupRoutes } from "./setup-backup.ts";
 
 export interface AuthOptions extends SetupCodeSource {
   orm: Orm;
@@ -48,6 +53,10 @@ export interface AuthOptions extends SetupCodeSource {
   onSiteChanged: () => void;
   /** Whether the site has a real public address. */
   isPublic: boolean;
+  /** The address pages name as their own, when it's known for sure. See Config.siteUrl. */
+  siteUrl?: string | undefined;
+  /** The data folder, which Start from a backup restores into. Absent in some tests. */
+  dataFolder?: RestoreTarget | undefined;
 }
 
 const SETUP_CODE_ATTEMPTS_PER_MINUTE = 5;
@@ -226,6 +235,35 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     return user;
   }
 
+  /**
+   * A signed-in person's own password, asked for again before something that matters. It's
+   * counted like a sign-in, so a session someone else got hold of can't be used to guess it.
+   */
+  async function confirmPassword(c: Context, user: User, password: string): Promise<void> {
+    const addressKey = rateLimitKey(clientIp(c, trustProxy));
+    const accountKey = `${addressKey}|${user.email.toLowerCase()}`;
+    const perAddress = loginAttemptsPerAddress.take(addressKey);
+    if (!perAddress.allowed) throw tooManyTries(perAddress.retryAfterSeconds);
+    const perAccount = loginAttemptsPerAccount.take(accountKey);
+    if (!perAccount.allowed) throw tooManyTries(perAccount.retryAfterSeconds);
+    if (!passwordChecks.tryEnter(false)) throw tendIsBusy();
+    let matches = false;
+    try {
+      if (user.passwordHash) matches = await verifyPassword(user.passwordHash, password);
+      else await spendVerifyTime(password);
+    } finally {
+      passwordChecks.leave();
+    }
+    if (!matches) {
+      throw new ApiError(400, "password_wrong", "That isn't your password.", {
+        field: "password",
+        fix: "Type the password you sign in with.",
+      });
+    }
+    loginAttemptsPerAddress.refund(addressKey);
+    loginAttemptsPerAccount.refund(accountKey);
+  }
+
   /** Checks the setup code, counting only wrong guesses against the visitor's address. */
   function requireSetupCode(c: Context, code: string): void {
     const key = rateLimitKey(clientIp(c, trustProxy));
@@ -247,6 +285,8 @@ export function createAuthRoutes(options: AuthOptions): Hono {
   }
 
   async function requireSetupOpen(): Promise<void> {
+    // A backup being restored is about to become the site, so nothing is set up meanwhile.
+    setupBackup.requireNotRestoring();
     if (await ownerExists(orm)) {
       throw new ApiError(409, "setup_closed", "This site is already set up.", {
         fix: "Sign in instead.",
@@ -298,10 +338,34 @@ export function createAuthRoutes(options: AuthOptions): Hono {
       throw error;
     }
 
+    // The Owner's recovery kit, shown once at the end of setup (J7).
+    const recoveryCodes = orm.transaction((tx) =>
+      replaceRecoveryKit(tx, secretKey, { userId, now: now() }),
+    );
     options.onSiteChanged();
     await startSession(c, { id: userId, email: owner.email }, passwordHash);
     const user = await findUserByEmail(orm, owner.email);
-    return c.json({ user: user && publicUser(user) }, 201);
+    return c.json({ user: user && publicUser(user), recoveryCodes }, 201);
+  });
+
+  registerAccountRoutes(app, {
+    orm,
+    secretKey,
+    trustProxy,
+    now,
+    startSession,
+    requireUser,
+    confirmPassword,
+    publicUser,
+  });
+
+  const setupBackup = registerSetupBackupRoutes(app, {
+    orm,
+    secretKey,
+    dataFolder: options.dataFolder,
+    onSiteChanged: options.onSiteChanged,
+    requireSetupOpen,
+    requireSetupCode,
   });
 
   app.post("/login", async (c) => {
@@ -392,11 +456,14 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     const user = await requireUser(c);
     const site = await getSetting(orm, "site");
     const setup = await getSetting(orm, "setup");
+    const confirmed = site?.address_confirmed && site.address ? site.address : undefined;
     return c.json({
       user: publicUser(user),
       site: { name: site?.name ?? "", tagline: site?.tagline ?? "" },
       starter: setup?.starter ?? null,
-      siteIsPublic: options.isPublic,
+      siteIsPublic: options.isPublic || Boolean(confirmed && !isLocalAddress(confirmed)),
+      // Until it's known, Overview asks whether the address in the browser is the site's.
+      addressKnown: Boolean(options.siteUrl ?? confirmed),
     });
   });
 

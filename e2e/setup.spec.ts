@@ -17,6 +17,13 @@ test("from the printed link to a published site, as a new owner", async ({ page,
   await page.getByRole("radio", { name: /Business/ }).check();
   await page.getByRole("button", { name: "Finish setup" }).click();
 
+  // The Owner's recovery kit comes first, shown this once (J7).
+  await expect(page.getByRole("heading", { name: "Save your recovery kit" })).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Your recovery codes" }).getByRole("listitem"),
+  ).toHaveCount(8);
+  await page.getByRole("button", { name: "Continue" }).click();
+
   await expect(page.getByRole("heading", { name: "Rise Bakery" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Edit homepage" })).toBeVisible();
 

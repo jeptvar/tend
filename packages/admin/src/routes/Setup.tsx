@@ -4,6 +4,7 @@ import {
   type FormEvent,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -19,6 +20,7 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Field, PasswordField } from "../components/fields.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
+import { looksLikeABackup, restoreBackup, sendBackup } from "../lib/backup-upload.ts";
 import { suggestPassphrase } from "../lib/passphrase.ts";
 import {
   confirmSignedIn,
@@ -26,6 +28,7 @@ import {
   type SetupStatus,
   useSetupStatus,
 } from "../lib/queries.ts";
+import { holdFreshKit } from "../lib/recovery-kit.ts";
 import { type Starter, useSetup } from "../lib/setup-state.tsx";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -468,7 +471,7 @@ export function SetupStart() {
 
   const finish = useMutation({
     mutationFn: async () => {
-      await api("/auth/setup", {
+      const { recoveryCodes } = await api<{ recoveryCodes: string[] }>("/auth/setup", {
         method: "POST",
         body: {
           code: setup.code,
@@ -482,10 +485,13 @@ export function SetupStart() {
         },
       });
       await confirmSignedIn(queryClient, intl.formatMessage({ id: "auth.cookieRefused" }));
+      return recoveryCodes;
     },
-    onSuccess: () => {
+    onSuccess: (recoveryCodes) => {
+      // The Owner's recovery kit comes first, shown this once (J7), then Overview.
+      holdFreshKit(recoveryCodes, "/");
       // Navigate first: updating this would otherwise send the gate above elsewhere.
-      navigate("/", { replace: true });
+      navigate("/account", { replace: true });
       queryClient.setQueryData<SetupStatus>(SETUP_STATUS_KEY, (status) =>
         status ? { ...status, needsSetup: false } : status,
       );
@@ -571,17 +577,153 @@ export function SetupStart() {
 }
 
 export function SetupBackup() {
+  const intl = useIntl();
+  const setup = useSetup();
+  const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
+  const hintId = useId();
+  const errorId = useId();
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string>();
+  // How much has been sent, or null once Tend has it all and is restoring it.
+  const [sent, setSent] = useState<number | null>(null);
+  const stopRef = useRef<AbortController | null>(null);
+
+  // Leaving the screen stops the upload. Tend starts again from the first part next time.
+  useEffect(() => () => stopRef.current?.abort(), []);
+
+  const restore = useMutation({
+    mutationFn: async (chosen: File) => {
+      const stop = new AbortController();
+      stopRef.current = stop;
+      setSent(0);
+      await sendBackup(chosen, setup.code ?? "", setSent, stop.signal);
+      setSent(null);
+      return restoreBackup(setup.code ?? "", chosen.size, stop.signal);
+    },
+    onSuccess: (site) => {
+      setup.setRestored({ site });
+      // Navigate first: updating this would otherwise send the gate above elsewhere.
+      navigate("/login", { replace: true });
+      queryClient.setQueryData<SetupStatus>(SETUP_STATUS_KEY, (status) =>
+        status ? { ...status, needsSetup: false } : status,
+      );
+    },
+    onError: (error) => {
+      setSent(null);
+      if (!(error instanceof ApiError)) return;
+      if (error.code === "setup_code_wrong") {
+        setup.rejectCode(error);
+        navigate("/setup/code");
+      } else if (error.code === "setup_closed") {
+        setup.setClosedElsewhere(true);
+        void queryClient.invalidateQueries({ queryKey: SETUP_STATUS_KEY });
+      }
+    },
+  });
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (restore.isPending) return;
+    const problem = !file
+      ? "setup.backup.fileRequired"
+      : (await looksLikeABackup(file))
+        ? null
+        : "setup.backup.notABackup";
+    setFileError(problem ? intl.formatMessage({ id: problem }) : undefined);
+    if (problem || !file) {
+      inputRef.current?.focus();
+      return;
+    }
+    restore.mutate(file);
+  }
+
+  const failed =
+    restore.isError && !(restore.error instanceof DOMException)
+      ? errorText(restore.error, intl.formatMessage({ id: "offline.body" }))
+      : null;
+
   return (
     <SetupGate>
       <AuthLayout screen="setup.backup">
         <p className="mt-3 text-lg text-muted">
-          <FormattedMessage id="setup.backup.body" />
+          <FormattedMessage id="setup.backup.intro" />
         </p>
-        <div className="mt-8">
-          <Link href="/setup" className={textLinkClass}>
-            <FormattedMessage id="common.back" />
-          </Link>
-        </div>
+        <form onSubmit={onSubmit} noValidate className="mt-8 grid gap-6">
+          <div className="grid gap-2">
+            <label htmlFor={inputId} className="font-medium">
+              <FormattedMessage id="setup.backup.file" />
+            </label>
+            <input
+              ref={inputRef}
+              id={inputId}
+              type="file"
+              accept=".zip,application/zip"
+              aria-describedby={`${hintId} ${errorId}`}
+              aria-invalid={fileError ? true : undefined}
+              disabled={restore.isPending}
+              onChange={(event) => {
+                setFile(event.target.files?.[0] ?? null);
+                setFileError(undefined);
+                restore.reset();
+              }}
+              className="w-full text-lg file:mr-4 file:min-h-11 file:cursor-pointer file:rounded-lg file:border file:border-muted file:bg-transparent file:px-4 file:font-medium file:text-ink hover:file:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
+            />
+            <p id={hintId} className="text-sm text-muted">
+              <FormattedMessage id="setup.backup.fileHint" />
+            </p>
+            {/* Always mounted: screen readers can miss a live region added along with its text. */}
+            <p id={errorId} role="alert" className="text-sm font-medium text-danger empty:sr-only">
+              {fileError}
+            </p>
+          </div>
+          {restore.isPending && (
+            <div className="grid gap-2">
+              <progress
+                className="h-2 w-full accent-brand"
+                max={1}
+                // Without a value, it shows something happening without saying how much.
+                value={sent ?? undefined}
+                aria-label={intl.formatMessage({
+                  id: sent === null ? "setup.backup.restoring" : "setup.backup.sending",
+                })}
+              />
+              <p className="text-muted">
+                {sent === null ? (
+                  <FormattedMessage id="setup.backup.restoringBody" />
+                ) : (
+                  <FormattedMessage
+                    id="setup.backup.sendingBody"
+                    values={{ percent: intl.formatNumber(sent, { style: "percent" }) }}
+                  />
+                )}
+              </p>
+            </div>
+          )}
+          {/* Always mounted: screen readers can miss a live region added along with its text. */}
+          <p role="status" className="sr-only">
+            {restore.isPending && (
+              <FormattedMessage
+                id={sent === null ? "setup.backup.restoring" : "setup.backup.sending"}
+              />
+            )}
+          </p>
+          <p role="alert" className="font-medium text-danger empty:sr-only">
+            {failed}
+          </p>
+          <div className="flex items-center justify-between">
+            <Link href="/setup" className={textLinkClass}>
+              <FormattedMessage id="common.back" />
+            </Link>
+            <button type="submit" disabled={restore.isPending} className={primaryButtonClass}>
+              <FormattedMessage
+                id={restore.isPending ? "setup.backup.working" : "setup.backup.submit"}
+              />
+            </button>
+          </div>
+        </form>
       </AuthLayout>
     </SetupGate>
   );
