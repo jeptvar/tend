@@ -286,8 +286,7 @@ export async function start(options: { open: boolean } = { open: false }): Promi
     dataFolder: config,
     pageCacheBytes: config.pageCacheBytes,
     watchTheme: true,
-    siteUrl: config.siteUrl,
-    isPublic: config.isPublic,
+    platformUrl: config.platformUrl,
     dataRisk,
   });
   // The Trash and automatic history only keep things for so long. Not being able to tidy

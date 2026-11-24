@@ -9,11 +9,18 @@ export interface SetupStatus {
 
 export interface Me {
   user: { id: string; name: string; email: string; role: string; isOwner: boolean };
-  site: { name: string; tagline: string };
+  site: {
+    name: string;
+    tagline: string;
+    /** The site's own address, or null while it follows the one each page is asked for. */
+    address: string | null;
+    /** Who says so: where Tend runs, an Admin, or the hosting platform. */
+    addressFrom: "set" | "confirmed" | "platform" | null;
+    /** Whether people anywhere could reach it there. */
+    addressIsPublic: boolean;
+    visibility: "public" | "coming_soon" | "private";
+  };
   starter: "blog" | "business" | "blank" | null;
-  siteIsPublic: boolean;
-  /** Whether the site knows its own address, rather than following the one each page is asked for. */
-  addressKnown: boolean;
   /** For Admins: why this site could be lost with its container, if it could. */
   dataRisk: {
     why: "unmounted" | "unnamed";

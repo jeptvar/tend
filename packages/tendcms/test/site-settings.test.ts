@@ -7,7 +7,8 @@ import { contrast, readableOn } from "../src/site/color.ts";
 import { rss } from "../src/site/feeds.ts";
 import { phoneHref } from "../src/site/router.ts";
 import { buildHead, cssForStyle, jsonForScript } from "../src/site/seo.ts";
-import { browser, makeApp, setUp } from "./auth-helpers.ts";
+import { isHostingAddress, isPublicAddress } from "../src/site-address.ts";
+import { browser, GOOD_PASSWORD, makeApp, OWNER_EMAIL, setUp, signedInAs } from "./auth-helpers.ts";
 
 const ENTRIES = "/api/admin/entries";
 type Client = Awaited<ReturnType<typeof setUp>>;
@@ -922,7 +923,7 @@ describe("fixes from review", () => {
   });
 
   test("a site with a known address names it on every page, whatever Host was sent", async () => {
-    const made = await makeApp({ siteUrl: "https://rise.example", pageCacheBytes: 1_000_000 });
+    const made = await makeApp({ publicUrl: "https://rise.example", pageCacheBytes: 1_000_000 });
     await setUp(made);
     for (const url of ["http://evil.example/", "/"]) {
       const html = await (await made.app.request(url)).text();
@@ -962,7 +963,7 @@ describe("fixes from review", () => {
 
   test("the site's own address only counts once it's confirmed", async () => {
     const made = await makeApp();
-    await setUp(made);
+    const owner = await setUp(made);
     const confirm = (confirmed: boolean) => {
       const row = made.orm.select().from(settings).where(eq(settings.key, "site")).get();
       made.orm
@@ -981,6 +982,9 @@ describe("fixes from review", () => {
     const unconfirmed = await (await made.app.request("http://other.example/")).text();
     expect(unconfirmed).toContain('<link rel="canonical" href="http://other.example/">');
     confirm(true);
+    // A change made through Tend, since it only looks again after one.
+    const general = await (await owner.get("/api/admin/settings/general")).json();
+    await owner.put("/api/admin/settings/general", { ...general.value, name: "Rise" });
     const confirmed = await (await made.app.request("http://other.example/about")).text();
     expect(confirmed).toContain("https://rise.example/");
     expect(confirmed).not.toContain("other.example");
@@ -1002,7 +1006,7 @@ describe("fixes from review", () => {
   });
 
   test("pages made in the background name the site's address, or aren't made at all", async () => {
-    const known = await makeApp({ siteUrl: "https://rise.example", pageCacheBytes: 1_000_000 });
+    const known = await makeApp({ publicUrl: "https://rise.example", pageCacheBytes: 1_000_000 });
     const owner = await setUp(known);
     await publish(owner, "post", { title: "Fresh" });
     await known.settled();
@@ -1158,8 +1162,13 @@ describe("the site's address (PLAN.md J10)", () => {
   test("is confirmed from the address the admin is open at, and then names every page", async () => {
     const made = await makeApp();
     const owner = await setUp(made);
-    const me = async () => (await owner.get("/api/auth/me")).json();
-    expect(await me()).toMatchObject({ addressKnown: false, siteIsPublic: false });
+    const me = async () => (await (await owner.get("/api/auth/me")).json()).site;
+    expect(await me()).toMatchObject({
+      address: null,
+      addressFrom: null,
+      addressIsPublic: false,
+      visibility: "public",
+    });
     // Until then, each page names the address it was asked for.
     expect((await page(made, "http://other.example.net/")).html).toContain(
       'rel="canonical" href="http://other.example.net/"',
@@ -1183,7 +1192,11 @@ describe("the site's address (PLAN.md J10)", () => {
     const confirmed = await owner.post("/api/admin/address", { address: AT.Origin }, AT);
     expect(confirmed.status).toBe(200);
     expect(await confirmed.json()).toEqual({ address: "https://rise.example.com" });
-    expect(await me()).toMatchObject({ addressKnown: true, siteIsPublic: true });
+    expect(await me()).toMatchObject({
+      address: "https://rise.example.com",
+      addressFrom: "confirmed",
+      addressIsPublic: true,
+    });
     // Every page names it now, whichever address it was asked for.
     expect((await page(made, "http://other.example.net/")).html).toContain(
       'rel="canonical" href="https://rise.example.com/"',
@@ -1191,15 +1204,134 @@ describe("the site's address (PLAN.md J10)", () => {
     // Changing the site's name later keeps it.
     const general = await (await owner.get("/api/admin/settings/general")).json();
     await owner.put("/api/admin/settings/general", { ...general.value, name: "Rise" });
-    expect(await me()).toMatchObject({ addressKnown: true });
+    expect(await me()).toMatchObject({ address: "https://rise.example.com" });
   });
 
-  test("isn't asked about when it's set where Tend runs", async () => {
-    const made = await makeApp({ siteUrl: "https://rise.up.railway.app" });
+  test("can't be changed here when it's set where Tend runs", async () => {
+    const made = await makeApp({ publicUrl: "https://bakery.example.com" });
     const owner = await setUp(made);
-    expect(await (await owner.get("/api/auth/me")).json()).toMatchObject({ addressKnown: true });
+    expect((await (await owner.get("/api/auth/me")).json()).site).toMatchObject({
+      address: "https://bakery.example.com",
+      addressFrom: "set",
+    });
     const reply = await owner.post("/api/admin/address", { address: AT.Origin }, AT);
     expect(reply.status).toBe(409);
     expect((await reply.json()).error.code).toBe("address_set");
+  });
+
+  test("can be the site's own domain instead of the one its host gave it (J11)", async () => {
+    const made = await makeApp({
+      platformUrl: "https://rise.up.railway.app",
+      secureCookies: true,
+      pageCacheBytes: 1_000_000,
+    });
+    const owner = await setUp(made);
+    const me = async () => (await (await owner.get("/api/auth/me")).json()).site;
+    expect(await me()).toMatchObject({
+      address: "https://rise.up.railway.app",
+      addressFrom: "platform",
+      addressIsPublic: true,
+    });
+    expect((await page(made, "https://rise.up.railway.app/")).html).toContain(
+      'rel="canonical" href="https://rise.up.railway.app/"',
+    );
+    expect((await owner.post("/api/admin/address", { address: AT.Origin }, AT)).status).toBe(200);
+    expect(await me()).toMatchObject({ address: AT.Origin, addressFrom: "confirmed" });
+    // The page kept for the old address goes with it.
+    expect((await page(made, "https://rise.up.railway.app/")).html).toContain(
+      'rel="canonical" href="https://rise.example.com/"',
+    );
+  });
+
+  test("can't be one that only works on this computer", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const local = { Origin: "http://localhost:3000", Host: "localhost:3000" };
+    const reply = await owner.post("/api/admin/address", { address: local.Origin }, local);
+    expect(reply.status).toBe(400);
+    expect((await reply.json()).error.code).toBe("address_local");
+  });
+
+  test("on https changes the cookies, and keeps whoever confirmed it signed in", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const { client: editor } = await signedInAs(made, "editor");
+    const plain = owner.jar.get("tend_session") as string;
+    expect((await owner.get("/api/auth/me")).headers.get("strict-transport-security")).toBeNull();
+
+    const confirmed = await owner.post("/api/admin/address", { address: AT.Origin }, AT);
+    for (const name of ["__Host-tend_session=", "__Host-tend_device="]) {
+      const cookie = confirmed.cookies.find((line) => line.startsWith(name));
+      expect(cookie).toMatch(/Secure/i);
+      expect(cookie).toMatch(/HttpOnly/i);
+      expect(cookie).not.toMatch(/Domain=/i);
+    }
+    const reply = await owner.get("/api/auth/me");
+    expect(reply.status).toBe(200);
+    expect(reply.headers.get("strict-transport-security")).toContain("max-age=");
+    // A cookie with the old name could be planted by a site that shares part of the address.
+    const old = browser(made.app);
+    old.jar.set("tend_session", plain);
+    expect((await old.get("/api/auth/me")).status).toBe(401);
+    expect((await editor.get("/api/auth/me")).status).toBe(401);
+    // Signing in again gets the new ones.
+    const login = await browser(made.app).post("/api/auth/login", {
+      email: OWNER_EMAIL,
+      password: GOOD_PASSWORD,
+    });
+    expect(login.cookies.some((line) => line.startsWith("__Host-tend_session="))).toBe(true);
+  });
+
+  test("on plain http leaves the cookies as they are", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const http = { Origin: "http://rise.example.com", Host: "rise.example.com" };
+    expect((await owner.post("/api/admin/address", { address: http.Origin }, http)).status).toBe(
+      200,
+    );
+    const reply = await owner.get("/api/auth/me");
+    expect(reply.status).toBe(200);
+    expect(reply.headers.get("strict-transport-security")).toBeNull();
+  });
+});
+
+describe("whether an address is public (PLAN.md P15)", () => {
+  test.each([
+    "https://rise.example.com",
+    "https://rise.up.railway.app",
+    "http://203.0.114.7:3000",
+    "https://[2001:4860:4860::8888]",
+    "https://localhost.example.com",
+  ])("%s is", (url) => {
+    expect(isPublicAddress(url)).toBe(true);
+  });
+
+  test.each([
+    "http://localhost:3000",
+    "http://tend.localhost",
+    "http://127.0.0.1:3000",
+    "http://[::1]:3000",
+    "http://192.168.1.20:3000",
+    "http://10.0.0.5",
+    "http://172.20.1.1",
+    "http://100.100.1.1",
+    "http://169.254.10.10",
+    "http://[fd00::1]",
+    "http://[fe80::1]",
+    "http://nas:3000",
+    "http://nas.local",
+    "http://tend.home.arpa",
+    "http://tend.internal",
+    "https://rise.test",
+  ])("%s isn't", (url) => {
+    expect(isPublicAddress(url)).toBe(false);
+  });
+
+  test("one from a hosting platform is told apart from a domain of one's own", () => {
+    expect(isHostingAddress("https://rise.up.railway.app")).toBe(true);
+    expect(isHostingAddress("https://rise.onrender.com")).toBe(true);
+    expect(isHostingAddress("https://rise.fly.dev")).toBe(true);
+    expect(isHostingAddress("https://risebakery.com")).toBe(false);
+    expect(isHostingAddress("https://notrailway.app")).toBe(false);
   });
 });

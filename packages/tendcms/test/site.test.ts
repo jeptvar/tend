@@ -348,7 +348,7 @@ describe("the page cache", () => {
     owner: Awaited<ReturnType<typeof setUp>>;
   }> {
     // With a known address, as a hosted site has, so pages are made ahead in the background.
-    const made = await makeApp({ pageCacheBytes: 1024 * 1024, siteUrl: "http://localhost" });
+    const made = await makeApp({ pageCacheBytes: 1024 * 1024, publicUrl: "http://localhost" });
     const owner = await setUp(made);
     return { made, owner };
   }

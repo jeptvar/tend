@@ -32,11 +32,8 @@ export interface Config {
   adminDevUrl: string | undefined;
   /** TEND_PUBLIC_URL: the site's real address, when it's known up front. */
   publicUrl: string | undefined;
-  /**
-   * The address pages name as their own: TEND_PUBLIC_URL, or else the one the hosting
-   * platform gave the site. Undefined when neither is known, as with a plain Docker run.
-   */
-  siteUrl: string | undefined;
+  /** The address the hosting platform gave the site, if it said. See site-address.ts. */
+  platformUrl: string | undefined;
   /** How many proxies sit in front of Tend (TEND_TRUST_PROXY). */
   trustProxy: number;
   /** Whether the site is reached over https, which decides the cookie mode. */
@@ -224,7 +221,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     hosts: resolveHosts(env, platform),
     adminDevUrl: env.TEND_ADMIN_DEV_URL || undefined,
     publicUrl,
-    siteUrl: publicUrl ?? platformUrl(env),
+    platformUrl: platformUrl(env),
     trustProxy: parseTrustProxy(env.TEND_TRUST_PROXY, platform),
     // Follows the site's address, never request headers, which a client could fake.
     secureCookies: publicUrl ? publicUrl.startsWith("https:") : HTTPS_PLATFORMS.includes(platform),

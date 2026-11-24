@@ -119,7 +119,7 @@ function AddressCheck() {
 /** Says only what's true about who can see the site (PLAN.md P15). */
 function siteStatusId(me: Me): string {
   if (LOCAL_HOSTS.has(window.location.hostname)) return "overview.local";
-  return me.siteIsPublic ? "overview.online" : "overview.noAddress";
+  return me.site.addressIsPublic ? "overview.online" : "overview.noAddress";
 }
 
 function OverviewScreen({ me }: { me: Me }) {
@@ -128,7 +128,7 @@ function OverviewScreen({ me }: { me: Me }) {
   // Asked once per visit, so the answer stays on screen after the address becomes known.
   const [askAddress] = useState(
     () =>
-      !me.addressKnown && me.user.role === "admin" && !LOCAL_HOSTS.has(window.location.hostname),
+      !me.site.address && me.user.role === "admin" && !LOCAL_HOSTS.has(window.location.hostname),
   );
 
   const pages = useQuery({

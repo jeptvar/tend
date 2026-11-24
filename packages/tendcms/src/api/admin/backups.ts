@@ -14,7 +14,6 @@ export interface BackupRouteOptions extends AdminOptions {
   uploadsDir?: string | undefined;
   secretKey?: Buffer | undefined;
   version?: string | undefined;
-  publicUrl?: string | undefined;
 }
 
 /** Settings → Backups: download the whole site, see the copies kept here, and the disk. */
@@ -48,7 +47,7 @@ export function registerBackupRoutes(routing: Routing, options: BackupRouteOptio
       secFetchSite: c.req.header("sec-fetch-site"),
       origin: c.req.header("origin"),
       host: c.req.header("host"),
-      publicUrl: options.publicUrl,
+      publicUrl: options.address.setUrl,
     });
     if (foreign) {
       throw new ApiError(403, "foreign_request", "That request came from another website.", {

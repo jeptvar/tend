@@ -57,6 +57,7 @@ import {
 } from "../media/library.ts";
 import { isIconSize, makeIcon, makeVariant } from "../media/process.ts";
 import type { MediaStore } from "../media/store.ts";
+import type { SiteAddress } from "../site-address.ts";
 import { contentTypeFor, resolveInside } from "../static-files.ts";
 import { type CachedPage, PageCache, pageEtag, type RenderedPage } from "./cache.ts";
 import { readableOn } from "./color.ts";
@@ -85,12 +86,8 @@ export interface SiteOptions {
   showThemeMistakes?: boolean | undefined;
   /** How much memory the page cache may use. 0 turns it off, as on a local site. */
   pageCacheBytes: number;
-  /**
-   * The site's own address, when it's known for sure: TEND_PUBLIC_URL, or what the hosting
-   * platform says. Pages name it in links that other sites keep, like canonical and og:url.
-   */
-  publicUrl?: string | undefined;
-  secureCookies?: boolean;
+  /** The site's own address, which pages name in links that other sites keep, like canonical. */
+  address: SiteAddress;
   /** How many proxies sit in front, so their X-Forwarded-Proto can be believed. */
   trustProxy?: number;
   now?: (() => number) | undefined;
@@ -310,26 +307,19 @@ export function createSite(options: SiteOptions): Site {
     return site;
   }
 
-  /** The address this site goes by: what it was told, or what it was asked for as. */
-  function trustedOrigin(): string | undefined {
-    if (options.publicUrl) return options.publicUrl;
-    if (site.address && site.address_confirmed) return site.address.replace(/\/+$/, "");
-    return undefined;
-  }
-
   /**
    * The address this site goes by. Only one it was told counts as the site's own: without
    * one, a page names the address it was asked for, and is cached apart for that address,
    * so a visitor sending another Host can't change the links everyone else gets.
    */
   function originOf(c: Context | undefined): string {
-    const trusted = trustedOrigin();
-    if (trusted) return trusted;
+    const known = options.address.url;
+    if (known) return known;
     if (!c) return "http://localhost";
     const url = new URL(c.req.url);
     const forwarded = c.req.header("x-forwarded-proto")?.split(",")[0]?.trim();
     const secure =
-      options.secureCookies || ((options.trustProxy ?? 0) > 0 && forwarded === "https");
+      options.address.secure || ((options.trustProxy ?? 0) > 0 && forwarded === "https");
     return `${secure ? "https:" : url.protocol}//${url.host}`;
   }
 
@@ -339,7 +329,7 @@ export function createSite(options: SiteOptions): Site {
 
   /** The cache key for a page, or nothing if this request's copy shouldn't be shared. */
   function cacheKey(c: Context, key: string): string | undefined {
-    if (trustedOrigin()) return key;
+    if (options.address.url) return key;
     const origin = originOf(c).toLowerCase();
     if (!cachedOrigins.has(origin)) {
       // Endless made-up hosts would only push real pages out of the cache.
@@ -894,7 +884,7 @@ export function createSite(options: SiteOptions): Site {
   async function access(c: Context): Promise<Access> {
     visibility ??= await settingValue(orm, "visibility");
     if (visibility.mode === "public") return "public";
-    const user = await currentUser(c, orm, options.secureCookies ?? false, now());
+    const user = await currentUser(c, orm, options.address.secure, now());
     if (user) return "signedIn";
     return visibility.mode === "coming_soon" ? "comingSoon" : "private";
   }
@@ -1246,7 +1236,7 @@ export function createSite(options: SiteOptions): Site {
       if (current?.mode !== "public") return;
       // Without a request there's no address to name in links, unless it's known for sure.
       site = (await getSetting(orm, "site").catch(() => undefined)) ?? site;
-      if (!trustedOrigin()) return;
+      if (!options.address.url) return;
       const post = path?.match(/^\/blog\/([^/]+)$/)?.[1];
       const single = path?.match(/^\/([^/]+)$/)?.[1];
       await Promise.all([

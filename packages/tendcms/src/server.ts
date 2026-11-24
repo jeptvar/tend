@@ -13,13 +13,19 @@ import type { Platform } from "./config.ts";
 import { MAX_UPLOAD_BYTES } from "./media/process.ts";
 import { MediaStore } from "./media/store.ts";
 import { createSite } from "./site/router.ts";
+import { SiteAddress } from "./site-address.ts";
 import { contentTypeFor, resolveInside } from "./static-files.ts";
 
-export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDir"> {
+export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDir" | "address"> {
   version: string;
   adminDir: string;
   adminDevUrl: string | undefined;
+  /** TEND_PUBLIC_URL. */
   publicUrl: string | undefined;
+  /** The address the hosting platform gave the site, if it said. */
+  platformUrl?: string | undefined;
+  /** Whether the site is reached over https, until an Admin confirms its address. */
+  secureCookies: boolean;
   themeDir: string;
   /** Where themes of people's own are. */
   themeFolders?: string[] | undefined;
@@ -176,12 +182,13 @@ const ADMIN_NOT_BUILT = `<!doctype html>
 export function createApp(options: AppOptions): Hono {
   const app = new Hono();
   const now = options.now ?? Date.now;
+  const address = new SiteAddress(options.orm, options);
 
   app.use("*", async (c, next) => {
     await next();
     c.res.headers.set("X-Content-Type-Options", "nosniff");
     c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    if (options.secureCookies) {
+    if (address.secure) {
       c.res.headers.set("Strict-Transport-Security", "max-age=31536000");
     }
     if (c.req.path === "/admin" || c.req.path.startsWith("/admin/")) {
@@ -287,7 +294,7 @@ export function createApp(options: AppOptions): Hono {
   // Nothing sent to the admin is read until it's known who sent it. A body can be 20 MB, so
   // reading first would let anyone at all fill the server's memory. Each route checks again.
   app.use("/api/admin/*", async (c, next) => {
-    const user = await currentUser(c, options.orm, options.secureCookies, now());
+    const user = await currentUser(c, options.orm, address.secure, now());
     if (!user) throw notSignedIn();
     if (isUpload(c.req.method, c.req.path)) await receiveUpload(c, user.id, next);
     else await next();
@@ -305,26 +312,27 @@ export function createApp(options: AppOptions): Hono {
     themeFolders: options.themeFolders,
     showThemeMistakes: options.showThemeMistakes,
     pageCacheBytes: options.pageCacheBytes,
-    publicUrl: options.siteUrl ?? options.publicUrl,
-    secureCookies: options.secureCookies,
+    address,
     trustProxy: options.trustProxy,
     now: options.now,
     watchTheme: options.watchTheme ?? false,
     onBackgroundWork: options.onBackgroundWork,
   });
-  const onSiteChanged = (path?: string) => site.changed(path);
+  const onSiteChanged = (path?: string) => {
+    address.refresh();
+    site.changed(path);
+  };
 
-  app.route("/api/auth", createAuthRoutes({ ...options, onSiteChanged }));
+  app.route("/api/auth", createAuthRoutes({ ...options, address, onSiteChanged }));
   app.route(
     "/api/admin",
     createAdminRoutes({
       orm: options.orm,
       store,
-      secureCookies: options.secureCookies,
+      address,
       now: options.now,
       onSiteChanged,
       preview: (input) => site.preview(input),
-      publicUrl: options.siteUrl ?? options.publicUrl,
       themes: site.themes,
       platform: options.platform,
       previewDesign: (design) => site.previewDesign(design),

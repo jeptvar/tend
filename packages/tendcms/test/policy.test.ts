@@ -203,7 +203,7 @@ describe("every admin route", () => {
   const options = {
     orm: undefined as never,
     store: undefined as never,
-    secureCookies: false,
+    address: undefined as never,
     themes: undefined as never,
     onSiteChanged: () => {},
   };
@@ -382,7 +382,7 @@ describe("every route about a person", () => {
   const { policies } = createAdminRoutes({
     orm: undefined as never,
     store: undefined as never,
-    secureCookies: false,
+    address: undefined as never,
     themes: undefined as never,
     onSiteChanged: () => {},
   });

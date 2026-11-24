@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
-import type { Platform } from "../../config.ts";
+import { carrySignInOver } from "../../auth/current-user.ts";
+import { isLocalAddress, type Platform } from "../../config.ts";
 import { isLivePath } from "../../content/entries.ts";
 import {
   addManualRedirect,
@@ -35,8 +36,6 @@ import { ApiError } from "../errors.ts";
 import { type AdminOptions, parseBody, type Routing, readJson } from "./routing.ts";
 
 export interface SiteRouteOptions extends AdminOptions {
-  /** TEND_PUBLIC_URL, when it's known, so a redirect to the site's own address stays a path. */
-  publicUrl?: string | undefined;
   /** The themes the site can use, for the Design form. */
   themes: Themes;
   /** Where Tend runs, which decides how a theme of someone's own is started. */
@@ -175,9 +174,10 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
   // through Host, so it's an address that leads here.
   route("post", "/address", "settings:manage", async (c, user) => {
     const { address } = parseBody(addressSchema, await readJson(c));
-    if (options.publicUrl) {
+    const { setUrl } = options.address;
+    if (setUrl) {
       throw new ApiError(409, "address_set", "This site's address is already set.", {
-        fix: `It's ${options.publicUrl}, set where Tend runs.`,
+        fix: `It's ${setUrl}, set where Tend runs.`,
       });
     }
     const origin = c.req.header("origin");
@@ -198,7 +198,13 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
         fix: "Open Overview at your site's address, then try again. If Tend is behind a proxy, set TEND_PUBLIC_URL instead.",
       });
     }
+    if (isLocalAddress(opened.origin)) {
+      throw new ApiError(400, "address_local", "That address only works on this computer.", {
+        fix: "Put your site online first, then open Overview at its address there.",
+      });
+    }
     const site = (await getSetting(orm, "site")) as SiteSettings;
+    const wasSecure = options.address.secure;
     await writeSetting(orm, {
       key: "site",
       value: { ...site, address: opened.origin, address_confirmed: true },
@@ -206,6 +212,7 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
       now: now(),
     });
     options.onSiteChanged();
+    carrySignInOver(c, wasSecure, options.address.secure);
     return c.json({ address: opened.origin });
   });
 
@@ -347,11 +354,8 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
     const body = parseBody(redirectSchema, await readJson(c));
     const from = cleanFrom(body.from);
     // An address on this site itself is kept as just its path, so it moves with the site.
-    const ownHosts = [
-      c.req.header("host"),
-      new URL(c.req.url).host,
-      options.publicUrl && new URL(options.publicUrl).host,
-    ]
+    const known = options.address.url;
+    const ownHosts = [c.req.header("host"), new URL(c.req.url).host, known && new URL(known).host]
       .filter((host): host is string => Boolean(host))
       .map((host) => host.toLowerCase());
     const to = cleanTo(body.to, ownHosts);
