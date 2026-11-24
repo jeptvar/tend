@@ -5,6 +5,7 @@ import {
   type Config,
   ConfigError,
   checkNodeVersion,
+  dataFolderError,
   ensureSecretKey,
   explainDataFolderFailure,
   loadConfig,
@@ -134,6 +135,7 @@ describe("explainDataFolderFailure", () => {
     "EACCES",
     "EROFS",
     "ENOSPC",
+    "EDQUOT",
     "SQLITE_CANTOPEN",
     "SQLITE_READONLY",
     "SQLITE_IOERR_WRITE",
@@ -150,6 +152,20 @@ describe("explainDataFolderFailure", () => {
     expect(fix("docker")).toContain("sudo chown -R 1000:1000");
     expect(fix("railway")).toContain("RAILWAY_RUN_UID=0");
     expect(fix("railway")).toContain("https://tendcms.dev/errors/data_not_writable");
+  });
+
+  test.each([
+    ["ENOSPC", "Its disk is full"],
+    ["EDQUOT", "Its disk is full"],
+    ["SQLITE_FULL", "Its disk is full"],
+    ["EROFS", "a disk that can only be read"],
+  ])("%s isn't said to be about who may write there", (code, says) => {
+    for (const platform of [undefined, "docker", "railway"] as const) {
+      const { message } = dataFolderError("/data", failure(code), platform);
+      expect(message).toContain(`Tend can't write to its data folder, /data (${code}). `);
+      expect(message).toContain(says);
+      expect(message).not.toMatch(/write access|chown|RAILWAY_RUN_UID/);
+    }
   });
 
   test("anything else is passed on unchanged, not blamed on the folder", () => {

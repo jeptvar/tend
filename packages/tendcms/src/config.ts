@@ -229,8 +229,14 @@ export function portsToTry(config: Pick<Config, "port" | "platform">): number[] 
   return Array.from({ length: FALLBACK_PORTS + 1 }, (_, i) => DEFAULT_PORT + i);
 }
 
-/** What to do about a data folder Tend can't write to, where it's running. */
-export function dataFolderFix(platform: Platform | undefined): string {
+/** What to do about a data folder Tend can't write to, for this reason, where it's running. */
+export function dataFolderFix(reason: string, platform: Platform | undefined): string {
+  if (/^(ENOSPC|EDQUOT|SQLITE_FULL)$/.test(reason)) {
+    return "Its disk is full, so make room on it, then start Tend again.";
+  }
+  if (reason === "EROFS") {
+    return "It's on a disk that can only be read, so mount it to be written to as well.";
+  }
   // The image runs as node (user 1000), and a folder from the server, or a volume some
   // hosts make, belongs to root.
   if (platform === "railway") {
@@ -245,7 +251,7 @@ export function dataFolderFix(platform: Platform | undefined): string {
 export function dataFolderError(dataDir: string, cause: unknown, platform?: Platform): ConfigError {
   const reason = (cause as NodeJS.ErrnoException).code ?? (cause as Error).message;
   return new ConfigError(
-    `Tend can't write to its data folder, ${dataDir} (${reason}). ${dataFolderFix(platform)} ` +
+    `Tend can't write to its data folder, ${dataDir} (${reason}). ${dataFolderFix(reason, platform)} ` +
       "Fix: https://tendcms.dev/errors/data_not_writable",
   );
 }
@@ -253,7 +259,7 @@ export function dataFolderError(dataDir: string, cause: unknown, platform?: Plat
 // Failures a person can fix by sorting out the folder. Anything else isn't a
 // permissions problem, and blaming permissions would send them the wrong way.
 const FOLDER_FAILURE =
-  /^(EACCES|EPERM|EROFS|ENOSPC|EISDIR|ENOTDIR|SQLITE_CANTOPEN|SQLITE_READONLY|SQLITE_FULL|SQLITE_IOERR)/;
+  /^(EACCES|EPERM|EROFS|ENOSPC|EDQUOT|EISDIR|ENOTDIR|SQLITE_CANTOPEN|SQLITE_READONLY|SQLITE_FULL|SQLITE_IOERR)/;
 
 /** Turns a failure while taking over the data folder into something that tells the truth. */
 export function explainDataFolderFailure(

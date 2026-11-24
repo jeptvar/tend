@@ -184,7 +184,7 @@ function writingProblem(config: Config): string | undefined {
       else tryFile(path);
     } catch (error) {
       const reason = (error as NodeJS.ErrnoException).code ?? (error as Error).message;
-      return `Tend can't write to ${path}, in its data folder (${reason}). ${dataFolderFix(platform)}`;
+      return `Tend can't write to ${path}, in its data folder (${reason}). ${dataFolderFix(reason, platform)}`;
     }
   }
   return undefined;
