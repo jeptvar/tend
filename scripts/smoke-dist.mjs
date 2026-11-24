@@ -14,10 +14,22 @@ if (!existsSync(cli)) {
   process.exit(1);
 }
 
+// Nothing at all set up, in an empty folder (PLAN.md §4, P2). Windows won't start a program
+// without these.
+const bare = Object.fromEntries(
+  ["SystemRoot", "windir", "TEMP", "TMP"].flatMap((name) =>
+    process.platform === "win32" && process.env[name] ? [[name, process.env[name]]] : [],
+  ),
+);
+
+/** PLAN.md §11. Shared Windows and macOS runners are too uneven to hold to it. */
+const BOOT_MS = process.platform === "linux" ? 1000 : 4000;
+const IDLE_BYTES = 120 * 1024 * 1024;
+
 const cwd = mkdtempSync(join(tmpdir(), "tend-smoke-"));
 const child = spawn(process.execPath, [cli, "start"], {
   cwd,
-  env: { ...process.env, PORT: "0", TEND_ADMIN_DEV_URL: "", TEND_DATA_DIR: join(cwd, "data") },
+  env: bare,
   stdio: ["ignore", "pipe", "pipe"],
 });
 let output = "";
@@ -38,6 +50,13 @@ async function waitForPort(tend = child) {
   throw new Error("Tend didn't start");
 }
 
+async function stopped(tend) {
+  if (!tend || tend.exitCode !== null || tend.signalCode !== null) return;
+  const exited = new Promise((resolve) => tend.once("exit", resolve));
+  tend.kill("SIGTERM");
+  await exited;
+}
+
 function check(condition, message) {
   if (!condition) throw new Error(message);
   console.log(`ok - ${message}`);
@@ -49,7 +68,7 @@ try {
   const base = `http://127.0.0.1:${await waitForPort()}`;
 
   const health = await (await fetch(`${base}/healthz`)).json();
-  check(health.ok === true, "/healthz answers");
+  check(health.ok === true, "it starts in an empty folder with nothing set, and /healthz answers");
 
   // Importing cli.mjs could run Tend a second time.
   const importers = readdirSync(dist).filter(
@@ -196,34 +215,49 @@ try {
 
   // And that the site it put there starts, and knows its owner. Restoring and starting each
   // read the folder in their own way, so nothing short of starting it proves they agree.
-  again = spawn(process.execPath, [cli, "start"], {
-    cwd,
-    env: { ...process.env, PORT: "0", TEND_ADMIN_DEV_URL: "", TEND_DATA_DIR: restored },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  output = "";
-  for (const stream of [again.stdout, again.stderr]) {
-    stream.on("data", (chunk) => {
-      output += chunk;
+  const startAgain = () => {
+    again = spawn(process.execPath, [cli, "start"], {
+      cwd,
+      env: { ...process.env, PORT: "0", TEND_ADMIN_DEV_URL: "", TEND_DATA_DIR: restored },
+      stdio: ["ignore", "pipe", "pipe"],
     });
-  }
+    output = "";
+    for (const stream of [again.stdout, again.stderr]) {
+      stream.on("data", (chunk) => {
+        output += chunk;
+      });
+    }
+  };
+  const started = performance.now();
+  startAgain();
   const restoredBase = `http://127.0.0.1:${await waitForPort(again)}`;
+  const boot = Math.round(performance.now() - started);
+  check(boot <= BOOT_MS, `it starts within ${BOOT_MS} ms, once its database is made (${boot} ms)`);
   const backIn = await fetch(`${restoredBase}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: "smoke@example.com", password }),
   });
   check(backIn.status === 200, "the restored site starts, and its owner can sign in");
+
+  // Left alone, as it is most of the day, and with nothing asked of it but this.
+  const asOwner = backIn.headers
+    .getSetCookie()
+    .map((line) => line.split(";")[0])
+    .join("; ");
+  await stopped(again);
+  startAgain();
+  const idleBase = `http://127.0.0.1:${await waitForPort(again)}`;
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  const running = await fetch(`${idleBase}/api/admin/health`, { headers: { Cookie: asOwner } });
+  const { memoryBytes } = await running.json();
+  const megabytes = Math.round(memoryBytes / 1024 / 1024);
+  check(memoryBytes <= IDLE_BYTES, `left alone, it takes at most 120 MB (${megabytes} MB)`);
 } catch (error) {
   failed = true;
   console.error(`\nSmoke test failed: ${error.message}\n\nTend's output:\n${output}`);
 } finally {
-  for (const tend of [child, again]) {
-    if (!tend || tend.exitCode !== null || tend.signalCode !== null) continue;
-    const exited = new Promise((resolve) => tend.once("exit", resolve));
-    tend.kill("SIGTERM");
-    await exited;
-  }
+  for (const tend of [child, again]) await stopped(tend);
   rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 process.exit(failed ? 1 : 0);

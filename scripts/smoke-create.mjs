@@ -4,13 +4,17 @@
 // Run after pnpm build, and after scripts/shrinkwrap.mjs as the release does. It needs the
 // npm registry. Zero dependencies, so it runs the same on every OS.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
 const work = mkdtempSync(join(tmpdir(), "tend-create-"));
-const started = Date.now();
+
+// PLAN.md §11. npm takes far longer to write files on GitHub's Windows runners than anywhere.
+const TARBALL_BYTES = 5 * 1024 * 1024;
+const MOST_PACKAGES = 15;
+const CREATE_SECONDS = process.platform === "win32" ? 180 : 60;
 
 function check(condition, message) {
   if (!condition) throw new Error(message);
@@ -48,7 +52,13 @@ try {
   const tendcms = pack("tendcms");
   const createTend = pack("create-tend");
   check(true, "tendcms and create-tend pack");
+  const size = statSync(tendcms).size;
+  check(
+    size <= TARBALL_BYTES,
+    `tendcms is at most 5 MB to download (${(size / 1e6).toFixed(2)} MB)`,
+  );
 
+  const creating = Date.now();
   // As `npm create tend@latest my-site` does, from the packed create-tend. It's told to
   // install the packed tendcms in place of the published one.
   npm(["exec", "--yes", `--package=${createTend}`, "--", "create-tend", "my-site", "--no-start"], {
@@ -70,7 +80,10 @@ try {
   }
   const lock = JSON.parse(readFileSync(join(site, "package-lock.json"), "utf8"));
   const count = Object.keys(lock.packages).filter((path) => path.includes("node_modules/")).length;
-  console.log(`  ${count} packages installed in ${Math.round((Date.now() - started) / 1000)} s`);
+  const seconds = Math.round((Date.now() - creating) / 1000);
+  // Three it chose, what those need, and their parts for this kind of computer.
+  check(count <= MOST_PACKAGES, `it installed at most ${MOST_PACKAGES} packages (${count})`);
+  check(seconds <= CREATE_SECONDS, `it took at most ${CREATE_SECONDS} s (${seconds} s)`);
 
   // npm start, then the setup screen.
   tend = spawn(process.execPath, [join(installed, "dist", "cli.mjs"), "start"], {
