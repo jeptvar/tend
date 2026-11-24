@@ -20,6 +20,7 @@ import { Unzip, UnzipInflate } from "fflate";
 import { openDatabase, type SqliteDatabase } from "../db/client.ts";
 import { migrate, readSchemaVersion, saveSnapshot } from "../db/migrate.ts";
 import { fsyncDir, fsyncFile } from "../durable.ts";
+import { PlainError } from "../plain-error.ts";
 import {
   BACKUP_FORMAT,
   type BackupFile,
@@ -32,7 +33,7 @@ import {
 } from "./format.ts";
 
 /** Why a backup can't be restored, in words for whoever is restoring it. */
-export class BackupError extends Error {}
+export class BackupError extends PlainError {}
 
 export interface CheckedBackup {
   manifest: BackupManifest;

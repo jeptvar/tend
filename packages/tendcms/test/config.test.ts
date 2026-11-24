@@ -148,17 +148,6 @@ describe("explainDataFolderFailure", () => {
     expect(fix("railway")).toContain("https://tendcms.dev/errors/data_not_writable");
   });
 
-  test.each(["ERR_DLOPEN_FAILED", "MODULE_NOT_FOUND"])(
-    "%s says the database component failed, with the reason",
-    (code) => {
-      const explained = explainDataFolderFailure("/data", failure(code)) as Error;
-      expect(explained).toBeInstanceOf(ConfigError);
-      expect(explained.message).toContain("database component couldn't load");
-      expect(explained.message).toContain(`${code} details`);
-      expect(explained.message).not.toContain("write access");
-    },
-  );
-
   test("anything else is passed on unchanged, not blamed on the folder", () => {
     const original = failure("ERR_SOMETHING_ELSE");
     expect(explainDataFolderFailure("/data", original)).toBe(original);

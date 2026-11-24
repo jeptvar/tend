@@ -3,11 +3,12 @@
 // finding the admin, serving the real files, and running setup. Run after `pnpm build`.
 // Zero dependencies and no shell, so it runs the same on every OS.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const cli = join(import.meta.dirname, "..", "packages", "tendcms", "dist", "cli.mjs");
+const dist = join(import.meta.dirname, "..", "packages", "tendcms", "dist");
+const cli = join(dist, "cli.mjs");
 if (!existsSync(cli)) {
   console.error(`${cli} doesn't exist. Run pnpm build first.`);
   process.exit(1);
@@ -49,8 +50,13 @@ try {
   const health = await (await fetch(`${base}/healthz`)).json();
   check(health.ok === true, "/healthz answers");
 
+  // Importing cli.mjs could run Tend a second time.
+  const importers = readdirSync(dist).filter(
+    (name) => name.endsWith(".mjs") && readFileSync(join(dist, name), "utf8").includes("/cli.mjs"),
+  );
+  check(importers.length === 0, "nothing imports cli.mjs");
+
   // Every package tsdown may bundle has its licence in the notices, as must be published.
-  const dist = join(import.meta.dirname, "..", "packages", "tendcms", "dist");
   const notices = readFileSync(join(dist, "THIRD_PARTY_NOTICES.md"), "utf8");
   const config = readFileSync(join(dist, "..", "tsdown.config.ts"), "utf8");
   const bundled = [

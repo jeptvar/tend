@@ -13,6 +13,7 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import Database from "better-sqlite3";
 import { fsyncDir, fsyncFile } from "../durable.ts";
+import { PlainError } from "../plain-error.ts";
 import { openDatabase, type SqliteDatabase } from "./client.ts";
 
 export interface MigrateOptions {
@@ -31,7 +32,7 @@ export interface MigrateResult {
   snapshotPath: string | undefined;
 }
 
-export class MigrationError extends Error {}
+export class MigrationError extends PlainError {}
 
 const SNAPSHOTS_KEPT = 3;
 /** Work in the backups folder that isn't finished yet. Anything named so is removed at boot. */

@@ -1,9 +1,10 @@
 import { PassThrough, Readable } from "node:stream";
 import { isForeignRequest } from "../../auth/csrf.ts";
 import { backupFileName } from "../../backups/format.ts";
-import { diskSpace, listSnapshots } from "../../backups/snapshots.ts";
+import { listSnapshots } from "../../backups/snapshots.ts";
 import { writeBackup } from "../../backups/write.ts";
 import { getSetting, putSetting } from "../../db/repo/settings.ts";
+import { diskSpace } from "../../disk.ts";
 import { ApiError } from "../errors.ts";
 import type { AdminOptions, Routing } from "./routing.ts";
 

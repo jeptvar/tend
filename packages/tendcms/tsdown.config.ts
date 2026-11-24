@@ -2,7 +2,10 @@ import { defineConfig } from "tsdown";
 import { thirdPartyNotices } from "../../scripts/third-party-notices.mjs";
 
 export default defineConfig({
-  entry: ["src/cli.ts"],
+  // cli.ts loads commands.ts only once it's checked that it can. As entries of their own, what
+  // they share gets a file to itself. Otherwise it would be in cli.mjs, where importing it
+  // could run Tend a second time.
+  entry: ["src/cli.ts", "src/commands.ts"],
   platform: "node",
   target: "node24",
   dts: false,

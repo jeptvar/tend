@@ -10,13 +10,11 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { listSnapshots } from "../backups/snapshots.ts";
+import { type DiskSpace, isNearlyFull } from "../disk.ts";
 import { fsyncDir, fsyncFile } from "../durable.ts";
 
 /** The name write() gives a file until it's complete: <name>.<process>.<time>.tmp. */
 const TEMPORARY = /\.\d+\.\d+\.tmp$/;
-
-/** How full a disk gets before Tend clears what it can to make room (PLAN.md §13). */
-export const NEARLY_FULL = 0.9;
 
 /**
  * How far back a copy of the site's data holds on to the originals it shows. The daily and
@@ -24,10 +22,6 @@ export const NEARLY_FULL = 0.9;
  * older, and keeping every original deleted since then would hold on to space for months.
  */
 const COPIES_HOLD_ORIGINALS_MS = 6 * 7 * 24 * 60 * 60 * 1000;
-
-export function isNearlyFull(space: { total: number; free: number }): boolean {
-  return space.total > 0 && (space.total - space.free) / space.total >= NEARLY_FULL;
-}
 
 /**
  * Where uploads live in the data folder (PLAN.md §8). Originals are spread over folders by
@@ -171,7 +165,7 @@ export class MediaStore {
  * they're next asked for, so they go before anything that can't be (PLAN.md §13). Returns the
  * bytes freed.
  */
-export function clearSizesIfLow(store: MediaStore, space: { total: number; free: number }): number {
+export function clearSizesIfLow(store: MediaStore, space: DiskSpace): number {
   return isNearlyFull(space) ? store.removeEverySize() : 0;
 }
 

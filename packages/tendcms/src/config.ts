@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { fsyncDir, fsyncFile } from "./durable.ts";
+import { PlainError } from "./plain-error.ts";
 
 export type Platform = "railway" | "render" | "fly" | "docker" | "local";
 
@@ -46,8 +47,8 @@ export interface Config {
   pageCacheBytes: number;
 }
 
-/** A problem the person running Tend has to fix; `message` is shown as-is. */
-export class ConfigError extends Error {}
+/** A problem the person running Tend has to fix. */
+export class ConfigError extends PlainError {}
 
 const DOCS = "https://tendcms.dev/docs";
 const MIN_NODE_MAJOR = 24;
@@ -261,14 +262,6 @@ export function explainDataFolderFailure(
 ): unknown {
   const code = String((error as NodeJS.ErrnoException).code);
   if (FOLDER_FAILURE.test(code)) return dataFolderError(dataDir, error, platform);
-  // The lock is the first thing to open a database, so this is where a broken
-  // install or a computer with no prebuilt database component shows up.
-  if (code === "ERR_DLOPEN_FAILED" || code === "MODULE_NOT_FOUND") {
-    return new ConfigError(
-      `Tend's database component couldn't load on this computer (${(error as Error).message}). ` +
-        "Install Tend again, or use the Docker version: https://tendcms.dev/errors/database_component",
-    );
-  }
   if (code === "SQLITE_NOTADB") {
     return new ConfigError(
       `The lock file ${join(dataDir, ".lock.db")} is damaged. It holds nothing you need: ` +

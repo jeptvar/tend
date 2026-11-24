@@ -1,7 +1,8 @@
-import { readdirSync, rmSync, statfsSync, statSync } from "node:fs";
+import { readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { SqliteDatabase } from "../db/client.ts";
 import { saveSnapshot } from "../db/migrate.ts";
+import { diskSpace } from "../disk.ts";
 
 // Copies of the site's database kept in the backups folder (PLAN.md §13): one each day at
 // 03:00 site time, a week of them and four weekly ones, never more than 20% of the disk.
@@ -125,17 +126,6 @@ export function snapshotsToRemove(daily: Snapshot[], diskBytes: number): Snapsho
   }
   const keep = new Set(kept.map((snapshot) => snapshot.id));
   return newestFirst.filter((snapshot) => !keep.has(snapshot.id));
-}
-
-export interface DiskSpace {
-  total: number;
-  free: number;
-}
-
-/** Space on the disk that holds the data folder. */
-export function diskSpace(path: string): DiskSpace {
-  const stats = statfsSync(path);
-  return { total: stats.blocks * stats.bsize, free: stats.bavail * stats.bsize };
 }
 
 /**

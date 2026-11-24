@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
+import { PlainError } from "../plain-error.ts";
 
 export interface LockInfo {
   pid: number;
@@ -12,7 +13,7 @@ export interface Lock {
   release(): void;
 }
 
-export class LockError extends Error {
+export class LockError extends PlainError {
   readonly holder: LockInfo | undefined;
 
   constructor(holder: LockInfo | undefined) {
