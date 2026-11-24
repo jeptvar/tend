@@ -462,9 +462,10 @@ test.describe("formatting", () => {
     await page.keyboard.type("Every morning");
     await page.getByLabel("Background").selectOption("muted");
     await page.getByLabel("Alignment").selectOption("center");
+    await page.getByLabel("Layout").selectOption("Right across the page");
 
     const html = await publishedHtml(page, signedIn, entry.id);
-    expect(html).toContain('class="t-intro t-tone-muted t-align-center"');
+    expect(html).toContain('class="t-intro t-tone-muted t-align-center" data-preset="2"');
     expect(html).toContain("<h2>Fresh bread</h2>");
 
     const post = await createEntry(page, signedIn, { title: "Post", body: "" });

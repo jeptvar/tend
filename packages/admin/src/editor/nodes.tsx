@@ -108,6 +108,27 @@ export interface SectionOptions {
   canEditBusiness: boolean;
 }
 
+/** The two ways each section can be laid out (PLAN.md §5). */
+const PRESETS = {
+  intro: {
+    label: "editor.sectionLayout",
+    first: "editor.introFitted",
+    second: "editor.introWide",
+  },
+  pictureText: {
+    label: "editor.sectionPicture",
+    first: "editor.pictureLeft",
+    second: "editor.pictureRight",
+  },
+  contact: {
+    label: "editor.sectionLayout",
+    first: "editor.contactBelow",
+    second: "editor.contactBeside",
+  },
+} as Record<string, { label: string; first: string; second: string }> & {
+  intro: { label: string; first: string; second: string };
+};
+
 function SectionView({
   node,
   updateAttributes,
@@ -125,6 +146,7 @@ function SectionView({
   };
   const editable = useIsEditable(editor);
   const options = extension.options as SectionOptions;
+  const presets = PRESETS[kind] ?? PRESETS.intro;
   return (
     <NodeViewWrapper
       className={`my-4 rounded-lg border border-dashed border-muted p-4 ${
@@ -145,19 +167,17 @@ function SectionView({
         </span>
         {editable && (
           <>
-            {kind === "pictureText" && (
-              <label className="flex items-center gap-1 text-sm">
-                <FormattedMessage id="editor.sectionPicture" />
-                <select
-                  className={controlClass}
-                  value={preset === "2" ? "2" : "1"}
-                  onChange={(event) => updateAttributes({ preset: event.target.value })}
-                >
-                  <option value="1">{intl.formatMessage({ id: "editor.pictureLeft" })}</option>
-                  <option value="2">{intl.formatMessage({ id: "editor.pictureRight" })}</option>
-                </select>
-              </label>
-            )}
+            <label className="flex items-center gap-1 text-sm">
+              <FormattedMessage id={presets.label} />
+              <select
+                className={controlClass}
+                value={preset === "2" ? "2" : "1"}
+                onChange={(event) => updateAttributes({ preset: event.target.value })}
+              >
+                <option value="1">{intl.formatMessage({ id: presets.first })}</option>
+                <option value="2">{intl.formatMessage({ id: presets.second })}</option>
+              </select>
+            </label>
             <label className="flex items-center gap-1 text-sm">
               <FormattedMessage id="editor.sectionTone" />
               <select
