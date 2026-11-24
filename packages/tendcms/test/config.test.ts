@@ -139,6 +139,15 @@ describe("explainDataFolderFailure", () => {
     expect((explained as Error).message).toContain("can't write to its data folder");
   });
 
+  test("says what to do about it where Tend runs", () => {
+    const fix = (platform?: "docker" | "railway") =>
+      (explainDataFolderFailure("/data", failure("EACCES"), platform) as Error).message;
+    expect(fix()).toContain("Give your user write access to it");
+    expect(fix("docker")).toContain("sudo chown -R 1000:1000");
+    expect(fix("railway")).toContain("RAILWAY_RUN_UID=0");
+    expect(fix("railway")).toContain("https://tendcms.dev/errors/data_not_writable");
+  });
+
   test.each(["ERR_DLOPEN_FAILED", "MODULE_NOT_FOUND"])(
     "%s says the database component failed, with the reason",
     (code) => {
