@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { crc32 } from "node:zlib";
 import sharp from "sharp";
 import { describe, expect, test } from "vitest";
 import { ApiError } from "../src/api/errors.ts";
@@ -142,6 +143,89 @@ describe("making pictures ready for visitors", () => {
     const good = await jpeg();
     const error = await refusalOf(() => processImage(good.subarray(0, 20), "jpeg"));
     expect(error.code).toBe("unreadable_picture");
+  });
+});
+
+describe("a file that's two things at once", () => {
+  const PAYLOAD = Buffer.from(
+    "<script>alert(document.domain)</script><?php echo 1; ?>PK\x05\x06",
+    "latin1",
+  );
+
+  function chunk(type: string, data: Buffer): Buffer {
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const size = Buffer.alloc(4);
+    size.writeUInt32BE(data.length);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc32(body));
+    return Buffer.concat([size, body, sum]);
+  }
+
+  /** A picture that reads as one, with the payload where each kind has room for it. */
+  const hidden: Record<string, () => Promise<Buffer>> = {
+    "jpeg, as a comment": async () => {
+      const size = Buffer.alloc(2);
+      size.writeUInt16BE(PAYLOAD.length + 2);
+      const real = await jpeg();
+      const comment = [Buffer.from([0xff, 0xfe]), size, PAYLOAD];
+      return Buffer.concat([real.subarray(0, 2), ...comment, real.subarray(2)]);
+    },
+    "jpeg, after its end": async () => Buffer.concat([await jpeg(), PAYLOAD]),
+    "jpeg, in its camera details": async () =>
+      picture(40, 30)
+        .jpeg()
+        .withExif({ IFD0: { ImageDescription: PAYLOAD.toString("latin1") } })
+        .toBuffer(),
+    "png, as words": async () => {
+      const real = await png();
+      const words = chunk("tEXt", Buffer.concat([Buffer.from("Comment\0", "latin1"), PAYLOAD]));
+      // After the first chunk, which is always 13 bytes of data.
+      return Buffer.concat([real.subarray(0, 33), words, real.subarray(33)]);
+    },
+    "png, after its end": async () => Buffer.concat([await png(), PAYLOAD]),
+    "gif, as a comment": async () => {
+      const real = await picture(40, 30).gif().toBuffer();
+      const comment = Buffer.concat([
+        Buffer.from([0x21, 0xfe, PAYLOAD.length]),
+        PAYLOAD,
+        Buffer.from([0]),
+      ]);
+      return Buffer.concat([real.subarray(0, -1), comment, real.subarray(-1)]);
+    },
+    "gif, after its end": async () =>
+      Buffer.concat([await picture(40, 30).gif().toBuffer(), PAYLOAD]),
+    "webp, after its end": async () =>
+      Buffer.concat([await picture(40, 30).webp().toBuffer(), PAYLOAD]),
+    "avif, in a box of its own": async () => {
+      const size = Buffer.alloc(4);
+      size.writeUInt32BE(PAYLOAD.length + 8);
+      const real = await picture(40, 30).avif().toBuffer();
+      return Buffer.concat([real, size, Buffer.from("free", "latin1"), PAYLOAD]);
+    },
+  };
+
+  test.each(Object.keys(hidden))("keeps only the picture: %s", async (name) => {
+    const input = await (hidden[name] as () => Promise<Buffer>)();
+    expect(input.includes(PAYLOAD.subarray(0, 39)), "the payload is in what's uploaded").toBe(true);
+    const found = sniff(input);
+    if (found?.kind !== "image") throw new Error("it should be known as a picture");
+    const done = await processImage(input, found.format);
+    for (const file of [done.original, ...done.variants.map(({ data }) => data)]) {
+      for (const part of ["<script", "<?php", "PK\x05\x06", "document.domain"]) {
+        expect(file.includes(Buffer.from(part, "latin1")), part).toBe(false);
+      }
+    }
+  });
+
+  test("a PDF that's also a page is saved, never shown as one", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const both = Buffer.concat([Buffer.from("%PDF-1.7\n"), PAYLOAD]);
+    const taken = await (await owner.upload(MEDIA, both, "menu.pdf")).json();
+    const reply = await made.app.request(taken.url);
+    expect(reply.headers.get("content-type")).toBe("application/pdf");
+    expect(reply.headers.get("content-disposition")).toMatch(/^attachment;/);
+    expect(reply.headers.get("x-content-type-options")).toBe("nosniff");
   });
 });
 
