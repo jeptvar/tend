@@ -121,6 +121,10 @@ function originalsIn(uploadsDir: string): string[] {
   return names;
 }
 
+function destinationClosed(): Error {
+  return new Error("The backup's destination closed before it was done.");
+}
+
 /** fflate's streaming zip, written to a Node stream that may be slower than it. */
 class ZipWriter {
   readonly #out: Writable;
@@ -194,6 +198,8 @@ class ZipWriter {
   /** Waits while `out` has more than it can take, and stops if it closed or failed. */
   async #caughtUp(): Promise<void> {
     if (this.#failed) throw this.#failed;
+    // One that closed while nothing was waited for would never say so again.
+    if (this.#out.destroyed) throw destinationClosed();
     if (!this.#behind) return;
     await new Promise<void>((resolve, reject) => {
       const done = (error?: Error) => {
@@ -204,7 +210,7 @@ class ZipWriter {
         else resolve();
       };
       const drained = () => done();
-      const closed = () => done(new Error("The backup's destination closed before it was done."));
+      const closed = () => done(destinationClosed());
       this.#out.once("drain", drained);
       this.#out.once("error", done);
       this.#out.once("close", closed);

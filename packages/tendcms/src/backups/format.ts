@@ -41,7 +41,16 @@ export function isBackupEntry(name: string): boolean {
 
 /** rise-bakery-backup-PRIVATE-2027-11-21.zip. The name says it's private (PLAN.md §12). */
 export function backupFileName(site: string, at: Date): string {
-  const slug =
+  return `${siteInFileName(site)}-backup-PRIVATE-${at.toISOString().slice(0, 10)}.zip`;
+}
+
+/** The same for one of the copies kept on the server, which holds the database alone. */
+export function copyFileName(site: string, at: Date): string {
+  return `${siteInFileName(site)}-copy-PRIVATE-${at.toISOString().slice(0, 10)}.db.gz`;
+}
+
+function siteInFileName(site: string): string {
+  return (
     site
       .normalize("NFKD")
       .replace(/\p{M}/gu, "")
@@ -49,6 +58,6 @@ export function backupFileName(site: string, at: Date): string {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 60)
-      .replace(/-+$/, "") || "tend";
-  return `${slug}-backup-PRIVATE-${at.toISOString().slice(0, 10)}.zip`;
+      .replace(/-+$/, "") || "tend"
+  );
 }

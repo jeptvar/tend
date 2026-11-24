@@ -249,7 +249,7 @@ export function readableOn(color: string, backgrounds: readonly string[]): strin
 export interface BackupsInfo {
   snapshots: {
     id: string;
-    kind: "daily" | "update" | "restore";
+    kind: "daily" | "update" | "restore" | "manual";
     takenAt: number;
     bytes: number;
   }[];
@@ -262,3 +262,8 @@ export const BACKUPS_KEY = ["backups"];
 
 /** Where the browser downloads the whole site from. Only the Owner may. */
 export const BACKUP_DOWNLOAD_URL = "/api/admin/backups/download";
+
+/** Where one of the copies kept on the server is downloaded from. Only the Owner may. */
+export function copyDownloadUrl(id: string): string {
+  return `/api/admin/backups/${encodeURIComponent(id)}/download`;
+}

@@ -1,13 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   closeSync,
   copyFileSync,
   createReadStream,
+  createWriteStream,
   existsSync,
   fsyncSync,
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
   statfsSync,
@@ -15,7 +17,9 @@ import {
   writeSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { createGunzip, gunzipSync } from "node:zlib";
 import Database from "better-sqlite3";
 import { Unzip, UnzipInflate } from "fflate";
 import { parseSecretKey, SECRET_KEY_BYTES, secretKeyText } from "../config.ts";
@@ -61,6 +65,8 @@ const MAX_KEY_BYTES = 1024;
 
 const NOT_A_BACKUP =
   "This file isn't a Tend backup, or it's damaged. Download a new backup from the site and try that.";
+const NO_ROOM =
+  "There isn't enough free space here to restore this backup. Free some space, then try again.";
 const DAMAGED =
   "The site's data in this backup is damaged, so it wasn't used. Download a new backup from the site and try that.";
 
@@ -125,9 +131,7 @@ export async function checkBackup(
       bytes += chunk.length;
       unpacked += chunk.length;
       if (unpacked > room) {
-        refuse(
-          "There isn't enough free space here to restore this backup. Free some space, then try again.",
-        );
+        refuse(NO_ROOM);
         return;
       }
       hash.update(chunk);
@@ -175,6 +179,92 @@ export async function checkBackup(
   const key = keyIn(readFileSync(join(folder, KEY_ENTRY)));
   checkDatabase(join(folder, DATABASE_ENTRY), manifest, newestSchema);
   return { manifest, key, folder };
+}
+
+/** Whether a file is one of the copies kept on the server, rather than a backup zip. */
+export function isCopy(path: string): boolean {
+  const start = Buffer.alloc(2);
+  const fd = openSync(path, "r");
+  try {
+    readSync(fd, start, 0, 2, 0);
+  } finally {
+    closeSync(fd);
+  }
+  return start[0] === 0x1f && start[1] === 0x8b;
+}
+
+/**
+ * Unpacks and checks one of the copies Tend keeps (tend.db, gzipped), as checkBackup does a
+ * backup. It has no key and no uploads in it. The site's own key stays, or the one kept beside
+ * a copy saved before a restore comes back with it.
+ */
+export async function checkCopy(
+  copyPath: string,
+  folder: string,
+  newestSchema: number,
+  target: Pick<RestoreTarget, "secretKeyPath">,
+): Promise<CheckedBackup & { newKey: boolean }> {
+  mkdirSync(folder, { recursive: true });
+  const path = join(folder, DATABASE_ENTRY);
+  let room = Math.floor(freeSpace(folder) * 0.9);
+  const limit = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      room -= chunk.length;
+      if (room >= 0) done(null, chunk);
+      else done(new BackupError(NO_ROOM));
+    },
+  });
+  try {
+    await pipeline(
+      createReadStream(copyPath),
+      createGunzip(),
+      limit,
+      createWriteStream(path, { mode: 0o600 }),
+    );
+  } catch (error) {
+    const { code = "" } = error as NodeJS.ErrnoException;
+    // zlib's own complaints about what it's given: anything else is the disk's.
+    throw code.startsWith("Z_") || code === "ERR_STREAM_PREMATURE_CLOSE"
+      ? new BackupError(NOT_A_BACKUP)
+      : error;
+  }
+  const schemaVersion = schemaIn(path);
+  checkDatabase(path, { schemaVersion, appVersion: "a newer version" }, newestSchema);
+  const beside = copyPath.replace(/\.db\.gz$/, ".secret.key");
+  const kept = [beside, target.secretKeyPath]
+    .filter((each) => each !== copyPath && existsSync(each))
+    .map((each) => parseSecretKey(readFileSync(each)))
+    .find((key) => key !== undefined);
+  return {
+    manifest: {
+      format: BACKUP_FORMAT,
+      createdAt: new Date().toISOString(),
+      appVersion: "",
+      schemaVersion,
+      site: "",
+      files: [],
+    },
+    key: kept ?? randomBytes(SECRET_KEY_BYTES),
+    newKey: kept === undefined,
+    folder,
+  };
+}
+
+/** The schema version of an unpacked database, which nothing in it may run to say. */
+function schemaIn(path: string): number {
+  let db: Database.Database | undefined;
+  try {
+    db = new Database(path, { readonly: true, fileMustExist: true });
+    db.pragma("trusted_schema = OFF");
+    const version = readSchemaVersion(db);
+    if (version < 1) throw new BackupError(NOT_A_BACKUP);
+    return version;
+  } catch (error) {
+    if (error instanceof BackupError) throw error;
+    throw new BackupError(NOT_A_BACKUP);
+  } finally {
+    db?.close();
+  }
 }
 
 /** The key a backup holds. The first ones, before Tend had a release, held only its bytes. */
@@ -238,7 +328,11 @@ function readManifest(text: Buffer, found: Map<string, BackupFile>): BackupManif
   return manifest;
 }
 
-function checkDatabase(path: string, manifest: BackupManifest, newestSchema: number): void {
+function checkDatabase(
+  path: string,
+  manifest: Pick<BackupManifest, "schemaVersion" | "appVersion">,
+  newestSchema: number,
+): void {
   if (manifest.schemaVersion > newestSchema) {
     throw new BackupError(
       `This backup was made by a newer Tend (${manifest.appVersion}). Update Tend to that version or later, then restore it.`,

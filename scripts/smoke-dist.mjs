@@ -3,7 +3,7 @@
 // finding the admin, serving the real files, and running setup. Run after `pnpm build`.
 // Zero dependencies and no shell, so it runs the same on every OS.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -122,8 +122,11 @@ try {
   const home = await fetch(`${base}/`);
   const homeHtml = await home.text();
   check(home.status === 200 && homeHtml.includes("Smoke Test"), "the public site renders");
-  // Structured data for search engines is a script element too, but nothing ever runs it.
-  const withoutData = homeHtml.replace(/<script type="application\/ld\+json">[^<]*<\/script>/g, "");
+  // Structured data and prefetching rules are script elements too, but nothing ever runs them.
+  const withoutData = homeHtml.replace(
+    /<script type="(?:application\/ld\+json|speculationrules)">[^<]*<\/script>/g,
+    "",
+  );
   check(!withoutData.includes("<script"), "public pages have no JavaScript");
   check(homeHtml.includes('<link rel="canonical"'), "public pages say where they live");
   const css = homeHtml.match(/\/assets\/[^"]+\.css/)?.[0];
@@ -144,6 +147,27 @@ try {
     check(doctor.stdout.includes(`OK    ${says}`), `tendcms doctor says: ${says}`);
   }
 
+  // Copies and backups are made in a thread of their own, from a file in the bundle that's
+  // found by its name.
+  const copy = await fetch(`${base}/api/admin/backups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: "{}",
+  });
+  check(copy.status === 201, "a copy of the site is saved from the admin");
+  const { snapshots } = await copy.json();
+  const copied = await fetch(`${base}/api/admin/backups/${snapshots[0].id}/download`, {
+    headers: { Cookie: cookie },
+  });
+  const copyFile = join(cwd, "smoke-copy.db.gz");
+  writeFileSync(copyFile, Buffer.from(await copied.arrayBuffer()));
+  check(copied.status === 200, "the copy downloads");
+  const download = await fetch(`${base}/api/admin/backups/download`, {
+    headers: { Cookie: cookie },
+  });
+  const zipped = Buffer.from(await download.arrayBuffer());
+  check(zipped.subarray(0, 2).toString() === "PK", "the whole site downloads as a zip");
+
   // A backup is made beside the running site and restores into a new data folder, which
   // proves the bundled zip code and both commands work as published (PLAN.md §13).
   const run = (command, argument, dataDir) => {
@@ -162,6 +186,9 @@ try {
   const restored = join(cwd, "restored");
   run("restore", zip, restored);
   check(existsSync(join(restored, "tend.db")), "tendcms restore puts it in a new data folder");
+  const fromCopy = join(cwd, "restored-copy");
+  run("restore", copyFile, fromCopy);
+  check(existsSync(join(fromCopy, "tend.db")), "tendcms restore takes a copy as well");
 
   // And that the site it put there starts, and knows its owner. Restoring and starting each
   // read the folder in their own way, so nothing short of starting it proves they agree.

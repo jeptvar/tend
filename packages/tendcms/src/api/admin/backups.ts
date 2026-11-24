@@ -1,8 +1,11 @@
+import { createReadStream, statSync } from "node:fs";
+import { join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
+import type { Context } from "hono";
 import { isForeignRequest } from "../../auth/csrf.ts";
-import { backupFileName } from "../../backups/format.ts";
-import { listSnapshots } from "../../backups/snapshots.ts";
-import { writeBackup } from "../../backups/write.ts";
+import { backupFileName, copyFileName } from "../../backups/format.ts";
+import { writeBackupOffThread } from "../../backups/off-thread.ts";
+import { listSnapshots, takeManualSnapshot } from "../../backups/snapshots.ts";
 import { getSetting, putSetting } from "../../db/repo/settings.ts";
 import { diskSpace } from "../../disk.ts";
 import { ApiError } from "../errors.ts";
@@ -27,22 +30,24 @@ export function registerBackupRoutes(routing: Routing, options: BackupRouteOptio
     return { backupsDir, uploadsDir, secretKey };
   }
 
-  route("get", "/backups", "settings:manage", async (c) => {
+  async function backupsJson() {
     const { backupsDir } = folders();
     const backups = await getSetting(orm, "backups");
     const setup = await getSetting(orm, "setup");
-    return c.json({
+    return {
       snapshots: listSnapshots(backupsDir),
       disk: diskSpace(backupsDir),
       lastDownloadAt: backups?.last_download_at ?? null,
       // Overview's reminder counts from here until the first download.
       setUpAt: setup?.completed_at ?? null,
-    });
-  });
+    };
+  }
 
-  route("get", "/backups/download", "backup:download", async (c, user) => {
-    // A link on another site could start one, which makes the server do all of this. Like
-    // every change, it has to come from the admin itself.
+  /**
+   * A link on another site could start a download, which makes the server do all of it. Like
+   * every change, it has to come from the admin itself.
+   */
+  function refuseForeign(c: Context): void {
     const foreign = isForeignRequest({
       secFetchSite: c.req.header("sec-fetch-site"),
       origin: c.req.header("origin"),
@@ -54,12 +59,54 @@ export function registerBackupRoutes(routing: Routing, options: BackupRouteOptio
         fix: "Download the backup from Settings → Backups.",
       });
     }
+  }
+
+  route("get", "/backups", "settings:manage", async (c) => c.json(await backupsJson()));
+
+  // One at a time: each reads the whole database.
+  let copying: Promise<unknown> | undefined;
+
+  route("post", "/backups", "settings:manage", async (c) => {
+    const { backupsDir } = folders();
+    copying ??= takeManualSnapshot({ dbPath: orm.$client.name, backupsDir, now: now() }).finally(
+      () => {
+        copying = undefined;
+      },
+    );
+    await copying;
+    return c.json(await backupsJson(), 201);
+  });
+
+  // The ID comes from the list, never a path: only a copy that's in it is sent.
+  route("get", "/backups/:bid/download", "backup:download", async (c) => {
+    refuseForeign(c);
+    const { backupsDir } = folders();
+    const copy = listSnapshots(backupsDir).find(({ id }) => id === c.req.param("bid"));
+    if (!copy) {
+      throw new ApiError(404, "not_found", "That copy is no longer here.", {
+        fix: "Reload this page to see the ones that are.",
+      });
+    }
+    const path = join(backupsDir, `${copy.id}.db.gz`);
+    const site = (await getSetting(orm, "site"))?.name ?? "Tend";
+    return new Response(Readable.toWeb(createReadStream(path)) as ReadableStream, {
+      headers: {
+        "Content-Type": "application/gzip",
+        "Content-Length": String(statSync(path).size),
+        "Content-Disposition": `attachment; filename="${copyFileName(site, new Date(copy.takenAt))}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  });
+
+  route("get", "/backups/download", "backup:download", async (c, user) => {
+    refuseForeign(c);
     const { backupsDir, uploadsDir, secretKey } = folders();
     const site = (await getSetting(orm, "site"))?.name ?? "Tend";
     const at = new Date(now());
     const out = new PassThrough();
     // Done once the last of it has gone to the browser: that's when the download counts.
-    writeBackup(
+    writeBackupOffThread(
       {
         db: orm.$client,
         backupsDir,

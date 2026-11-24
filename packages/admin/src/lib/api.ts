@@ -43,6 +43,8 @@ export async function api<T>(
     method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     body?: unknown;
     headers?: Record<string, string>;
+    /** For the few things that take longer than most. */
+    timeoutMs?: number;
   } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
@@ -50,7 +52,7 @@ export async function api<T>(
   try {
     response = await fetch(`/api${path}`, {
       method,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS),
       ...(method === "GET"
         ? {}
         : {

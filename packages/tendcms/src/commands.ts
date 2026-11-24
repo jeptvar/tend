@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { generatePassword, hashPassword } from "./auth/passwords.ts";
 import { displaySetupCode } from "./auth/setup-code.ts";
 import { backupFileName } from "./backups/format.ts";
-import { checkBackup, restoreBackup } from "./backups/restore.ts";
+import { checkBackup, checkCopy, isCopy, restoreBackup } from "./backups/restore.ts";
 import { takeDailySnapshot } from "./backups/snapshots.ts";
 import { writeBackup } from "./backups/write.ts";
 import {
@@ -170,7 +170,10 @@ export async function backup(file: string | undefined): Promise<void> {
   }
 }
 
-/** Puts a site back from a backup zip, once every part of it has been checked. */
+/**
+ * Puts a site back from a backup zip, or from one of the copies Tend keeps, once every part of
+ * it has been checked.
+ */
 export async function restore(file: string | undefined): Promise<void> {
   if (!file) {
     throw new ConfigError(
@@ -184,10 +187,26 @@ export async function restore(file: string | undefined): Promise<void> {
   const folder = join(config.backupsDir, `${SNAPSHOT_TMP_PREFIX}restore-${Date.now()}`);
   try {
     const newestSchema = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).length;
-    const checked = await checkBackup(zipPath, folder, newestSchema);
-    const { snapshotPath, wasDamaged } = await restoreBackup(checked, config);
-    const { site, createdAt } = checked.manifest;
-    console.log(`Restored ${site} as it was on ${createdAt.slice(0, 10)}. Start Tend to see it.`);
+    let restored: { snapshotPath: string | undefined; wasDamaged: boolean };
+    if (isCopy(zipPath)) {
+      const checked = await checkCopy(zipPath, folder, newestSchema, config);
+      restored = await restoreBackup(checked, config);
+      console.log("Restored the site's data from this copy. Start Tend to see it.");
+      console.log(
+        "A copy holds everything but photos and files, which stay as they are in the uploads folder.",
+      );
+      if (checked.newKey) {
+        console.log(
+          "There was no key file here, so Tend made a new one. Recovery codes made before this don't work any more.",
+        );
+      }
+    } else {
+      const checked = await checkBackup(zipPath, folder, newestSchema);
+      restored = await restoreBackup(checked, config);
+      const { site, createdAt } = checked.manifest;
+      console.log(`Restored ${site} as it was on ${createdAt.slice(0, 10)}. Start Tend to see it.`);
+    }
+    const { snapshotPath, wasDamaged } = restored;
     if (wasDamaged) {
       console.log(
         `The database that was here was damaged. It's kept as it was, in ${snapshotPath}.`,
@@ -328,7 +347,6 @@ export async function start(options: { open: boolean } = { open: false }): Promi
 
   // A copy of the site's data each day at 03:00 its time (PLAN.md §13). Looked at often, so
   // it's made soon after, and soon after Tend starts if it wasn't running then.
-  const openDb = db;
   let snapshotting = false;
   const snapshotIfDue = async () => {
     if (snapshotting) return;
@@ -338,7 +356,6 @@ export async function start(options: { open: boolean } = { open: false }): Promi
       const site = await getSetting(orm, "site");
       if (!site) return;
       const made = await takeDailySnapshot({
-        db: openDb,
         dbPath: config.dbPath,
         backupsDir: config.backupsDir,
         timeZone: site.timezone,

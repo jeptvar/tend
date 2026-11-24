@@ -27,6 +27,7 @@ import {
   type BackupsInfo,
   type Business,
   type CodeSettings,
+  copyDownloadUrl,
   DAYS,
   type DayHours,
   type General,
@@ -831,6 +832,8 @@ function AdvancedSection() {
   );
 }
 
+const COPY_TIMEOUT_MS = 5 * 60 * 1000;
+
 /** Space used before the disk counts as running low, then as nearly full (PLAN.md §13). */
 const LOW_DISK = 0.8;
 const VERY_LOW_DISK = 0.9;
@@ -844,9 +847,19 @@ function BackupsSection({ me }: { me: Me }) {
   const downloadId = useId();
   const diskId = useId();
   const copiesId = useId();
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: BACKUPS_KEY,
     queryFn: () => api<BackupsInfo>("/admin/backups"),
+  });
+  const save = useMutation({
+    // A big site's copy takes longer than most requests do.
+    mutationFn: () =>
+      api<BackupsInfo>("/admin/backups", { method: "POST", timeoutMs: COPY_TIMEOUT_MS }),
+    onSuccess: (info) => {
+      queryClient.setQueryData(BACKUPS_KEY, info);
+      showToast({ message: intl.formatMessage({ id: "backups.copies.saved" }) });
+    },
   });
   if (!query.data) return <Waiting query={query} />;
   const { snapshots, disk, lastDownloadAt } = query.data;
@@ -928,29 +941,59 @@ function BackupsSection({ me }: { me: Me }) {
         <p>
           <FormattedMessage id="backups.copies.body" />
         </p>
+        <div>
+          <button
+            type="button"
+            aria-disabled={save.isPending}
+            onClick={() => {
+              if (!save.isPending) save.mutate();
+            }}
+            className={smallButtonClass}
+          >
+            <FormattedMessage id={save.isPending ? "settings.saving" : "backups.copies.save"} />
+          </button>
+        </div>
+        <p role="alert" className="font-medium text-danger empty:sr-only">
+          {save.error && <Problem error={save.error} />}
+        </p>
         {snapshots.length === 0 ? (
           <p className="text-muted">
             <FormattedMessage id="backups.copies.none" />
           </p>
         ) : (
-          <ul className="grid gap-1">
-            {snapshots.map((snapshot) => (
-              <li key={snapshot.id}>
-                <FormattedMessage
-                  id={`backups.copies.${snapshot.kind}`}
-                  values={{
-                    date: (
-                      <FormattedDate
-                        value={snapshot.takenAt}
-                        dateStyle="medium"
-                        timeStyle="short"
-                      />
-                    ),
-                    size: bytesText(intl, snapshot.bytes),
-                  }}
-                />
-              </li>
-            ))}
+          <ul className="divide-y divide-ink/10 border-y border-ink/10">
+            {snapshots.map((snapshot) => {
+              const when = intl.formatDate(snapshot.takenAt, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              });
+              return (
+                <li
+                  key={snapshot.id}
+                  className="flex flex-wrap items-center justify-between gap-x-4 py-1"
+                >
+                  <span className="py-2">
+                    <FormattedMessage
+                      id={`backups.copies.${snapshot.kind}`}
+                      values={{ date: when, size: bytesText(intl, snapshot.bytes) }}
+                    />
+                  </span>
+                  {me.user.isOwner && (
+                    <a
+                      href={copyDownloadUrl(snapshot.id)}
+                      download
+                      aria-label={intl.formatMessage(
+                        { id: "backups.copies.downloadNamed" },
+                        { date: when },
+                      )}
+                      className={textLinkClass}
+                    >
+                      <FormattedMessage id="backups.copies.download" />
+                    </a>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

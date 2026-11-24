@@ -17,8 +17,8 @@ Commands:
                            With --open, it also opens the site's admin in your browser.
   backup [file]            Save the site to a zip file: its content, uploads and sign-in secrets.
                            Keep it private. Tend can keep running while it's saved.
-  restore <file>           Put the site back as it is in a backup. Close Tend first. The site
-                           that was here is saved in the backups folder before it's replaced.
+  restore <file>           Put the site back as it is in a backup, or in a copy Tend kept. Close
+                           Tend first. The site that was here is saved before it's replaced.
   theme copy <from> <to>   Start a theme of your own from a copy of another. Tend comes with meadow.
   doctor                   Check what Tend needs to run here, and say how to fix what's wrong.
   setup-code               Show the code that first-time setup asks for.

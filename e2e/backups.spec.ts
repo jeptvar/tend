@@ -33,6 +33,22 @@ test("the Owner downloads the whole site from Settings, as a private zip", async
   await expect(page.getByText(/^Last downloaded on /)).toBeVisible();
 });
 
+test("a copy can be saved there and then, and downloaded by the Owner", async ({
+  page,
+  signedIn,
+}) => {
+  await page.goto(`${signedIn.base}/admin/settings/backups`);
+  await expect(page.getByText("There are no copies yet.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Save a copy now" }).click();
+  await expect(page.getByText("Copy saved.")).toBeVisible();
+  await expect(page.getByText(/^Saved by hand, /)).toBeVisible();
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: /^Download the copy from .* \(private\)$/ }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^rise-bakery-copy-PRIVATE-\d{4}-\d{2}-\d{2}\.db\.gz$/);
+  expect(readFileSync(await file.path()).subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
+});
+
 test("a site that would be lost with its container says so on every screen, backup first", async ({
   page,
   signedIn,

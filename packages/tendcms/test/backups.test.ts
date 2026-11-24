@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   createWriteStream,
   existsSync,
@@ -10,17 +10,23 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { PassThrough } from "node:stream";
+import { gunzipSync, gzipSync } from "node:zlib";
 import Database from "better-sqlite3";
 import { unzipSync, zipSync } from "fflate";
 import sharp from "sharp";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { backupFileName } from "../src/backups/format.ts";
+import { writeBackupOffThread } from "../src/backups/off-thread.ts";
 import { BackupError, checkBackup, restoreBackup } from "../src/backups/restore.ts";
 import {
   dailySnapshotDue,
+  pruneSnapshots,
+  type Snapshot,
+  type SnapshotKind,
   snapshotsToRemove,
   takeDailySnapshot,
+  takeManualSnapshot,
 } from "../src/backups/snapshots.ts";
 import { writeBackup } from "../src/backups/write.ts";
 import { readSecretKey, secretKeyText } from "../src/config.ts";
@@ -429,7 +435,6 @@ describe("Settings → Backups", () => {
     const owner = await setUp(made);
     const takenAt = Date.parse("2027-11-21T04:00:00Z");
     await takeDailySnapshot({
-      db: made.db,
       dbPath: join(made.root, "tend.db"),
       backupsDir: join(made.root, "backups"),
       timeZone: "UTC",
@@ -442,6 +447,208 @@ describe("Settings → Backups", () => {
     expect(info.disk.free).toBeGreaterThan(0);
     expect(info.disk.total).toBeGreaterThan(info.disk.free);
     expect(info.lastDownloadAt).toBeNull();
+  });
+
+  test("an Admin can save a copy there and then, and the Owner can download any of them", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const { client: admin } = await signedInAs(made, "admin");
+    const { client: editor } = await signedInAs(made, "editor");
+    expect((await editor.post("/api/admin/backups")).status).toBe(403);
+
+    // Two at once are one copy, since each reads the whole database.
+    const [saved, again] = await Promise.all([
+      admin.post("/api/admin/backups"),
+      owner.post("/api/admin/backups"),
+    ]);
+    expect([saved.status, again.status]).toEqual([201, 201]);
+    const { snapshots } = await saved.json();
+    expect(snapshots).toEqual([
+      {
+        id: `manual-${new Date(made.clock.time).toISOString().replace(/[-:]/g, "")}`,
+        kind: "manual",
+        takenAt: made.clock.time,
+        bytes: expect.any(Number),
+      },
+    ]);
+
+    const path = `/api/admin/backups/${snapshots[0].id}/download`;
+    expect((await admin.get(path)).status).toBe(403);
+    expect((await owner.get(path, { "Sec-Fetch-Site": "cross-site" })).status).toBe(403);
+    const reply = await owner.get(path);
+    expect(reply.status).toBe(200);
+    expect(reply.headers.get("content-disposition")).toMatch(
+      /^attachment; filename="rise-bakery-copy-PRIVATE-\d{4}-\d{2}-\d{2}\.db\.gz"$/,
+    );
+    expect(reply.headers.get("content-length")).toBe(String(snapshots[0].bytes));
+    const copy = join(tempDir(), "copy.db");
+    writeFileSync(copy, gunzipSync(await reply.bytes()));
+    expect(siteName(copy)).toBe("Rise Bakery");
+  });
+
+  test.each(["manual-20200101T000000.000Z", "..%2F..%2Fsecret", "..%2Ftend", "%2Fetc%2Fpasswd"])(
+    "a copy called %s isn't one of them",
+    async (id) => {
+      const made = await makeApp();
+      const owner = await setUp(made);
+      writeFileSync(join(made.root, "secret.db.gz"), "private");
+      const reply = await owner.get(`/api/admin/backups/${id}/download`);
+      expect(reply.status).toBe(404);
+    },
+  );
+
+  test("a download that's given up on stops, and leaves nothing behind", async () => {
+    const { made } = await siteWithPicture();
+    for (let each = 0; each < 40; each++) {
+      const id = `0190b5d0-0000-7000-8000-0000000000${String(each).padStart(2, "0")}`;
+      const folder = join(made.uploadsDir, "originals", id.slice(-2));
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, `${id}.0123456789ab.jpg`), randomBytes(256 * 1024));
+    }
+    const out = new PassThrough({ highWaterMark: 1024 });
+    const writing = writeBackupOffThread(
+      {
+        db: made.db,
+        backupsDir: join(made.root, "backups"),
+        uploadsDir: made.uploadsDir,
+        secretKey: made.secretKey,
+        appVersion: "test",
+        site: "Rise Bakery",
+      },
+      out,
+    );
+    const stopped = expect(writing).rejects.toThrow("closed before it was done");
+    await new Promise((resolve) => out.once("data", resolve));
+    out.destroy();
+    await stopped;
+    await vi.waitFor(() => expect(readdirSync(join(made.root, "backups"))).toEqual([]), {
+      timeout: 5000,
+    });
+  });
+
+  test("a backup that can't be made says why", async () => {
+    const { made } = await siteWithPicture();
+    const out = createWriteStream(join(tempDir(), "backup.zip"));
+    await expect(
+      writeBackupOffThread(
+        {
+          db: made.db,
+          backupsDir: join(made.root, "nowhere"),
+          uploadsDir: made.uploadsDir,
+          secretKey: made.secretKey,
+          appVersion: "test",
+          site: "Rise Bakery",
+        },
+        out,
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+describe("a copy Tend kept", () => {
+  /** A copy of a site, as it's kept in the backups folder. */
+  async function copyOf(name = "Rise Bakery") {
+    const made = await makeApp();
+    await setUp(made, { site: { name, tagline: "", locale: "en", timezone: "UTC" } });
+    const { id } = await takeManualSnapshot({
+      dbPath: join(made.root, "tend.db"),
+      backupsDir: join(made.root, "backups"),
+      now: Date.now(),
+    });
+    return { made, path: join(made.root, "backups", `${id}.db.gz`) };
+  }
+
+  test("is restored with tendcms restore, and the site's own key and uploads stay", async () => {
+    const { made, path } = await copyOf();
+    const other = await makeApp();
+    await setUp(other, {
+      site: { name: "Corner Café", tagline: "", locale: "en", timezone: "UTC" },
+    });
+    other.db.close();
+    const key = join(other.root, "secret.key");
+    writeFileSync(key, secretKeyText(other.secretKey));
+    mkdirSync(join(other.root, "uploads", "originals"), { recursive: true });
+    writeFileSync(join(other.root, "uploads", "originals", "kept.txt"), "still here");
+
+    const restored = runCli(["restore", path], { TEND_DATA_DIR: other.root });
+    expect(await exitedWithin(restored), restored.output()).toBe(0);
+    expect(restored.output()).toContain("Restored the site's data from this copy.");
+    expect(restored.output()).toContain("The site that was here before is saved in");
+    expect(restored.output()).not.toContain("no key file");
+    expect(siteName(join(other.root, "tend.db"))).toBe("Rise Bakery");
+    expect(readFileSync(key, "utf8")).toBe(secretKeyText(other.secretKey));
+    expect(readFileSync(join(other.root, "uploads", "originals", "kept.txt"), "utf8")).toBe(
+      "still here",
+    );
+    expect(made.secretKey.equals(other.secretKey)).toBe(false);
+  });
+
+  test("with no key anywhere, gets a new one, and that's said", async () => {
+    const { path } = await copyOf();
+    const root = tempDir();
+    const restored = runCli(["restore", path], { TEND_DATA_DIR: root });
+    expect(await exitedWithin(restored), restored.output()).toBe(0);
+    expect(restored.output()).toContain("There was no key file here, so Tend made a new one.");
+    expect(readSecretKey({ secretKeyPath: join(root, "secret.key") })).toHaveLength(32);
+  });
+
+  test("saved before a restore comes back with its own key", async () => {
+    const { made } = await siteWithPicture();
+    const zip = await backUp(made);
+    const other = await makeApp();
+    await setUp(other, {
+      site: { name: "Corner Café", tagline: "", locale: "en", timezone: "UTC" },
+    });
+    other.db.close();
+    writeFileSync(join(other.root, "secret.key"), secretKeyText(other.secretKey));
+    const { where, snapshotPath } = await restoreInto(zip, other.root);
+    expect(siteName(where.dbPath)).toBe("Rise Bakery");
+
+    const back = runCli(["restore", snapshotPath as string], { TEND_DATA_DIR: other.root });
+    expect(await exitedWithin(back), back.output()).toBe(0);
+    expect(siteName(where.dbPath)).toBe("Corner Café");
+    expect(readSecretKey(where).equals(other.secretKey)).toBe(true);
+  });
+
+  test.each<[string, (copy: Buffer) => Buffer]>([
+    ["isn't Tend's", () => gzipSync("just some words")],
+    ["is cut short", (copy) => copy.subarray(0, copy.length - 400)],
+    [
+      "is damaged",
+      (copy) => {
+        const database = gunzipSync(copy);
+        database.fill(0xff, 4096, 4096 * 3);
+        return gzipSync(database);
+      },
+    ],
+  ])("that %s is refused, and nothing changes", async (_how, damage) => {
+    const { path } = await copyOf();
+    writeFileSync(path, damage(readFileSync(path)));
+    const other = await makeApp();
+    await setUp(other);
+    other.db.close();
+    const before = readFileSync(join(other.root, "tend.db"));
+    const restored = runCli(["restore", path], { TEND_DATA_DIR: other.root });
+    expect(await exitedWithin(restored)).toBe(1);
+    expect(restored.output()).toMatch(/isn't a Tend backup|is damaged/);
+    expect(restored.output()).not.toContain("    at ");
+    expect(readFileSync(join(other.root, "tend.db")).equals(before)).toBe(true);
+    expect(readdirSync(join(other.root, "backups"))).toEqual([]);
+  });
+
+  test("from a newer Tend is refused, and says so", async () => {
+    const { path } = await copyOf();
+    const raw = join(tempDir(), "newer.db");
+    writeFileSync(raw, gunzipSync(readFileSync(path)));
+    const db = new Database(raw);
+    db.prepare("UPDATE schema_meta SET value = '999' WHERE key = 'schema_version'").run();
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.pragma("journal_mode = DELETE");
+    db.close();
+    writeFileSync(path, gzipSync(readFileSync(raw)));
+    const restored = runCli(["restore", path], { TEND_DATA_DIR: tempDir() });
+    expect(await exitedWithin(restored)).toBe(1);
+    expect(restored.output()).toContain("made by a newer Tend");
   });
 });
 
@@ -488,11 +695,54 @@ describe("daily copies", () => {
     expect(keptOn(1000)).toEqual(["daily-59"]);
   });
 
+  test("the copies of every kind count towards that fifth, and the oldest go first", () => {
+    const copy = (kind: SnapshotKind, day: number, bytes = 1000): Snapshot => ({
+      id: `${kind}-${day}`,
+      kind,
+      takenAt: at("2027-01-04T03:00:00Z") + day * 24 * 60 * 60 * 1000,
+      bytes,
+    });
+    const copies = [
+      ...[1, 2, 3, 4].map((day) => copy("update", day)),
+      ...[5, 6, 7, 8].map((day) => copy("restore", day)),
+      ...[9, 10, 11, 12, 13, 14, 15].map((day) => copy("manual", day)),
+      copy("daily", 16),
+    ];
+    const keptOn = (diskBytes: number) => {
+      const removed = new Set(snapshotsToRemove(copies, diskBytes).map((each) => each.id));
+      return copies.filter((each) => !removed.has(each.id)).map((each) => each.id);
+    };
+    // Three from updates, three from restores, and five that were asked for.
+    const kept = [
+      ...[2, 3, 4].map((day) => `update-${day}`),
+      ...[6, 7, 8].map((day) => `restore-${day}`),
+      ...[11, 12, 13, 14, 15].map((day) => `manual-${day}`),
+      "daily-16",
+    ];
+    expect(keptOn(1_000_000)).toEqual(kept);
+    // A fifth of 20 kB is 4 kB: the four newest, whatever kind they are.
+    expect(keptOn(20_000)).toEqual(["manual-13", "manual-14", "manual-15", "daily-16"]);
+    expect(keptOn(1000)).toEqual(["daily-16"]);
+  });
+
+  test("an old copy from before a restore takes the key beside it along", async () => {
+    const made = await makeApp();
+    await setUp(made);
+    const backupsDir = join(made.root, "backups");
+    for (let day = 1; day <= 4; day++) {
+      const name = `before-restore-2027110${day}T030000.000Z`;
+      writeFileSync(join(backupsDir, `${name}.db.gz`), "copy");
+      writeFileSync(join(backupsDir, `${name}.secret.key`), "key");
+    }
+    pruneSnapshots(backupsDir);
+    expect(readdirSync(backupsDir).filter((name) => name.includes("20271101"))).toEqual([]);
+    expect(readdirSync(backupsDir)).toHaveLength(6);
+  });
+
   test("today's copy is made once, checked, and opens as the site's data", async () => {
     const made = await makeApp();
     await setUp(made);
     const options = {
-      db: made.db,
       dbPath: join(made.root, "tend.db"),
       backupsDir: join(made.root, "backups"),
       timeZone: "UTC",
