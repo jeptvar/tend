@@ -788,7 +788,8 @@ test.describe("what the editor can say about itself", () => {
     await expect(saveStatus(page)).toContainText("not on your site yet", { timeout: 5000 });
     await page.getByRole("button", { name: "Publish changes" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Publish changes" }).click();
-    await expect(announcements(page)).toHaveText("On your site");
+    await expect(page.getByRole("status").filter({ hasText: "Published." })).toBeVisible();
+    await expect(saveStatus(page)).toContainText("On your site");
   });
 
   test("a red error doesn't stay beside Saved", async ({ page, signedIn }) => {

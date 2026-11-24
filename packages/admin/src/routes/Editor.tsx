@@ -13,7 +13,13 @@ import {
 import { Field } from "../components/fields.tsx";
 import { dismissToast, showToast } from "../components/Toast.tsx";
 import { BodyEditor, type BodyHandle } from "../editor/BodyEditor.tsx";
-import { type Check, findChecks, linkedIds, type PictureFacts } from "../editor/checks.ts";
+import {
+  type Check,
+  type CheckTarget,
+  findChecks,
+  linkedIds,
+  type PictureFacts,
+} from "../editor/checks.ts";
 import { FeaturedImageField, SearchFields, TagsField } from "../editor/EntrySettings.tsx";
 import { HistoryDialog } from "../editor/HistoryDialog.tsx";
 import { PreviewDialog } from "../editor/PreviewDialog.tsx";
@@ -585,6 +591,36 @@ function EditorScreen({
     requestAnimationFrame(() => (field === "title" ? titleRef : slugRef).current?.focus());
   }
 
+  /** Leads to what a check is about, for its Fix button. */
+  function goToCheck(target: CheckTarget): void {
+    setReview(null);
+    if (target.kind === "slug") {
+      goToField("slug");
+      return;
+    }
+    // Once the review has closed and handed focus back, or it would take it again.
+    requestAnimationFrame(() => {
+      if (!bodyRef.current?.goTo(target)) statusRef.current?.focus();
+    });
+  }
+
+  /** Says it's on the site, with the way to see it there (PLAN.md J1). */
+  function sayPublished(url: string | null): void {
+    showToast({
+      message: intl.formatMessage({ id: "publish.done" }),
+      ...(url
+        ? {
+            action: {
+              label: intl.formatMessage({
+                id: type === "post" ? "publish.viewPost" : "publish.viewPage",
+              }),
+              run: () => window.open(url, "_blank", "noopener"),
+            },
+          }
+        : {}),
+    });
+  }
+
   function retrySoon(): void {
     const s = session.current;
     clearTimeout(s.saveTimer);
@@ -790,7 +826,13 @@ function EditorScreen({
         ? [{ id: "check.uploading", values: { count: String(arriving.going) } }]
         : []),
       ...(arriving.failed > 0
-        ? [{ id: "check.uploadFailed", values: { count: String(arriving.failed) } }]
+        ? [
+            {
+              id: "check.uploadFailed",
+              values: { count: String(arriving.failed) },
+              target: { kind: "upload" as const },
+            },
+          ]
         : []),
     ];
     const s = session.current.entry;
@@ -841,7 +883,7 @@ function EditorScreen({
       // Publishing changes is a routine thing, so it only stops if there's something to say.
       if (s.entry.url && checks.length === 0 && !blocked) {
         await publishNow();
-        announce("status.onSite");
+        sayPublished(session.current.entry.url);
       } else {
         setReview({ checks, done: false });
       }
@@ -854,7 +896,7 @@ function EditorScreen({
       await saveFirst();
       await publishNow(options);
       setReview((open) => (open && firstTime ? { ...open, done: true } : null));
-      if (!firstTime) announce("status.onSite");
+      if (!firstTime) sayPublished(session.current.entry.url);
     });
   }
 
@@ -1799,11 +1841,13 @@ function EditorScreen({
 
       {review && (
         <PublishDialog
+          me={me}
           entry={session.current.entry}
           type={type}
           checks={review.checks}
           summary={fields.seoDescription.trim() || reviewSummary}
           shareTitle={fields.seoTitle.trim()}
+          sharePicture={fields.featuredImageId ?? imageIds(session.current.saved.doc)[0] ?? null}
           done={review.done}
           busy={busy}
           problem={problemText}
@@ -1813,6 +1857,7 @@ function EditorScreen({
             setReview(null);
             goToField(field);
           }}
+          onGoTo={goToCheck}
           onClose={() => setReview(null)}
           onWriteAnother={onWriteAnother}
         />

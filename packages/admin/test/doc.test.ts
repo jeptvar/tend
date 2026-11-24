@@ -198,15 +198,19 @@ describe("findChecks", () => {
         { type: "heading", attrs: { level: 4 }, content: [text("C")] },
       ],
     } as never);
-    expect(findChecks(doc, [], null).map((check) => check.id)).toEqual(["check.skippedHeading"]);
+    // Its Fix leads to the first of them: the one at the top.
+    expect(findChecks(doc, [], null)).toEqual([
+      { id: "check.skippedHeading", target: { kind: "heading", index: 0 } },
+    ]);
   });
 
   test("points out links to what isn't on the site, or doesn't exist", () => {
     const doc = cleanDoc({ content: [paragraph(text("x")), link(`entry:${ID}`)] } as never);
     expect(linkedIds(doc)).toEqual([ID]);
-    expect(findChecks(doc, [], null)).toEqual([{ id: "check.linkDeleted" }]);
+    const target = { kind: "link", href: `entry:${ID}` };
+    expect(findChecks(doc, [], null)).toEqual([{ id: "check.linkDeleted", target }]);
     expect(findChecks(doc, [{ id: ID, type: "page", title: "About", url: null }], null)).toEqual([
-      { id: "check.linkNotOnSite", values: { title: "About" } },
+      { id: "check.linkNotOnSite", values: { title: "About" }, target },
     ]);
     expect(
       findChecks(doc, [{ id: ID, type: "page", title: "About", url: "/about" }], null),
@@ -220,11 +224,37 @@ describe("findChecks", () => {
         { type: "button", attrs: { href: "", label: "Nowhere" } },
       ],
     } as never);
-    expect(findChecks(doc, [], { from: "/a", to: "/b" }).map((check) => check.id)).toEqual([
-      "check.moved",
-      "check.vagueLink",
-      "check.buttonNoAddress",
+    expect(
+      findChecks(doc, [], { from: "/a", to: "/b" }).map(({ id, target }) => [id, target]),
+    ).toEqual([
+      ["check.moved", { kind: "slug" }],
+      ["check.vagueLink", { kind: "words", words: "Click here" }],
+      ["check.buttonNoAddress", { kind: "button", label: "Nowhere" }],
     ]);
-    expect(findChecks(cleanDoc({}), [], null)).toEqual([{ id: "check.empty" }]);
+    expect(findChecks(cleanDoc({}), [], null)).toEqual([
+      { id: "check.empty", target: { kind: "start" } },
+    ]);
+  });
+
+  test("points to the first picture that's gone, and the first with no description", () => {
+    const doc = cleanDoc({ content: [paragraph(text("x"))] } as never);
+    const pictures = [
+      { id: "fine", described: true, gone: false },
+      { id: "gone", described: false, gone: true },
+      { id: "bare", described: false, gone: false },
+      { id: "bare too", described: false, gone: false },
+    ];
+    expect(findChecks(doc, [], null, pictures)).toEqual([
+      {
+        id: "check.noDescription",
+        values: { count: "2" },
+        target: { kind: "describe", mediaId: "bare" },
+      },
+      {
+        id: "check.pictureGone",
+        values: { count: "1" },
+        target: { kind: "picture", mediaId: "gone" },
+      },
+    ]);
   });
 });

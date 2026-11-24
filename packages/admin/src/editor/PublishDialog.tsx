@@ -2,8 +2,10 @@ import { useEffect, useId, useRef, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
-import type { EntryFull, EntryType } from "../lib/queries.ts";
-import type { Check } from "./checks.ts";
+import { onThisComputer } from "../lib/hosts.ts";
+import { useMediaItems } from "../lib/media.ts";
+import type { EntryFull, EntryType, Me } from "../lib/queries.ts";
+import type { Check, CheckTarget } from "./checks.ts";
 
 /** Copying only has a modern way to do it on https and localhost, so this falls back. */
 async function copyText(text: string): Promise<boolean> {
@@ -31,28 +33,44 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/** Who can see it once it's published, when that isn't everyone (PLAN.md P15). */
+function WhoSees({ me }: { me: Me }) {
+  const id = onThisComputer()
+    ? "publish.sees.local"
+    : me.site.visibility === "public"
+      ? null
+      : `publish.sees.${me.site.visibility}`;
+  return id && <FormattedMessage id={id} />;
+}
+
 /** The review before something goes on the site, and the screen after it does (PLAN.md J2). */
 export function PublishDialog({
+  me,
   entry,
   type,
   checks,
   summary,
   shareTitle,
+  sharePicture,
   done,
   busy,
   problem,
   canEditMenu,
   onPublish,
   onFix,
+  onGoTo,
   onClose,
   onWriteAnother,
 }: {
+  me: Me;
   entry: EntryFull;
   type: EntryType;
   checks: Check[];
   summary: string;
   /** The title shown when it's shared: the one for search results, if there is one. */
   shareTitle?: string;
+  /** The picture shown with it, if it has one. */
+  sharePicture: string | null;
   done: boolean;
   busy: boolean;
   problem: string | null;
@@ -60,6 +78,8 @@ export function PublishDialog({
   canEditMenu: boolean;
   onPublish: (options: { addToMenu: boolean }) => void;
   onFix: (field: "title" | "slug") => void;
+  /** Leads to what a check is about. */
+  onGoTo: (target: CheckTarget) => void;
   onClose: () => void;
   onWriteAnother: () => void;
 }) {
@@ -67,7 +87,10 @@ export function PublishDialog({
   const headingId = useId();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
-  const fullAddress = new URL(entry.url ?? entry.address.path, window.location.origin).href;
+  // The site's own address, when it has one: the admin may be open at another.
+  const origin = me.site.address ?? window.location.origin;
+  const fullAddress = new URL(entry.url ?? entry.address.path, origin).href;
+  const picture = useMediaItems(sharePicture ? [sharePicture] : []).found.get(sharePicture ?? "");
   const noTitle = entry.title.trim() === "";
   const addressProblem = entry.address.problem;
   // Only a page that isn't linked yet, from a menu someone has set up: an automatic menu
@@ -104,6 +127,9 @@ export function PublishDialog({
             <FormattedMessage id={type === "post" ? "publish.donePost" : "publish.donePage"} />
           </h2>
           <p className="[overflow-wrap:anywhere]">{fullAddress}</p>
+          <p className="text-muted empty:hidden">
+            <WhoSees me={me} />
+          </p>
           <p role="status" className="empty:sr-only">
             {copied === "failed" ? intl.formatMessage({ id: "publish.copyFailed" }) : ""}
             {copied === "copied" ? intl.formatMessage({ id: "publish.copied" }) : ""}
@@ -112,7 +138,12 @@ export function PublishDialog({
             {problem}
           </p>
           <div className="flex flex-wrap gap-3">
-            <a href={fullAddress} target="_blank" rel="noopener" className={primaryButtonClass}>
+            <a
+              href={entry.url ?? entry.address.path}
+              target="_blank"
+              rel="noopener"
+              className={`${primaryButtonClass} inline-flex items-center`}
+            >
               <FormattedMessage id={type === "post" ? "publish.viewPost" : "publish.viewPage"} />
             </a>
             <button
@@ -153,7 +184,10 @@ export function PublishDialog({
             <FormattedMessage id="publish.address" />
           </p>
           <p className="font-medium [overflow-wrap:anywhere]">
-            {new URL(entry.address.path, window.location.origin).href}
+            {new URL(entry.address.path, origin).href}
+          </p>
+          <p className="text-sm text-muted empty:hidden">
+            <WhoSees me={me} />
           </p>
         </div>
 
@@ -161,12 +195,24 @@ export function PublishDialog({
           <p className="text-sm text-muted">
             <FormattedMessage id="publish.social" />
           </p>
-          <div className="mt-1 rounded-lg border border-muted p-3">
-            <p className="font-medium [overflow-wrap:anywhere]">
-              {shareTitle || entry.title || intl.formatMessage({ id: "list.untitled" })}
-            </p>
-            {summary && <p className="mt-1 line-clamp-3 text-sm text-muted">{summary}</p>}
-            <p className="mt-1 text-sm text-muted">{window.location.host}</p>
+          <div className="mt-1 overflow-hidden rounded-lg border border-muted">
+            {picture?.previewUrl && picture.trashedAt === null && (
+              <img
+                src={picture.previewUrl}
+                alt={picture.alt ?? ""}
+                style={{ backgroundColor: picture.dominantColor ?? undefined }}
+                className="aspect-[1.91] w-full object-cover"
+              />
+            )}
+            <div className="p-3">
+              <p className="font-medium [overflow-wrap:anywhere]">
+                {shareTitle || entry.title || intl.formatMessage({ id: "list.untitled" })}
+              </p>
+              {summary && <p className="mt-1 line-clamp-3 text-sm text-muted">{summary}</p>}
+              <p className="mt-1 text-sm [overflow-wrap:anywhere] text-muted">
+                {new URL(origin).host}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -200,16 +246,32 @@ export function PublishDialog({
             <p className="font-medium">
               <FormattedMessage id="publish.checks" />
             </p>
-            <ul className="mt-1 grid list-disc gap-1 ps-5">
-              {checks.map((check, index) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: the same check can appear twice
-                <li key={index}>
-                  <FormattedMessage
-                    id={check.id}
-                    {...(check.values ? { values: check.values } : {})}
-                  />
-                </li>
-              ))}
+            <ul className="mt-1 grid gap-2">
+              {checks.map((check, index) => {
+                const { target } = check;
+                const id = `${headingId}-check-${index}`;
+                return (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: the same check can appear twice
+                  <li key={index} className="flex items-start justify-between gap-3">
+                    <span id={id} className="min-w-0 py-2 [overflow-wrap:anywhere]">
+                      <FormattedMessage
+                        id={check.id}
+                        {...(check.values ? { values: check.values } : {})}
+                      />
+                    </span>
+                    {target && (
+                      <button
+                        type="button"
+                        aria-describedby={id}
+                        onClick={() => onGoTo(target)}
+                        className={`${secondaryButtonClass} shrink-0`}
+                      >
+                        <FormattedMessage id="publish.fixCheck" />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

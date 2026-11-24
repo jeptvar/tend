@@ -22,6 +22,7 @@ import type { Doc } from "../lib/doc.ts";
 import { type MediaItem, uploadWords, useMediaItems } from "../lib/media.ts";
 import type { EntryType } from "../lib/queries.ts";
 import { AltDialog } from "./AltDialog.tsx";
+import type { CheckTarget } from "./checks.ts";
 import { INSERT_ITEMS, type InsertItem, matchingItems } from "./commands.ts";
 import { editorExtensions } from "./extensions.ts";
 import { UPLOAD_META } from "./ImageNode.tsx";
@@ -34,6 +35,8 @@ export interface BodyHandle {
   /** Replaces the words: a conflict resolved, or an older version brought back. */
   setDoc(doc: Doc): void;
   focusStart(): void;
+  /** Goes to what a check is about. False if it isn't in the words. */
+  goTo(target: CheckTarget): boolean;
 }
 
 // A pressed button shows it with the whole background, because a faint tint can't be told
@@ -494,6 +497,82 @@ function toEditorDoc(doc: Doc): Doc {
     : { type: "doc", content: [...doc.content, { type: "paragraph" }] };
 }
 
+/** Whether this part of the words is what a check is about. */
+function isTarget(node: PmNode, target: CheckTarget, headingsBefore: number): boolean {
+  const linksTo = (matches: (href: string) => boolean) =>
+    node.marks.some((mark) => mark.type.name === "link" && matches(String(mark.attrs.href)));
+  switch (target.kind) {
+    case "describe":
+    case "picture":
+      return node.type.name === "image" && node.attrs.mediaId === target.mediaId;
+    case "upload":
+      return (
+        node.type.name === "image" &&
+        !node.attrs.mediaId &&
+        Boolean(getUpload(String(node.attrs.uploadId))?.error)
+      );
+    case "link":
+      return (
+        linksTo((href) => href === target.href) ||
+        (node.type.name === "button" && node.attrs.href === target.href)
+      );
+    case "words":
+      return linksTo(() => true) && node.text?.trim() === target.words;
+    case "heading":
+      return node.type.name === "heading" && headingsBefore === target.index;
+    case "button":
+      return (
+        node.type.name === "button" && !node.attrs.href && String(node.attrs.label) === target.label
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Goes to what a check is about, and opens the dialog that fixes it where there's one: a
+ * picture's description, or where a button goes.
+ */
+function goTo(
+  editor: Editor,
+  target: CheckTarget,
+  setAsk: (ask: LinkAsk) => void,
+  setDescribing: (mediaId: string) => void,
+): boolean {
+  if (target.kind === "start") return editor.commands.focus("start");
+  let at: number | undefined;
+  let found: PmNode | undefined;
+  let headings = 0;
+  editor.state.doc.descendants((node, position) => {
+    if (found) return false;
+    if (isTarget(node, target, headings)) {
+      found = node;
+      at = position;
+    }
+    if (node.type.name === "heading") headings++;
+    return !found;
+  });
+  // A picture's description is the same wherever it's shown, so it needn't be in the words.
+  if (target.kind === "describe") setDescribing(target.mediaId);
+  if (!found || at === undefined) return target.kind === "describe";
+
+  const chain = editor.chain();
+  if (found.isText) chain.setTextSelection({ from: at, to: at + found.nodeSize });
+  else if (found.type.name === "heading") chain.setTextSelection(at + 1);
+  else chain.setNodeSelection(at);
+  if (target.kind === "describe") chain.scrollIntoView().run();
+  else chain.focus(undefined, { scrollIntoView: true }).run();
+  if (target.kind === "button") {
+    setAsk({
+      kind: "editButton",
+      position: at,
+      href: String(found.attrs.href),
+      label: String(found.attrs.label),
+    });
+  }
+  return true;
+}
+
 type LinkAsk =
   | { kind: "link"; href: string; canRemove: boolean }
   | { kind: "newButton" }
@@ -778,6 +857,7 @@ export function BodyEditor({
         callbacks.current.onReady(editor.state.doc);
       },
       focusStart: () => editor.commands.focus("start"),
+      goTo: (target) => goTo(editor, target, setAsk, setDescribing),
     }),
     [editor],
   );
