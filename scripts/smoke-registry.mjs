@@ -88,10 +88,11 @@ try {
     const own = Object.entries(installedPackages(site)).filter(
       ([path, { optional }]) => path !== "node_modules/tendcms" && !optional,
     );
-    const different = own.filter(([path, { version }]) => {
-      const name = path.slice(path.lastIndexOf("node_modules/"));
-      return pinned[name]?.version !== version;
-    });
+    // npm puts what a shrinkwrap pins inside the package it came with.
+    const different = own.filter(
+      ([path, { version }]) =>
+        pinned[path.replace(/^node_modules\/tendcms\//, "")]?.version !== version,
+    );
     check(
       own.length > 0 && different.length === 0,
       `everything under it is the version it's pinned to (${own.length} packages)`,
