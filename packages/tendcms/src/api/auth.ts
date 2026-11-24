@@ -43,6 +43,7 @@ import {
   type User,
   upgradePasswordHash,
 } from "../db/repo/users.ts";
+import { pictureError } from "../media/process.ts";
 import type { SiteAddress } from "../site-address.ts";
 import type { DataRiskDetails } from "../volume.ts";
 import { registerAccountRoutes } from "./accounts.ts";
@@ -491,6 +492,7 @@ export function createAuthRoutes(options: AuthOptions): Hono {
       },
       starter: setup?.starter ?? null,
       platform: options.platform ?? "local",
+      picturesWork: pictureError === undefined,
       // For whoever can do something about it.
       dataRisk: user.role === "admin" ? (options.dataRisk ?? null) : null,
     });

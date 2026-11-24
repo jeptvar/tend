@@ -9,6 +9,7 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { PicturesNotice } from "../components/PicturesNotice.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
@@ -380,6 +381,7 @@ function MediaScreen({ me }: { me: Me }) {
       <p className="mt-2 text-muted">
         <FormattedMessage id="media.hint" />
       </p>
+      <PicturesNotice me={me} />
       <div className="mt-6 flex flex-wrap items-end justify-between gap-3">
         <div className="-ml-2 flex">
           {(["all", "trash"] as const).map((option) => (

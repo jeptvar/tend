@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { COMPONENTS, componentError, loadComponents } from "../src/components.ts";
 import { appVersion } from "../src/paths.ts";
-import { exitedWithin, runCli, tempDir } from "./helpers.ts";
+import { exitedWithin, runCli, tempDir, waitForRunning } from "./helpers.ts";
 
 // What each package says when it can't load, cut short after the advice it goes on to give.
 const SHARP = [
@@ -55,7 +55,6 @@ describe("a component that can't load on this computer", () => {
 
   test.each([
     ["database", "better-sqlite3", SQLITE],
-    ["picture", "sharp", SHARP],
     ["password", "@node-rs/argon2", ARGON2],
   ])("stops Tend with a sentence, not a stack trace: %s", async (name, pkg, message) => {
     const env = { ...without(pkg, message), TEND_DATA_DIR: tempDir(), PORT: "0" };
@@ -71,9 +70,23 @@ describe("a component that can't load on this computer", () => {
     expect(await exitedWithin(help)).toBe(0);
     expect(help.output()).toContain("Usage: tendcms <command>");
   });
+
+  test("doesn't stop Tend when it's only for pictures: it says so and goes on", async () => {
+    const env = { ...without("sharp", SHARP), TEND_DATA_DIR: tempDir(), PORT: "0" };
+    const start = runCli(["start"], env);
+    const setup = await waitForRunning(start);
+    expect((await fetch(new URL("/healthz", setup))).status).toBe(200);
+    await vi.waitFor(() =>
+      expect(start.output()).toContain(
+        "ERR_DLOPEN_FAILED: libvips-cpp.so: cannot open shared object file). Your site works and shows the pictures it has, but none can be added. Install Tend again",
+      ),
+    );
+    expect(start.output()).not.toMatch(/^\s+at /m);
+  });
 });
 
 test("every component loads here", async () => {
   expect(COMPONENTS.map(({ name }) => name)).toEqual(["database", "picture", "password"]);
   await loadComponents();
+  for (const { load } of COMPONENTS) await load();
 });

@@ -181,6 +181,42 @@ test.describe("Overview", () => {
   });
 });
 
+test("says when pictures can't be added on this server, and who can do something about it", async ({
+  page,
+  signedIn,
+}) => {
+  const pretend = async (role?: string) => {
+    await page.unroute("**/api/auth/me");
+    await page.route("**/api/auth/me", async (route) => {
+      const reply = await route.fetch();
+      const me = await reply.json();
+      const user = role ? { ...me.user, role, isOwner: false } : me.user;
+      await route.fulfill({ response: reply, json: { ...me, picturesWork: false, user } });
+    });
+  };
+  const notice = page.getByRole("region", { name: "Pictures can't be added on this server" });
+
+  await page.goto(`${signedIn.base}/admin/media`);
+  await expect(page.getByRole("heading", { name: "Media", level: 1 })).toBeVisible();
+  await expect(notice).toHaveCount(0);
+
+  await pretend();
+  await page.reload();
+  await expect(notice).toContainText("PDFs can still be added");
+  await page.goto(`${signedIn.base}/admin/`);
+  await notice.getByRole("link", { name: "Help says why, and what to do" }).click();
+  await expect(page.getByRole("heading", { name: "Help", level: 1 })).toBeVisible();
+
+  // A Writer can't put it right, so only Media tells them, and who to ask.
+  await pretend("writer");
+  await page.goto(`${signedIn.base}/admin/media`);
+  await expect(notice).toContainText("Ask an Admin of this site to look at Help.");
+  await expect(notice.getByRole("link")).toHaveCount(0);
+  await page.goto(`${signedIn.base}/admin/`);
+  await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(notice).toHaveCount(0);
+});
+
 test.describe("finding your way around", () => {
   test("the menu can be made narrow, and stays that way on this device", async ({
     page,

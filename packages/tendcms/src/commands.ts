@@ -7,6 +7,7 @@ import { backupFileName } from "./backups/format.ts";
 import { checkBackup, checkCopy, isCopy, restoreBackup } from "./backups/restore.ts";
 import { takeDailySnapshot } from "./backups/snapshots.ts";
 import { writeBackup } from "./backups/write.ts";
+import { componentError, PICTURES } from "./components.ts";
 import {
   type Config,
   ConfigError,
@@ -37,6 +38,7 @@ import { diskSpace, isNearlyFull } from "./disk.ts";
 import { fsyncFile } from "./durable.ts";
 import { type Listening, listen, localUrl } from "./listen.ts";
 import { cleanUpMedia, removeRetiredOriginals } from "./media/library.ts";
+import { pictureError } from "./media/process.ts";
 import { clearSizesIfLow, MediaStore } from "./media/store.ts";
 import { openInBrowser } from "./open-browser.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
@@ -460,4 +462,5 @@ export async function start(options: { open: boolean } = { open: false }): Promi
     // Last, so it isn't buried under the rest.
     if (dataRisk) console.warn(dataRiskWarning(dataRisk, { needsSetup }));
   }
+  if (pictureError) console.warn(`${componentError(PICTURES, pictureError).message}\n`);
 }

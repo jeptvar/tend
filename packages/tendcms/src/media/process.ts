@@ -1,9 +1,34 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import os from "node:os";
-import sharp, { type Metadata, type Sharp } from "sharp";
+import type { Metadata, Sharp } from "sharp";
 import { ApiError } from "../api/errors.ts";
+import { PICTURES } from "../components.ts";
 import { HEIC_ENDINGS, OTHER_ENDINGS, SVG_ENDINGS } from "./endings.ts";
+
+/** Why the picture component couldn't load on this computer, if it couldn't. */
+export let pictureError: unknown;
+
+// It's machine code, and the site goes on without it (PLAN.md §18): the pictures it has still
+// show, and none can be added until this is put right.
+const loaded = await PICTURES.load().then(
+  (component) => (component as typeof import("sharp")).default,
+  (error: unknown) => {
+    pictureError = error;
+    return undefined;
+  },
+);
+
+/** The picture component, or the answer to whoever asked for what needs it. */
+function pictures() {
+  if (loaded) return loaded;
+  throw new ApiError(
+    503,
+    "pictures_unavailable",
+    "Tend can't prepare pictures on this server, so that wasn't done.",
+    { fix: "Everything else works. Ask whoever looks after this server to look at Help." },
+  );
+}
 
 /** PLAN.md §5: what can be uploaded, and how big. */
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -412,7 +437,7 @@ const PER_THREAD = 16 * MiB;
 
 const PLAN = memoryPlan(memoryLimit());
 /** The threads libvips would give each picture if left alone: often one for every core. */
-const CORES = sharp.concurrency();
+const CORES = loaded?.concurrency() ?? 1;
 
 /**
  * How many threads libvips gets for a picture: one on a small server, and elsewhere no more
@@ -425,16 +450,16 @@ function threadsFor(plan: MemoryPlan): number {
 }
 
 // libvips keeps no cache of its own, and gets only the threads the plan has room for.
-sharp.cache(false);
-sharp.concurrency(threadsFor(PLAN));
+loaded?.cache(false);
+loaded?.concurrency(threadsFor(PLAN));
 
 // libvips can read many more kinds of file than Tend takes, among them SVG, PDF and TIFF, and
 // it picks its reader by looking at the bytes itself. So every reader is turned off except
 // the ones for the kinds Tend takes, read from memory as Tend gives them: whatever a file
 // pretends to be, it can't be read as anything else. An UltraHDR photo is read as the plain
 // JPEG it also is, which is all Tend ever kept of it.
-sharp.block({ operation: ["VipsForeignLoad"] });
-sharp.unblock({
+loaded?.block({ operation: ["VipsForeignLoad"] });
+loaded?.unblock({
   operation: [
     "VipsForeignLoadJpegBuffer",
     "VipsForeignLoadPngBuffer",
@@ -574,7 +599,7 @@ async function inTurn<T>(cost: number, threads: number, work: () => Promise<T>):
     startWaiting();
   });
   try {
-    sharp.concurrency(threads);
+    pictures().concurrency(threads);
     return await work();
   } finally {
     running--;
@@ -725,7 +750,7 @@ async function readHeader(
     cost += least.width * least.height * 4;
   }
   const meta = await inTurn(cost, load.threads, () =>
-    sharp(input)
+    pictures()(input)
       .metadata()
       .catch(() => undefined),
   );
@@ -761,7 +786,7 @@ function encodeOriginal(image: Sharp, format: ImageFormat): Sharp {
  * that can have them in any frame is treated as having them.
  */
 async function colourBehind(smallest: Buffer, animated: boolean): Promise<string | null> {
-  const { isOpaque, channels, dominant } = await sharp(smallest).stats();
+  const { isOpaque, channels, dominant } = await pictures()(smallest).stats();
   if (!isOpaque || (animated && channels.length === 4)) return null;
   return `#${hex(dominant.r)}${hex(dominant.g)}${hex(dominant.b)}`;
 }
@@ -775,7 +800,7 @@ async function prepare(
   const animated = isAnimated(meta, format);
   try {
     const options = { limitInputPixels: MAX_PIXELS, failOn: "error" as const, animated };
-    const open = (data: Buffer) => sharp(data, options);
+    const open = (data: Buffer) => pictures()(data, options);
     // An animation has no camera orientation to fix, and libvips can't turn one anyway.
     const oriented = animated ? open(input) : open(input).rotate();
     const { data: original, info } = await encodeOriginal(oriented, format).toBuffer({
@@ -844,7 +869,7 @@ async function pixelsOf(input: Buffer, format: ImageFormat): Promise<number> {
   const size =
     format === "webp"
       ? webpHeader(input, 1)
-      : await sharp(input)
+      : await pictures()(input)
           .metadata()
           .catch(() => undefined);
   return size?.width && size.height ? size.width * size.height : 0;
@@ -863,7 +888,7 @@ export async function makeIcon(source: Buffer, size: number): Promise<Buffer> {
     threads * PER_THREAD +
     Math.max(...READ_AGAIN[format]) * (await pixelsOf(source, format));
   return inTurn(cost, threads, () =>
-    sharp(source, { limitInputPixels: MAX_PIXELS })
+    pictures()(source, { limitInputPixels: MAX_PIXELS })
       .resize({
         width: size,
         height: size,
@@ -889,7 +914,7 @@ export async function makeVariant(original: Buffer, width: number): Promise<Buff
   const meta = await readHeader(original, format, PLAN.budget, load);
   const animated = isAnimated(meta, format);
   return inTurn(workingSet(meta, format, load), load.threads, () =>
-    sharp(original, { limitInputPixels: MAX_PIXELS, failOn: "error", animated })
+    pictures()(original, { limitInputPixels: MAX_PIXELS, failOn: "error", animated })
       .resize({ width, withoutEnlargement: true })
       .webp({ quality: 80 })
       .toBuffer(),

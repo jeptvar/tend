@@ -55,7 +55,7 @@ import {
   originalUrl,
   variantUrl,
 } from "../media/library.ts";
-import { isIconSize, makeIcon, makeVariant } from "../media/process.ts";
+import { isIconSize, makeIcon, makeVariant, pictureError } from "../media/process.ts";
 import type { MediaStore } from "../media/store.ts";
 import type { SiteAddress } from "../site-address.ts";
 import {
@@ -1047,7 +1047,13 @@ export function createSite(options: SiteOptions): Site {
     c: Context,
     path: string,
     type: string,
-    options: { name?: string; disposition?: "inline" | "attachment"; privately?: boolean } = {},
+    options: {
+      name?: string;
+      disposition?: "inline" | "attachment";
+      privately?: boolean;
+      /** It stands in for another file, so nobody may keep it. */
+      forNow?: boolean;
+    } = {},
   ): Response | undefined {
     let size: number;
     try {
@@ -1058,7 +1064,11 @@ export function createSite(options: SiteOptions): Site {
     const headers: Record<string, string> = {
       "Content-Type": type,
       "Content-Length": String(size),
-      "Cache-Control": options.privately ? PRIVATELY_FOREVER : FOREVER,
+      "Cache-Control": options.forNow
+        ? "no-store"
+        : options.privately
+          ? PRIVATELY_FOREVER
+          : FOREVER,
     };
     if (options.name) {
       headers["Content-Disposition"] =
@@ -1121,6 +1131,12 @@ export function createSite(options: SiteOptions): Site {
     return true;
   }
 
+  /** The picture as it was uploaded, for a size that can't be made on this computer. */
+  function sendOriginalForNow(c: Context, item: Media, hash: string): Response | undefined {
+    const path = files.originalPath(item.id, hash, item.ext);
+    return sendFile(c, path, item.mime, { forNow: true });
+  }
+
   /**
    * One size of a picture. Sizes are a cache: backups leave them out (PLAN.md §13), so one
    * that's missing is made again from the original the first time it's asked for.
@@ -1135,6 +1151,7 @@ export function createSite(options: SiteOptions): Site {
     const path = files.variantPath(item.id, hash, `${width}.webp`);
     const kept = sendFile(c, path, "image/webp", { privately });
     if (kept) return kept;
+    if (pictureError) return sendOriginalForNow(c, item, hash);
     let making = variantsInProgress.get(path);
     if (!making) {
       making = writeVariant(item, hash, width, path).finally(() => variantsInProgress.delete(path));
@@ -1149,6 +1166,7 @@ export function createSite(options: SiteOptions): Site {
     const hash = mediaHash(item);
     const path = files.variantPath(item.id, hash, `icon-${size}.png`);
     if (!existsSync(path)) {
+      if (pictureError) return sendOriginalForNow(c, item, hash);
       let making = iconsInProgress.get(path);
       if (!making) {
         making = writeIcon(item, hash, size, path).finally(() => iconsInProgress.delete(path));

@@ -1,6 +1,7 @@
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { listSnapshots } from "../../backups/snapshots.ts";
+import { componentError, PICTURES } from "../../components.ts";
 import type { Platform } from "../../config.ts";
 import { settingValue } from "../../content/settings.ts";
 import { getSetting } from "../../db/repo/settings.ts";
@@ -16,6 +17,7 @@ import {
   ok,
   withoutHome,
 } from "../../doctor.ts";
+import { pictureError } from "../../media/process.ts";
 import type { Themes } from "../../site/themes.ts";
 import { type DataRiskDetails, dataRiskReason, dataRiskSteps } from "../../volume.ts";
 import type { AdminOptions, Routing } from "./routing.ts";
@@ -57,6 +59,7 @@ export function registerHealthRoutes(routing: Routing, options: HealthRouteOptio
     if (dataRisk) {
       found.push(fix([dataRiskReason(dataRisk), ...dataRiskSteps(dataRisk, false)].join(" ")));
     }
+    if (pictureError) found.push(fix(componentError(PICTURES, pictureError).message));
     if (backupsDir) {
       found.push(diskFinding(diskSpace(backupsDir)));
       const newest = listSnapshots(backupsDir).find(({ kind }) => kind === "daily");

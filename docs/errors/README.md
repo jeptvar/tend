@@ -51,6 +51,7 @@ Every message Tend shows says what happened and what to do. These pages say more
 - [The animation has too many frames](too_many_frames.md)
 - [The picture is too long and thin](too_long.md)
 - [Too big for this server](too_big_for_server.md)
+- [Pictures can't be added on this server](pictures_unavailable.md)
 - [The file is empty](empty_file.md)
 - [The upload stopped](upload_stalled.md)
 - [Busy with other uploads](uploads_busy.md)

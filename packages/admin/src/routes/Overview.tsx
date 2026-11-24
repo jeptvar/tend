@@ -11,6 +11,7 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Icon } from "../components/icons.tsx";
 import { OutLink } from "../components/OutLink.tsx";
+import { PicturesNotice } from "../components/PicturesNotice.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { api } from "../lib/api.ts";
@@ -434,6 +435,7 @@ function OverviewScreen({ me }: { me: Me }) {
       <p className="mt-6 text-lg">
         <SiteStatus me={me} />
       </p>
+      {me.user.role === "admin" && <PicturesNotice me={me} />}
       {askAddress && <AddressCheck />}
       {info && info.changes.count > 0 && (
         <Section

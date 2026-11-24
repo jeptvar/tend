@@ -23,6 +23,8 @@ export interface Me {
   starter: "blog" | "business" | "blank" | null;
   /** Where Tend runs. */
   platform: "railway" | "render" | "fly" | "docker" | "local";
+  /** Whether pictures can be added, which needs a part of Tend that may not load. */
+  picturesWork: boolean;
   /** For Admins: why this site could be lost with its container, if it could. */
   dataRisk: {
     why: "unmounted" | "unnamed";
