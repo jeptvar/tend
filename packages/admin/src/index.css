@@ -46,6 +46,19 @@
   --color-danger: #f2a79a;
 }
 
+/* How tall the bar at the bottom of a phone is, for what else stays at the bottom. */
+:root {
+  --tend-bar: 0px;
+}
+
+@media (width < 64rem) {
+  html:has(.tend-bar) {
+    --tend-bar: 4rem;
+    /* Something focused shouldn't end up hidden behind the bar. */
+    scroll-padding-bottom: calc(var(--tend-bar) + 1rem);
+  }
+}
+
 body {
   background: var(--color-paper);
   color: var(--color-ink);

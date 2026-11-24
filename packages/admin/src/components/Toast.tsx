@@ -122,7 +122,7 @@ function ToastRegion({ hidden }: { hidden: boolean }) {
   return (
     <div
       role="status"
-      className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(1rem+var(--tend-bar))] z-50 flex justify-center px-4"
     >
       {toast && (
         // biome-ignore lint/a11y/noStaticElementInteractions: only pauses the timer

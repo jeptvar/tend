@@ -552,7 +552,7 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
       <p role="alert" className="font-medium text-danger empty:sr-only">
         {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}
       </p>
-      <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center gap-3 border-t border-ink/10 bg-paper px-4 py-3">
+      <div className="sticky bottom-(--tend-bar) -mx-4 flex flex-wrap items-center gap-3 border-t border-ink/10 bg-paper px-4 py-3">
         <button
           type="submit"
           aria-disabled={!changed || save.isPending}
