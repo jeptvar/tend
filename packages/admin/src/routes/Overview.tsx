@@ -279,19 +279,21 @@ function Steps({
     "min-h-11 rounded text-left text-brand underline-offset-4 hover:underline focus-visible:outline-3 focus-visible:outline-brand";
 
   return (
-    <details
-      open={open}
-      onToggle={(event) => {
-        try {
-          if (event.currentTarget.open) localStorage.removeItem(STEPS_KEY);
-          else localStorage.setItem(STEPS_KEY, "closed");
-        } catch {
-          // It's open again next time.
-        }
-      }}
-      className="group mt-10 rounded-lg border border-muted"
-    >
-      <summary className="flex min-h-11 cursor-pointer flex-wrap items-center gap-x-3 px-4 py-2 focus-visible:outline-3 focus-visible:outline-brand">
+    <details open={open} className="group mt-10 rounded-lg border border-muted">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a summary is a button already */}
+      <summary
+        onClick={(event) => {
+          // It's about to become the other way, which its toggle event says only later.
+          const opening = !(event.currentTarget.parentElement as HTMLDetailsElement).open;
+          try {
+            if (opening) localStorage.removeItem(STEPS_KEY);
+            else localStorage.setItem(STEPS_KEY, "closed");
+          } catch {
+            // It's open again next time.
+          }
+        }}
+        className="flex min-h-11 cursor-pointer flex-wrap items-center gap-x-3 px-4 py-2 focus-visible:outline-3 focus-visible:outline-brand"
+      >
         <h2 className="text-xl font-semibold">
           <FormattedMessage id={invited ? "steps.headingInvited" : "steps.heading"} />
         </h2>
