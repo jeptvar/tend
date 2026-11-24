@@ -70,6 +70,26 @@ function takeOsLock(path: string): Database.Database | undefined {
 }
 
 /**
+ * Whether Tend is running with a data folder, and as which process if that's known. Found
+ * by reading, because taking the lock, even for a moment, could stop a Tend from starting.
+ * Not for the process that holds it: see acquireLock.
+ */
+export function findRunning(dataDir: string): { holder: LockInfo | undefined } | undefined {
+  const path = join(dataDir, ".lock.db");
+  if (!existsSync(path)) return undefined;
+  const db = new Database(path, { readonly: true, fileMustExist: true, timeout: 0 });
+  try {
+    db.prepare("SELECT count(*) FROM sqlite_master").get();
+    return undefined;
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+    return { holder: readInfo(join(dataDir, ".lock")) };
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * Makes sure only one Tend process uses a data folder. The lock is an open
  * exclusive transaction on `<dataDir>/.lock.db`, so the operating system drops it
  * when the process dies, however it dies: there are no stale locks to judge and

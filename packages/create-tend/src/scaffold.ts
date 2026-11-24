@@ -62,6 +62,11 @@ See https://tendcms.dev/online
 
 \`npm run backup\` saves everything in one zip file. Keep it private: it holds everyone's
 sign-in details. In the admin, Settings → Backups does the same.
+
+## If something's wrong
+
+\`npx tendcms doctor\` checks what Tend needs to run here, and says how to fix what's wrong.
+It changes nothing.
 `;
 }
 

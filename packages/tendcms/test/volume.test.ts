@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vitest";
 import type { Platform } from "../src/config.ts";
-import { type DataRisk, type DataRiskDetails, dataRisk, dataRiskWarning } from "../src/volume.ts";
+import {
+  type DataRisk,
+  type DataRiskDetails,
+  dataFate,
+  dataRiskWarning,
+  networkDrive,
+} from "../src/volume.ts";
 import { browser, makeApp, setUp, signedInAs } from "./auth-helpers.ts";
 
 // Written by hand, in the format proc(5) describes, so they can say anything. CI's Docker job
@@ -17,24 +23,28 @@ function mounted(root: string, point: string, type = "ext4"): string {
   return `1048 1036 8:1 ${root} ${point} rw,relatime master:1 - ${type} /dev/sda1 rw`;
 }
 
-/** Why the data folder is at risk in a container with these mounts, besides its own. */
-function risk(mounts: string[], dataDir = "/data", platform: Platform = "docker") {
-  const mountinfo = `${[...CONTAINER, ...mounts].join("\n")}\n`;
-  return dataRisk({ platform, dataDir, mountinfo });
+/** What /proc/self/mountinfo says in a container with these mounts, besides its own. */
+function mountinfo(mounts: string[]): string {
+  return `${[...CONTAINER, ...mounts].join("\n")}\n`;
+}
+
+/** What becomes of the data folder in a container with these mounts. */
+function fate(mounts: string[], dataDir = "/data", platform: Platform = "docker") {
+  return dataFate({ platform, dataDir, mountinfo: mountinfo(mounts) });
 }
 
 describe("whether a site is kept when its container is replaced", () => {
   test("not if its data folder is among the container's own files", () => {
-    expect(risk([])).toBe("unmounted");
-    expect(risk([mounted("/var/lib/docker/volumes/other/_data", "/media")])).toBe("unmounted");
+    expect(fate([])).toBe("unmounted");
+    expect(fate([mounted("/var/lib/docker/volumes/other/_data", "/media")])).toBe("unmounted");
     // Near a volume isn't on it.
-    expect(risk([mounted("/srv/tend", "/data")], "/database")).toBe("unmounted");
-    expect(risk([mounted("/srv/tend", "/data/site")])).toBe("unmounted");
+    expect(fate([mounted("/srv/tend", "/data")], "/database")).toBe("unmounted");
+    expect(fate([mounted("/srv/tend", "/data/site")])).toBe("unmounted");
   });
 
   test("not if it's only in memory", () => {
-    expect(risk([mounted("/", "/data", "tmpfs")])).toBe("unmounted");
-    expect(risk([mounted("/", "/data", "ramfs")])).toBe("unmounted");
+    expect(fate([mounted("/", "/data", "tmpfs")])).toBe("unmounted");
+    expect(fate([mounted("/", "/data", "ramfs")])).toBe("unmounted");
   });
 
   test.each([
@@ -47,7 +57,7 @@ describe("whether a site is kept when its container is replaced", () => {
       `/var/lib/containerd/io.containerd.grpc.v1.cri/containers/${ID}/volumes/${ID}`,
     ],
   ])("maybe not on a volume with no name: %s", (_engine, root) => {
-    expect(risk([mounted(root, "/data")])).toBe("unnamed");
+    expect(fate([mounted(root, "/data")])).toBe("unnamed");
   });
 
   test.each([
@@ -57,38 +67,55 @@ describe("whether a site is kept when its container is replaced", () => {
     ["a folder of the server's", "/srv/rise-bakery"],
     ["a whole disk, as hosting services attach them", "/"],
   ])("yes on %s", (_what, root) => {
-    expect(risk([mounted(root, "/data")])).toBeUndefined();
+    expect(fate([mounted(root, "/data")])).toBe("kept");
   });
 
   test("going by the closest mount above the data folder", () => {
     const named = mounted("/var/lib/docker/volumes/tend-data/_data", "/data");
-    expect(risk([named], "/data/site")).toBeUndefined();
+    expect(fate([named], "/data/site")).toBe("kept");
     const inside = mounted(`/var/lib/docker/volumes/${ID}/_data`, "/data/site");
-    expect(risk([named, inside], "/data/site")).toBe("unnamed");
-    expect(risk([inside, named], "/data/site")).toBe("unnamed");
-    expect(risk([named, inside])).toBeUndefined();
+    expect(fate([named, inside], "/data/site")).toBe("unnamed");
+    expect(fate([inside, named], "/data/site")).toBe("unnamed");
+    expect(fate([named, inside])).toBe("kept");
   });
 
   test("going by the last of several mounts in one place, which covers the others", () => {
     const named = mounted("/var/lib/docker/volumes/tend-data/_data", "/data");
-    expect(risk([named, mounted("/", "/data", "tmpfs")])).toBe("unmounted");
-    expect(risk([mounted("/", "/data", "tmpfs"), named])).toBeUndefined();
+    expect(fate([named, mounted("/", "/data", "tmpfs")])).toBe("unmounted");
+    expect(fate([mounted("/", "/data", "tmpfs"), named])).toBe("kept");
   });
 
   test("however the line is written", () => {
     // Spaces are written as \040, and how many fields come before the dash varies.
     const spaced = "1048 1036 8:1 /srv/my\\040site /my\\040data rw - ext4 /dev/sda1 rw";
-    expect(risk([spaced], "/my data")).toBeUndefined();
+    expect(fate([spaced], "/my data")).toBe("kept");
     const several = `1048 1036 8:1 /v/volumes/${ID}/_data /data rw shared:2 master:1 - ext4 /dev/sda1 rw`;
-    expect(risk([several])).toBe("unnamed");
-    expect(risk(["", "not a mount", "1048 1036 8:1 /srv/tend /data rw"])).toBe("unmounted");
+    expect(fate([several])).toBe("unnamed");
+    expect(fate(["", "not a mount", "1048 1036 8:1 /srv/tend /data rw"])).toBe("unmounted");
   });
 
   test("not asked on a computer of your own, or where mounts can't be read", () => {
-    expect(risk([], "/home/sam/my-site/data", "local")).toBeUndefined();
+    expect(fate([], "/home/sam/my-site/data", "local")).toBeUndefined();
     expect(
-      dataRisk({ platform: "docker", dataDir: "/data", mountinfo: undefined }),
+      dataFate({ platform: "docker", dataDir: "/data", mountinfo: undefined }),
     ).toBeUndefined();
+  });
+});
+
+describe("a drive that isn't this computer's own", () => {
+  test.each(["nfs", "nfs4", "cifs", "smb3", "9p", "fuse.sshfs"])("is told apart: %s", (type) => {
+    expect(networkDrive("/data", mountinfo([mounted("/", "/data", type)]))).toBe(type);
+  });
+
+  test("or is on Windows, by what it's called there", () => {
+    expect(networkDrive("\\\\nas\\sites\\rise", undefined)).toBe("Windows share");
+    expect(networkDrive("C:\\Sites\\rise", undefined)).toBeUndefined();
+  });
+
+  test("from one that is", () => {
+    expect(networkDrive("/data", mountinfo([mounted("/", "/data")]))).toBeUndefined();
+    expect(networkDrive("/data", mountinfo([]))).toBeUndefined();
+    expect(networkDrive("/data", undefined)).toBeUndefined();
   });
 });
 

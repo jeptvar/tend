@@ -204,6 +204,13 @@ jobs:
             exit 1
           fi
           grep --quiet 'sudo chown -R 1000:1000' refused.log
+          # tendcms doctor explains it too, and fails, without starting Tend.
+          if docker run --rm --volume /srv/tend-data:/data tend:test tendcms doctor > doctor.log 2>&1
+          then
+            echo "tendcms doctor found nothing to fix in a data folder Tend can't write to."
+            exit 1
+          fi
+          grep --quiet '^FIX .*sudo chown -R 1000:1000' doctor.log
           # As root, the way Railway runs it with RAILWAY_RUN_UID=0, it works.
           docker run --detach --name tend-root --user 0 --publish 3001:3000 \
             --volume /srv/tend-data:/data tend:test
@@ -244,6 +251,12 @@ jobs:
             curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
               "http://127.0.0.1:$port/healthz"
           done
+          # Beside a running Tend, tendcms doctor says the same.
+          docker exec tend tendcms doctor | grep '^FIX .*/data is on a volume with no name'
+          docker exec tend-unmounted tendcms doctor | grep "^FIX .*/tmp/site isn't on a volume"
+          docker exec tend-named tendcms doctor | tee doctor-named.log
+          grep --quiet '^OK .*The site is kept' doctor-named.log
+          grep --quiet '^OK .*Tend is running here' doctor-named.log
           docker stop tend tend-root tend-unmounted tend-named
           docker logs tend 2>&1 | grep --quiet 'WARNING: /data is on a volume with no name'
           docker logs tend-unmounted 2>&1 | grep --quiet "WARNING: /tmp/site isn't on a volume"
@@ -292,7 +305,7 @@ jobs:
           for name in tend tend-root tend-unmounted tend-named; do
             docker logs "$name" || true
           done
-          cat refused.log || true
+          cat refused.log doctor.log || true
 
   # main's rules require one check called docker, and this is it: it passes only if both
   # processors' images did. Without always() it would be skipped when one fails, and GitHub

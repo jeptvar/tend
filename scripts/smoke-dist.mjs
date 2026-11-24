@@ -133,6 +133,17 @@ try {
     "the starter's first post is published",
   );
 
+  // tendcms doctor, from files of its own in the bundle, beside the running site. How full
+  // this computer's disk is could fail it, so only what it says about the site counts.
+  const doctor = spawnSync(process.execPath, [cli, "doctor"], {
+    cwd,
+    env: { ...process.env, TEND_ADMIN_DEV_URL: "", TEND_DATA_DIR: join(cwd, "data") },
+    encoding: "utf8",
+  });
+  for (const says of ["The site's database is in good order.", "Tend is running here"]) {
+    check(doctor.stdout.includes(`OK    ${says}`), `tendcms doctor says: ${says}`);
+  }
+
   // A backup is made beside the running site and restores into a new data folder, which
   // proves the bundled zip code and both commands work as published (PLAN.md §13).
   const run = (command, argument, dataDir) => {

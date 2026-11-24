@@ -19,6 +19,7 @@ Commands:
                            Keep it private. Tend can keep running while it's saved.
   restore <file>           Put the site back as it is in a backup. Close Tend first. The site
                            that was here is saved in the backups folder before it's replaced.
+  doctor                   Check what Tend needs to run here, and say how to fix what's wrong.
   setup-code               Show the code that first-time setup asks for.
   reset-password <email>   Give an account a new password and sign it out everywhere.
 
@@ -66,6 +67,9 @@ async function main(argv: string[]): Promise<void> {
       return (await loadCommands()).backup(argument);
     case "restore":
       return (await loadCommands()).restore(argument);
+    // Not through loadCommands: it says what's wrong with components that don't load.
+    case "doctor":
+      return (await import("./doctor.ts")).doctor();
     case "setup-code":
       return (await loadCommands()).showSetupCode();
     case "reset-password":

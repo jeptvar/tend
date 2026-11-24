@@ -230,7 +230,7 @@ export function portsToTry(config: Pick<Config, "port" | "platform">): number[] 
 }
 
 /** What to do about a data folder Tend can't write to, where it's running. */
-function dataFolderFix(platform: Platform | undefined): string {
+export function dataFolderFix(platform: Platform | undefined): string {
   // The image runs as node (user 1000), and a folder from the server, or a volume some
   // hosts make, belongs to root.
   if (platform === "railway") {
