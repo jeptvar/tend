@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, type RefObject, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { Link, useLocation } from "wouter";
 import {
@@ -7,21 +7,18 @@ import {
   CannotReachTend,
   Loading,
   primaryButtonClass,
-  secondaryButtonClass,
   textLinkClass,
 } from "../components/AuthLayout.tsx";
-import { Field, PasswordField } from "../components/fields.tsx";
+import { Field } from "../components/fields.tsx";
+import { NewPasswordField, tooShort } from "../components/NewPasswordField.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
 import { forgetLinkToken, type LinkKind, readLinkToken } from "../lib/link-token.ts";
-import { suggestPassphrase } from "../lib/passphrase.ts";
 import { confirmSignedIn } from "../lib/queries.ts";
 import { holdFreshKit } from "../lib/recovery-kit.ts";
 
 // Getting in without the password you had (PLAN.md J5 and J7): accepting an invite,
 // choosing a new password from a link, and using a recovery code. None needs signing in.
-
-const MIN_PASSWORD_LENGTH = 12;
 
 /** How many recovery codes were left after one was used just now, for the next screen. */
 let codesLeftAfterRecovery: number | null = null;
@@ -79,71 +76,6 @@ function beforeForm(
     );
   }
   return null;
-}
-
-/** A new password, with a passphrase to suggest. */
-function NewPasswordField({
-  inputRef,
-  password,
-  onChange,
-  error,
-  labelId,
-}: {
-  inputRef: RefObject<HTMLInputElement | null>;
-  password: string;
-  onChange: (password: string) => void;
-  error: string | undefined;
-  labelId: string;
-}) {
-  const intl = useIntl();
-  const [visible, setVisible] = useState(false);
-  const [suggested, setSuggested] = useState(false);
-  return (
-    <div className="grid gap-3">
-      <PasswordField
-        ref={inputRef}
-        label={intl.formatMessage({ id: labelId })}
-        hint={
-          <FormattedMessage id="setup.account.passwordHint" values={{ min: MIN_PASSWORD_LENGTH }} />
-        }
-        value={password}
-        onChange={(event) => {
-          onChange(event.target.value);
-          setSuggested(false);
-        }}
-        error={error}
-        visible={visible}
-        onVisibleChange={setVisible}
-        autoComplete="new-password"
-        required
-      />
-      <div>
-        <button
-          type="button"
-          onClick={() => {
-            onChange(suggestPassphrase());
-            setVisible(true);
-            setSuggested(true);
-            inputRef.current?.focus();
-          }}
-          className={secondaryButtonClass}
-        >
-          <FormattedMessage id="setup.account.suggest" />
-        </button>
-      </div>
-      {/* Always mounted: screen readers can miss a live region added along with its text. */}
-      <p role="status" className="text-sm text-muted empty:sr-only">
-        {suggested && <FormattedMessage id="setup.account.suggested" />}
-      </p>
-    </div>
-  );
-}
-
-/** What's wrong with a new password before it's sent, if anything. */
-function tooShort(password: string, intl: ReturnType<typeof useIntl>): string | undefined {
-  return [...password].length < MIN_PASSWORD_LENGTH
-    ? intl.formatMessage({ id: "setup.account.passwordShort" }, { min: MIN_PASSWORD_LENGTH })
-    : undefined;
 }
 
 /** The server's word on a field, when the error is about that field. */

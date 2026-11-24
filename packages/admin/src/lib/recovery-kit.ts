@@ -2,6 +2,8 @@
 // email or a terminal. Tend keeps only a hash of each, so the codes are shown once, on the
 // screen after they're made, and then forgotten here too.
 
+export const KIT_KEY = ["recovery-kit"];
+
 export interface FreshKit {
   codes: string[];
   /** Where Continue goes once it's saved. */

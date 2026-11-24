@@ -159,6 +159,17 @@ export function createResetLink(
   return { token, expiresAt };
 }
 
+/**
+ * Takes back any reset link someone has waiting. A link made for the person they were, with
+ * the password or role they had, mustn't work on the person they've become.
+ */
+export function revokeResetLinks(db: Db, userId: string, now: number): void {
+  db.update(tokens)
+    .set({ revokedAt: now })
+    .where(and(eq(tokens.kind, "reset"), eq(tokens.userId, userId), usable(now)))
+    .run();
+}
+
 /** A new recovery kit for someone. The codes in their old one stop working. */
 export function replaceRecoveryKit(
   db: Db,

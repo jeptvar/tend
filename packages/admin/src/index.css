@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Dark as the device is, unless someone chose one or the other (lib/appearance.ts). */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+}
+
 @theme {
   --color-brand: #1f6f4a;
   --color-brand-strong: #17573a;
@@ -12,7 +24,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --color-brand: #5fbf8f;
     --color-brand-strong: #7fd3a8;
     --color-paper: #141a17;
@@ -21,6 +33,17 @@
     --color-muted: #a3aea8;
     --color-danger: #f2a79a;
   }
+}
+
+/* The same colours, for someone who chose dark on a device that's light. */
+:root[data-theme="dark"] {
+  --color-brand: #5fbf8f;
+  --color-brand-strong: #7fd3a8;
+  --color-paper: #141a17;
+  --color-surface: #1b2320;
+  --color-ink: #e9eeeb;
+  --color-muted: #a3aea8;
+  --color-danger: #f2a79a;
 }
 
 body {

@@ -22,6 +22,7 @@ export type Action =
   | "design:manage"
   | "settings:manage"
   | "people:manage"
+  | "ownership:transfer"
   | "backup:download";
 
 export interface Subject {
@@ -62,9 +63,10 @@ const ADMIN_ONLY_ACTIONS = new Set<Action>([
 
 /**
  * Only for the Owner. A backup holds every account's password hash and the site's secret
- * key, so taking one away is theirs to do, like restoring one (PLAN.md §6).
+ * key, so taking one away is theirs to do, like restoring one (PLAN.md §6). So is handing the
+ * site over to someone else.
  */
-const OWNER_ONLY_ACTIONS = new Set<Action>(["backup:download"]);
+const OWNER_ONLY_ACTIONS = new Set<Action>(["backup:download", "ownership:transfer"]);
 
 /**
  * A Writer (v0.3) works on their own posts, adds pictures and describes their own, and can't

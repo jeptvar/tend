@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { IntlProvider } from "react-intl";
 import { App } from "./App.tsx";
+import { followAppearance } from "./lib/appearance.ts";
 import messages from "./messages/en.json";
 import "./index.css";
 
@@ -19,6 +20,8 @@ const queryClient = new QueryClient({
     mutations: { networkMode: "always" },
   },
 });
+
+followAppearance();
 
 createRoot(root).render(
   <StrictMode>

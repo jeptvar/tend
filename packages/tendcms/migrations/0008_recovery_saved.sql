@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `recovery_saved_at` integer;

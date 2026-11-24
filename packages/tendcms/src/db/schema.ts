@@ -37,6 +37,8 @@ export const users = sqliteTable(
     createdAt: integer("created_at").notNull(),
     lastSeenAt: integer("last_seen_at"),
     disabledAt: integer("disabled_at"),
+    /** When they last kept a copy of their recovery codes, as a file or on paper. */
+    recoverySavedAt: integer("recovery_saved_at"),
   },
   (t) => [
     check("users_role_check", sql`${t.role} IN ('admin', 'editor', 'writer')`),

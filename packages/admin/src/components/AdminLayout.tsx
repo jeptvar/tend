@@ -1,10 +1,10 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useLocation } from "wouter";
-import { api, errorText } from "../lib/api.ts";
-import { runBeforeSignOut, useHeldDrafts, useKeptOnDevice } from "../lib/held-drafts.ts";
-import { ME_KEY, type Me, SETUP_STATUS_KEY, useMe, useSetupStatus } from "../lib/queries.ts";
+import { errorText } from "../lib/api.ts";
+import { useHeldDrafts, useKeptOnDevice } from "../lib/held-drafts.ts";
+import { type Me, useMe, useSetupStatus } from "../lib/queries.ts";
+import { useSignOut } from "../lib/sign-out.ts";
 import { CannotReachTend, Loading } from "./AuthLayout.tsx";
 import { useNavigationFocus } from "./focus.ts";
 
@@ -125,7 +125,6 @@ export function AdminLayout({
   children: ReactNode;
 }) {
   const intl = useIntl();
-  const queryClient = useQueryClient();
   const [location] = useLocation();
   const headingRef = useRef<HTMLHeadingElement>(null);
   useNavigationFocus(headingRef, { enabled: focusHeading });
@@ -142,22 +141,7 @@ export function AdminLayout({
     return () => clearTimeout(timer);
   }, []);
 
-  const signOut = useMutation({
-    mutationFn: async () => {
-      // Anything being edited is saved first. If that fails, this stops here and says so,
-      // with the person still signed in and their text still on the screen.
-      await runBeforeSignOut();
-      await api("/auth/logout", { method: "POST" });
-    },
-    onSuccess: () => {
-      // Lists and titles shouldn't still be here for whoever signs in next on this computer.
-      queryClient.removeQueries({
-        predicate: ({ queryKey }) =>
-          queryKey[0] !== ME_KEY[0] && queryKey[0] !== SETUP_STATUS_KEY[0],
-      });
-      queryClient.setQueryData(ME_KEY, null);
-    },
-  });
+  const signOut = useSignOut();
 
   return (
     <div className="min-h-dvh">

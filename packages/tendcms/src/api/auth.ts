@@ -357,6 +357,10 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     trustProxy,
     now,
     startSession,
+    endSession: async (c) => {
+      const token = getCookie(c, sessionCookie);
+      if (token) await deleteSession(orm, token);
+    },
     isKnownDevice: (c, email) => {
       const device = getCookie(c, deviceCookie);
       return device !== undefined && deviceCookieIsValid(secretKey, device, email, now());

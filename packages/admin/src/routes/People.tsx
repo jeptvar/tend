@@ -4,10 +4,11 @@ import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
-import { Field } from "../components/fields.tsx";
+import { Field, PasswordField } from "../components/fields.tsx";
+import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
-import type { Me } from "../lib/queries.ts";
+import { ME_KEY, type Me } from "../lib/queries.ts";
 
 // People (PLAN.md J5): who can sign in, invites still waiting, and inviting someone. The
 // server decides who may do what; this only leaves out what someone can't do.
@@ -21,6 +22,8 @@ interface Person {
   role: Role;
   isOwner: boolean;
   lastSeenAt: number | null;
+  /** Kept from signing in, for now. */
+  disabled: boolean;
   canManage: boolean;
 }
 
@@ -218,13 +221,48 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
   const options = [...new Set<Role>([person.role, ...rolesFor(me)])];
   const [role, setRole] = useState<Role>(person.role);
   const [resetLink, setResetLink] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<"remove" | "handOver" | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: PEOPLE_KEY });
 
+  /** Changes something about them, with Undo to change it back. */
   const change = useMutation({
-    mutationFn: () =>
-      api<Person>(`/admin/people/${person.id}`, { method: "PATCH", body: { role } }),
-    onSuccess: refresh,
+    mutationFn: (patch: { role?: Role; disabled?: boolean }) =>
+      api<Person>(`/admin/people/${person.id}`, { method: "PATCH", body: patch }),
+    onSuccess: (changed, patch) => {
+      void refresh();
+      setRole(changed.role);
+      // Who they were, not who they are now.
+      const before = patch.role ? { role: person.role } : { disabled: person.disabled };
+      const message = patch.role
+        ? intl.formatMessage(
+            { id: "people.roleChanged" },
+            { name: person.name, role: changed.role },
+          )
+        : intl.formatMessage(
+            { id: changed.disabled ? "people.keptOutDone" : "people.letInDone" },
+            { name: person.name },
+          );
+      showToast({
+        message,
+        action: {
+          label: intl.formatMessage({ id: "list.undo" }),
+          run: () => {
+            void api<Person>(`/admin/people/${person.id}`, { method: "PATCH", body: before })
+              .then((back) => {
+                setRole(back.role);
+                void refresh();
+                showToast({ message: intl.formatMessage({ id: "people.undone" }) });
+              })
+              .catch((error: unknown) =>
+                showToast({
+                  message: errorText(error, intl.formatMessage({ id: "offline.body" })),
+                  sticky: true,
+                }),
+              );
+          },
+        },
+      });
+    },
   });
   const reset = useMutation({
     mutationFn: () =>
@@ -234,8 +272,9 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
   const remove = useMutation({
     mutationFn: () => api(`/admin/people/${person.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      setConfirming(false);
+      setConfirming(null);
       void refresh();
+      showToast({ message: intl.formatMessage({ id: "people.removed" }, { name: person.name }) });
     },
   });
   const error = change.error ?? reset.error;
@@ -257,6 +296,12 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
         <p className="text-sm text-muted">
           <FormattedMessage id={person.isOwner ? "people.owner" : `people.role.${person.role}`} />
           {" · "}
+          {person.disabled && (
+            <strong className="font-medium text-danger">
+              <FormattedMessage id="people.keptOut" />
+              {" · "}
+            </strong>
+          )}
           {person.lastSeenAt === null ? (
             <FormattedMessage id="people.neverSeen" />
           ) : (
@@ -274,7 +319,7 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
               className="flex flex-wrap items-end gap-2"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (role !== person.role && !change.isPending) change.mutate();
+                if (role !== person.role && !change.isPending) change.mutate({ role });
               }}
             >
               <div className="grid gap-1">
@@ -303,21 +348,40 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
               </button>
             </form>
           )}
+          {!person.disabled && (
+            <button
+              type="button"
+              disabled={reset.isPending}
+              onClick={() => reset.mutate()}
+              className={secondaryButtonClass}
+            >
+              <FormattedMessage id="people.sendReset" />
+            </button>
+          )}
           <button
             type="button"
-            disabled={reset.isPending}
-            onClick={() => reset.mutate()}
+            disabled={change.isPending}
+            onClick={() => change.mutate({ disabled: !person.disabled })}
             className={secondaryButtonClass}
           >
-            <FormattedMessage id="people.sendReset" />
+            <FormattedMessage id={person.disabled ? "people.letIn" : "people.keepOut"} />
           </button>
           <button
             type="button"
-            onClick={() => setConfirming(true)}
+            onClick={() => setConfirming("remove")}
             className={secondaryButtonClass}
           >
             <FormattedMessage id="people.remove" />
           </button>
+          {me.user.isOwner && !person.disabled && (
+            <button
+              type="button"
+              onClick={() => setConfirming("handOver")}
+              className={secondaryButtonClass}
+            >
+              <FormattedMessage id="people.handOver" />
+            </button>
+          )}
         </div>
       )}
       <p role="alert" className="font-medium text-danger empty:sr-only">
@@ -328,8 +392,11 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
           {intl.formatMessage({ id: "people.resetMade" }, { name: person.name })}
         </OneTimeLink>
       )}
-      {confirming && (
-        <Dialog labelledBy={headingId} onClose={() => setConfirming(false)}>
+      {confirming === "handOver" && (
+        <HandOver person={person} onClose={() => setConfirming(null)} />
+      )}
+      {confirming === "remove" && (
+        <Dialog labelledBy={headingId} onClose={() => setConfirming(null)}>
           <div className="grid gap-4">
             <h2 id={headingId} className="text-xl font-semibold">
               <FormattedMessage id="people.confirmRemove" values={{ name: person.name }} />
@@ -344,7 +411,7 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
               <button
                 type="button"
                 className={primaryButtonClass}
-                onClick={() => setConfirming(false)}
+                onClick={() => setConfirming(null)}
               >
                 <FormattedMessage id="people.keep" />
               </button>
@@ -361,6 +428,83 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
         </Dialog>
       )}
     </li>
+  );
+}
+
+/** Handing the whole site to someone: it can't be taken back, so it asks for the password. */
+function HandOver({ person, onClose }: { person: Person; onClose: () => void }) {
+  const intl = useIntl();
+  const queryClient = useQueryClient();
+  const headingId = useId();
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const [password, setPassword] = useState("");
+  const [missing, setMissing] = useState(false);
+  const handOver = useMutation({
+    mutationFn: () =>
+      api("/auth/transfer-ownership", {
+        method: "POST",
+        body: { personId: person.id, password },
+      }),
+    onSuccess: async () => {
+      onClose();
+      showToast({
+        message: intl.formatMessage({ id: "people.handedOver" }, { name: person.name }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ME_KEY });
+      await queryClient.invalidateQueries({ queryKey: PEOPLE_KEY });
+    },
+    onError: () => passwordRef.current?.focus(),
+  });
+  const aboutPassword =
+    handOver.error instanceof ApiError && handOver.error.field === "password"
+      ? errorText(handOver.error, "")
+      : undefined;
+  return (
+    <Dialog labelledBy={headingId} onClose={onClose}>
+      <form
+        noValidate
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (handOver.isPending) return;
+          setMissing(password === "");
+          if (password === "") passwordRef.current?.focus();
+          else handOver.mutate();
+        }}
+      >
+        <h2 id={headingId} className="text-xl font-semibold">
+          <FormattedMessage id="people.handOverHeading" values={{ name: person.name }} />
+        </h2>
+        <p>
+          <FormattedMessage id="people.handOverBody" />
+        </p>
+        <PasswordField
+          ref={passwordRef}
+          label={intl.formatMessage({ id: "kit.password" })}
+          value={password}
+          error={missing ? intl.formatMessage({ id: "kit.passwordRequired" }) : aboutPassword}
+          autoComplete="current-password"
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setMissing(false);
+            handOver.reset();
+          }}
+        />
+        <p role="alert" className="font-medium text-danger empty:sr-only">
+          {handOver.error &&
+            !aboutPassword &&
+            errorText(handOver.error, intl.formatMessage({ id: "offline.body" }))}
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button type="button" className={primaryButtonClass} onClick={onClose}>
+            <FormattedMessage id="people.handOverNot" />
+          </button>
+          <button type="submit" disabled={handOver.isPending} className={secondaryButtonClass}>
+            <FormattedMessage id="people.handOverConfirm" values={{ name: person.name }} />
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

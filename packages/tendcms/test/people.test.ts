@@ -255,6 +255,6 @@ describe("the recovery kit (J7)", () => {
     expect((await recover(made, OWNER_EMAIL, codes[2] as string)).status).toBe(401);
     expect((await recover(made, OWNER_EMAIL, fresh[0] as string)).status).toBe(200);
     const status = await (await owner.get("/api/auth/recovery-kit")).json();
-    expect(status).toEqual({ codesLeft: 7, madeAt: made.clock.time });
+    expect(status).toEqual({ codesLeft: 7, madeAt: made.clock.time, saved: false });
   });
 });

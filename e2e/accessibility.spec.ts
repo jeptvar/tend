@@ -258,6 +258,49 @@ for (const colorScheme of ["light", "dark"] as const) {
       }
     });
 
+    test("account and people have no accessibility violations, whatever's open", async ({
+      page,
+      browser,
+      signedIn,
+    }) => {
+      const reply = await page.request.post(`${signedIn.base}/api/admin/people/invites`, {
+        data: { email: "ed@example.com", role: "editor" },
+      });
+      const { token } = await reply.json();
+      const context = await browser.newContext({ colorScheme });
+      const invitee = await context.newPage();
+      await invitee.goto(`${signedIn.base}/admin/invite#${token}`);
+      await invitee.getByLabel("Your name").fill("Ed Ward");
+      await invitee.getByRole("button", { name: "Suggest a passphrase" }).click();
+      await invitee.getByRole("button", { name: "Create my account" }).click();
+      await expect(invitee.getByRole("heading", { name: "Save your recovery kit" })).toBeVisible();
+      await expectNoViolations(invitee, "a new recovery kit");
+      await context.close();
+
+      await page.goto(`${signedIn.base}/admin/account`);
+      await page.getByText("Change your email").click();
+      await page.getByRole("button", { name: "Change email" }).click();
+      await page.getByText("Change your password", { exact: true }).click();
+      await page.getByRole("button", { name: "Change password" }).click();
+      await expect(page.getByText("Type your email address.")).toBeVisible();
+      await expectNoViolations(page, "account, with every form open and errors showing");
+
+      await page.goto(`${signedIn.base}/admin/people`);
+      await page.getByRole("button", { name: "Make a new-password link" }).click();
+      await expect(page.getByLabel("Link for a new password")).toBeVisible();
+      await expectNoViolations(page, "people, with a link to send");
+      await page.getByRole("button", { name: "Stop them signing in" }).click();
+      await expect(page.getByText("Can't sign in for now", { exact: false })).toBeVisible();
+      await expectNoViolations(page, "people, with someone kept out");
+      await page.getByRole("button", { name: "Let them sign in again" }).click();
+      await page.getByRole("button", { name: "Make them the Owner" }).click();
+      await expectNoViolations(page, "handing the site over");
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Remove Ed Ward?" })).toBeVisible();
+      await expectNoViolations(page, "removing someone");
+    });
+
     test("the warning that a site could be lost has no accessibility violations", async ({
       page,
       signedIn,
