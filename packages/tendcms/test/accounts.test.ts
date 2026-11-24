@@ -1,4 +1,6 @@
 import { describe, expect, test } from "vitest";
+import { removeEndedSessions } from "../src/db/repo/sessions.ts";
+import { removeOldTokens } from "../src/db/repo/tokens.ts";
 import {
   browser,
   GOOD_PASSWORD,
@@ -138,6 +140,56 @@ describe("someone's own account", () => {
     made.clock.time += 1000;
     await owner.post("/api/auth/recovery-kit", { password: GOOD_PASSWORD });
     expect(await saved()).toBe(false);
+  });
+});
+
+describe("tidying up", () => {
+  test("removes sessions that have ended, and none that haven't", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const DAY = 24 * 60 * 60 * 1000;
+    await signIn(made, OWNER_EMAIL, GOOD_PASSWORD);
+    const count = () =>
+      (made.db.prepare("SELECT count(*) AS n FROM sessions").get() as { n: number }).n;
+    expect(count()).toBe(2);
+    made.clock.time += 10 * DAY;
+    expect(await isSignedIn(owner)).toBe(true);
+    removeEndedSessions(made.orm, made.clock.time);
+    expect(count()).toBe(2);
+    // Two weeks without use ends one; using the other kept it.
+    made.clock.time += 5 * DAY;
+    removeEndedSessions(made.orm, made.clock.time);
+    expect(count()).toBe(1);
+    expect(await isSignedIn(owner)).toBe(true);
+    made.clock.time += 61 * DAY;
+    removeEndedSessions(made.orm, made.clock.time);
+    expect(count()).toBe(0);
+  });
+
+  test("removes links and codes a month after they can't be used, and keeps the rest", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const DAY = 24 * 60 * 60 * 1000;
+    const kinds = () =>
+      (
+        made.db
+          .prepare("SELECT kind, count(*) AS n FROM tokens GROUP BY kind ORDER BY kind")
+          .all() as { kind: string; n: number }[]
+      ).map(({ kind, n }) => `${kind} ${n}`);
+    await join(made, owner, "ed@example.com", "editor");
+    await owner.post(`${PEOPLE}/invites`, { email: "late@example.com", role: "editor" });
+    // The Owner's codes, Ed's, the invite Ed used, and one nobody has used yet.
+    expect(kinds()).toEqual(["invite 2", "recovery 16"]);
+    await owner.post("/api/auth/recovery-kit", { password: GOOD_PASSWORD });
+    expect(kinds()).toEqual(["invite 2", "recovery 24"]);
+    removeOldTokens(made.orm, made.clock.time + 29 * DAY);
+    expect(kinds()).toEqual(["invite 2", "recovery 24"]);
+    // The invite that was used and the codes that were replaced go, and then the other invite,
+    // which ran out after a week. Codes that still work never go.
+    removeOldTokens(made.orm, made.clock.time + 31 * DAY);
+    expect(kinds()).toEqual(["invite 1", "recovery 16"]);
+    removeOldTokens(made.orm, made.clock.time + 38 * DAY);
+    expect(kinds()).toEqual(["recovery 16"]);
   });
 });
 

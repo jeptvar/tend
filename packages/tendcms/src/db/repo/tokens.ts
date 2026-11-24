@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lt, or } from "drizzle-orm";
 import { normalizeCrockford, randomCrockford } from "../../auth/crockford.ts";
 import type { Orm } from "../client.ts";
 import { tokens, users } from "../schema.ts";
@@ -22,6 +22,9 @@ export const RECOVERED_MS = 30 * 60 * 1000;
 /** How many codes a recovery kit holds. */
 export const RECOVERY_CODES = 8;
 const RECOVERY_CODE_LENGTH = 10;
+
+/** How long a link or code is kept once it can't be used, for anyone asking what became of it. */
+const KEPT_AFTER_MS = 30 * DAY_MS;
 
 /** For something that may run inside a transaction or not. */
 type Db = Pick<Orm, "select" | "insert" | "update">;
@@ -218,6 +221,17 @@ export function recoveryKitSaved(
 ): boolean {
   const { madeAt } = recoveryKitStatus(orm, user.id, now);
   return madeAt !== null && user.recoverySavedAt !== null && user.recoverySavedAt >= madeAt;
+}
+
+/** Removes links and codes that were used, taken back or ran out a while ago. */
+export function removeOldTokens(orm: Orm, now: number): void {
+  const before = now - KEPT_AFTER_MS;
+  orm
+    .delete(tokens)
+    .where(
+      or(lt(tokens.usedAt, before), lt(tokens.revokedAt, before), lt(tokens.expiresAt, before)),
+    )
+    .run();
 }
 
 /** Someone's usable recovery code, if this is one. */

@@ -24,7 +24,9 @@ import { createOrm, openDatabase, type SqliteDatabase } from "./db/client.ts";
 import { damagedDatabase, isDamage } from "./db/damage.ts";
 import { acquireLock, type Lock, LockError } from "./db/lock.ts";
 import { MigrationError, migrate, SNAPSHOT_TMP_PREFIX, schemaIsCurrent } from "./db/migrate.ts";
+import { removeEndedSessions } from "./db/repo/sessions.ts";
 import { getSetting } from "./db/repo/settings.ts";
+import { removeOldTokens } from "./db/repo/tokens.ts";
 import {
   findUserByEmail,
   listUsers,
@@ -232,12 +234,14 @@ export async function theme([action, from, to]: string[]): Promise<void> {
 }
 
 const HOUR_MS = 60 * 60 * 1000;
+const OPTIMIZE_EVERY_MS = 6 * HOUR_MS;
 /** How long a request being answered has to finish once Tend is told to stop. */
 const DRAIN_MS = 5000;
 
 /** Puts everything from the log into the database itself, so the data folder can be copied. */
 function closeDatabase(db: SqliteDatabase): void {
   try {
+    db.pragma("optimize");
     db.pragma("wal_checkpoint(TRUNCATE)");
     db.close();
   } catch {
@@ -337,6 +341,12 @@ export async function start(options: { open: boolean } = { open: false }): Promi
     } catch (error) {
       console.error(`Couldn't tidy up old drafts: ${(error as Error).message}`);
     }
+    try {
+      removeEndedSessions(orm, Date.now());
+      removeOldTokens(orm, Date.now());
+    } catch (error) {
+      console.error(`Couldn't tidy up old sessions and links: ${(error as Error).message}`);
+    }
     // Media's Trash after 30 days, except what a published page still shows.
     cleanUpMedia(orm, files, Date.now()).catch((error: Error) =>
       console.error(`Couldn't empty Media's Trash: ${error.message}`),
@@ -344,6 +354,17 @@ export async function start(options: { open: boolean } = { open: false }): Promi
   };
   tidyUp();
   setInterval(tidyUp, HOUR_MS).unref();
+
+  // Lets SQLite look over tables whose contents have changed a lot, so it goes on choosing the
+  // quick way to look things up. It does nothing when there's nothing to do (PLAN.md §11).
+  const openDb = db;
+  setInterval(() => {
+    try {
+      openDb.pragma("optimize");
+    } catch (error) {
+      console.error(`Couldn't look the database over: ${(error as Error).message}`);
+    }
+  }, OPTIMIZE_EVERY_MS).unref();
 
   // A copy of the site's data each day at 03:00 its time (PLAN.md §13). Looked at often, so
   // it's made soon after, and soon after Tend starts if it wasn't running then.

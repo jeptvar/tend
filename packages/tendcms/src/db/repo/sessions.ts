@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, or } from "drizzle-orm";
 import type { Orm } from "../client.ts";
 import { sessions, users } from "../schema.ts";
 import type { User } from "./users.ts";
@@ -89,4 +89,12 @@ export async function deleteSession(orm: Orm, token: string): Promise<void> {
 
 export async function deleteUserSessions(orm: Orm, userId: string): Promise<void> {
   orm.delete(sessions).where(eq(sessions.userId, userId)).run();
+}
+
+/** Removes sessions that have ended. Nothing looks at them again, and they hold who was where. */
+export function removeEndedSessions(orm: Orm, now: number): void {
+  orm
+    .delete(sessions)
+    .where(or(lt(sessions.expiresAt, now), lt(sessions.createdAt, now - ABSOLUTE_MS)))
+    .run();
 }
