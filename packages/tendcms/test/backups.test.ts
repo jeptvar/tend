@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -22,7 +23,7 @@ import {
   takeDailySnapshot,
 } from "../src/backups/snapshots.ts";
 import { writeBackup } from "../src/backups/write.ts";
-import { readSecretKey } from "../src/config.ts";
+import { readSecretKey, secretKeyText } from "../src/config.ts";
 import { migrate } from "../src/db/migrate.ts";
 import { migrationsDir } from "../src/paths.ts";
 import {
@@ -82,8 +83,11 @@ function dataFolder(root = tempDir()) {
 
 async function restoreInto(zip: string, root?: string) {
   const where = dataFolder(root);
-  const checked = await checkBackup(zip, join(where.backupsDir, ".tmp-restore"), NEWEST);
-  return { where, checked, ...(await restoreBackup(checked, where)) };
+  const folder = join(where.backupsDir, ".tmp-restore");
+  const checked = await checkBackup(zip, folder, NEWEST);
+  const result = await restoreBackup(checked, where);
+  rmSync(folder, { recursive: true });
+  return { where, checked, ...result };
 }
 
 function siteName(dbPath: string): string {
@@ -164,12 +168,24 @@ describe("backing up and restoring a site", () => {
     });
     other.db.close();
 
+    const otherKey = join(other.root, "secret.key");
+    writeFileSync(otherKey, secretKeyText(other.secretKey));
+
     const { where, snapshotPath } = await restoreInto(zip, other.root);
     expect(siteName(where.dbPath)).toBe("Rise Bakery");
     expect(snapshotPath).toMatch(/before-restore-[0-9TZ.]+\.db\.gz$/);
     const saved = join(tempDir(), "saved.db");
     writeFileSync(saved, gunzipSync(readFileSync(snapshotPath as string)));
     expect(siteName(saved)).toBe("Corner Café");
+    // Its key is beside it: without that, its recovery codes couldn't come back with it.
+    const savedKey = (snapshotPath as string).replace(/\.db\.gz$/, ".secret.key");
+    expect(readSecretKey({ secretKeyPath: savedKey }).equals(other.secretKey)).toBe(true);
+    if (process.platform !== "win32") expect(statSync(savedKey).mode & 0o777).toBe(0o600);
+
+    // Restoring its own backup keeps the key it has, so there's none to save.
+    const again = await restoreInto(zip, other.root);
+    const againKey = (again.snapshotPath as string).replace(/\.db\.gz$/, ".secret.key");
+    expect(existsSync(againKey)).toBe(false);
   });
 
   test.each<[string, (bytes: Buffer) => Buffer]>([

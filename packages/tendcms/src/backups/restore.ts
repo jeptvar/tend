@@ -262,8 +262,9 @@ function checkDatabase(path: string, manifest: BackupManifest, newestSchema: num
 /**
  * Puts a checked backup in place of the site in the data folder. Whoever calls it holds the
  * data folder's lock, and nothing else has the database open. The site as it was is saved
- * first, as before-restore-<time>.db.gz in the backups folder, so a restore can be undone.
- * A database too damaged for that is kept as it is, since it may be why this is being done.
+ * first, as before-restore-<time>.db.gz in the backups folder, with its key beside it as
+ * before-restore-<time>.secret.key if the backup has another, so a restore can be undone. A
+ * database too damaged for that is kept as it is, since it may be why this is being done.
  * Originals go in first; they're named by their content, so one already there is the same
  * file. Then the key and the database, each by a rename, so neither is ever half there.
  */
@@ -284,6 +285,7 @@ export async function restoreBackup(
       wasDamaged = true;
       snapshotPath = keepDamaged(target, `${name}-damaged.db`);
     }
+    keepKey(target, checked.key, `${name}.secret.key`);
   }
 
   moveOriginals(checked, target.uploadsDir);
@@ -329,6 +331,17 @@ function keepDamaged(target: RestoreTarget, name: string): string {
   }
   fsyncDir(target.backupsDir);
   return kept;
+}
+
+/** Keeps the key that's there, unless the backup brings the same one. */
+function keepKey(target: RestoreTarget, replacement: Buffer, name: string): void {
+  if (!existsSync(target.secretKeyPath)) return;
+  const contents = readFileSync(target.secretKeyPath);
+  if (parseSecretKey(contents)?.equals(replacement)) return;
+  const kept = join(target.backupsDir, name);
+  writeFileSync(kept, contents, { mode: 0o600 });
+  fsyncFile(kept);
+  fsyncDir(target.backupsDir);
 }
 
 /** Moves a checked backup's originals into the media store. Named by content, so one there is the same. */
