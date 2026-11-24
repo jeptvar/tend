@@ -10,6 +10,26 @@ function words(message: string): string {
   return message.replace(/\{[a-zA-Z]+(, (plural|select|selectordinal|number|date|time),?)?/g, " ");
 }
 
+/** Says the site is live, rather than how to get there (PLAN.md §4, P15). */
+const SAYS_LIVE = ["overview.live"];
+/** How to get there: what's true once someone has done it all. */
+const SAYS_HOW = ["online.addressBody"];
+
+describe("what the admin says about the site", () => {
+  test("only says it's live where that's checked first", () => {
+    const live = Object.entries(messages)
+      .filter(([, message]) => /\blive\b/i.test(words(message)))
+      .map(([id]) => id);
+    expect(live.sort()).toEqual([...SAYS_LIVE, ...SAYS_HOW].sort());
+  });
+
+  test("never says the words that promise more than it knows", () => {
+    for (const [id, message] of Object.entries(messages)) {
+      expect(words(message), id).not.toMatch(/\byour site is (online|public|published|up)\b(?!,)/i);
+    }
+  });
+});
+
 describe("what the admin says", () => {
   test("uses none of the words that need explaining", () => {
     const found = Object.entries(messages)
