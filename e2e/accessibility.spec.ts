@@ -588,6 +588,7 @@ test.describe("at phone widths", () => {
       "/admin/account",
       "/admin/help",
       "/admin/online",
+      "/admin/domain",
       "/",
       "/blog",
       "/contact",
@@ -652,6 +653,39 @@ test.describe("at phone widths", () => {
       await page.waitForLoadState("networkidle");
       expect(await tooSmallTargets(page), path).toEqual([]);
     }
+  });
+
+  test("the screens for getting in fit at 320 px, and everything tappable is 44 px", async ({
+    page,
+    browser,
+    newSite,
+    signedIn,
+  }) => {
+    const invite = await page.request.post(`${signedIn.base}/api/admin/people/invites`, {
+      data: { email: `${UNBROKEN}@example.com`, role: "editor" },
+    });
+    const { token } = await invite.json();
+    const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
+    const visitor = await context.newPage();
+    for (const url of [
+      `${signedIn.base}/admin/login`,
+      `${signedIn.base}/admin/login/forgot`,
+      `${signedIn.base}/admin/recover`,
+      `${signedIn.base}/admin/reset#not-a-real-link-at-all`,
+      `${signedIn.base}/admin/invite#${token}`,
+      `${newSite.base}/admin/setup`,
+      newSite.link,
+      `${newSite.base}/admin/setup/name`,
+      `${newSite.base}/admin/setup/backup`,
+    ]) {
+      await visitor.goto("about:blank");
+      await visitor.goto(url);
+      await expect(visitor.getByRole("heading", { level: 1 })).toBeVisible();
+      await visitor.waitForLoadState("networkidle");
+      await expectNoSidewaysScrolling(visitor, url);
+      expect(await tooSmallTargets(visitor), url).toEqual([]);
+    }
+    await context.close();
   });
 
   test("the editor's controls are all at least 44 px, on a page with everything", async ({

@@ -165,7 +165,7 @@ export function ForgotPassword() {
     <AuthLayout screen="forgot">
       <ol className="mt-6 grid list-decimal gap-6 pl-6 text-lg">
         <li>
-          <Link href="/recover" className="font-medium text-brand underline underline-offset-4">
+          <Link href="/recover" className={`${textLinkClass} font-medium underline`}>
             <FormattedMessage id="forgot.code" />
           </Link>
           <p className="mt-1 text-base text-muted">
