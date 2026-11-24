@@ -194,6 +194,12 @@ jobs:
             echo "npm is still in the image."
             exit 1
           fi
+      # What's downloaded, with each layer compressed (PLAN.md §11).
+      - name: Check the image's size
+        run: |
+          bytes=$(docker save tend:test | gzip | wc --bytes)
+          echo "$((bytes / 1000000)) MB compressed"
+          test "$bytes" -le 200000000
       # A folder from the server, or a volume a host makes (Railway's), belongs to root.
       - name: Boot against a data folder that belongs to root
         run: |
@@ -220,6 +226,29 @@ jobs:
           done
           curl --fail --silent --show-error http://127.0.0.1:3001/admin/setup | grep --quiet 'id="root"'
           sudo test -f /srv/tend-data/tend.db
+      # Two containers on one volume would write over each other's changes. The lock is the
+      # operating system's, so it has to hold between containers too (PLAN.md §11).
+      - name: Check two containers can't use one volume
+        run: |
+          docker run --detach --name tend-first --publish 3004:3000 \
+            --volume tend-shared:/data tend:test
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:3004/healthz
+          if timeout 60 docker run --rm --volume tend-shared:/data tend:test > second.log 2>&1; then
+            echo "A second container started on a volume that's in use."
+            exit 1
+          fi
+          grep --quiet 'Tend is already running with this data folder' second.log
+          # The first one didn't notice, and stops the way a host asks it to, in its own time.
+          curl --fail --silent --show-error http://127.0.0.1:3004/healthz
+          docker stop tend-first
+          test "$(docker inspect --format '{{.State.ExitCode}}' tend-first)" = 0
+          # Then the volume is free.
+          docker run --detach --name tend-next --publish 3005:3000 \
+            --volume tend-shared:/data tend:test
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:3005/healthz
+          docker stop tend-next
       # A container's own files go when it's replaced, and so can a volume with no name, which
       # is what Docker makes for the image's /data when it isn't given one. Each container is
       # stopped before its log is read, so it has nothing left to write.
@@ -307,10 +336,10 @@ jobs:
       - name: Show what Tend printed, if that failed
         if: failure()
         run: |
-          for name in tend tend-root tend-unmounted tend-named; do
+          for name in tend tend-root tend-first tend-next tend-unmounted tend-named; do
             docker logs "$name" || true
           done
-          cat refused.log doctor.log || true
+          cat refused.log doctor.log second.log || true
 
   # main's rules require one check called docker, and this is it: it passes only if both
   # processors' images did. Without always() it would be skipped when one fails, and GitHub
