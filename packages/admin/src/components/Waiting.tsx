@@ -1,7 +1,7 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { FormattedMessage, useIntl } from "react-intl";
-import { errorText } from "../lib/api.ts";
+import { FormattedMessage } from "react-intl";
 import { secondaryButtonClass } from "./AuthLayout.tsx";
+import { Problem } from "./Problem.tsx";
 
 /**
  * What's shown in place of something until it has loaded: that it's on its way, or what went
@@ -12,7 +12,6 @@ export function Waiting({
 }: {
   query: Pick<UseQueryResult, "error" | "isFetching" | "refetch">;
 }) {
-  const intl = useIntl();
   if (!query.error) {
     return (
       <p className="mt-6 text-muted">
@@ -23,7 +22,7 @@ export function Waiting({
   return (
     <div className="mt-6 grid justify-items-start gap-3">
       <p role="alert" className="font-medium text-danger">
-        {errorText(query.error, intl.formatMessage({ id: "offline.body" }))}
+        {<Problem error={query.error} />}
       </p>
       <button
         type="button"

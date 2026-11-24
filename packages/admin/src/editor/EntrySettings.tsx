@@ -4,7 +4,8 @@ import { FormattedMessage, useIntl } from "react-intl";
 import { secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Field } from "../components/fields.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
-import { api, errorText } from "../lib/api.ts";
+import { Problem } from "../components/Problem.tsx";
+import { api } from "../lib/api.ts";
 import { useMediaItems } from "../lib/media.ts";
 
 const smallButtonClass = `${secondaryButtonClass} aria-disabled:opacity-60`;
@@ -215,7 +216,7 @@ export function TagsField({
         </p>
       )}
       <p role="alert" className="text-sm font-medium text-danger empty:sr-only">
-        {create.error && errorText(create.error, intl.formatMessage({ id: "offline.body" }))}
+        {create.error && <Problem error={create.error} />}
       </p>
     </div>
   );

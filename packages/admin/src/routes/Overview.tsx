@@ -11,8 +11,9 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Icon } from "../components/icons.tsx";
 import { OutLink } from "../components/OutLink.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { Waiting } from "../components/Waiting.tsx";
-import { api, errorText } from "../lib/api.ts";
+import { api } from "../lib/api.ts";
 import { bytesText } from "../lib/bytes.ts";
 import { onThisComputer } from "../lib/hosts.ts";
 import type { EntrySummary, Me } from "../lib/queries.ts";
@@ -117,7 +118,6 @@ function BackupReminder() {
  * localhost, never reaches a moved site's links, sitemap or social previews.
  */
 function AddressCheck() {
-  const intl = useIntl();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const address = window.location.origin;
   // The button goes, so the keyboard needs somewhere to be.
@@ -162,7 +162,7 @@ function AddressCheck() {
         )}
       </p>
       <p role="alert" className="mt-2 font-medium text-danger empty:sr-only">
-        {confirm.isError && errorText(confirm.error, intl.formatMessage({ id: "offline.body" }))}
+        {confirm.isError && <Problem error={confirm.error} />}
       </p>
     </section>
   );
@@ -403,7 +403,6 @@ function ThisServer({ info }: { info: OverviewInfo }) {
 }
 
 function OverviewScreen({ me }: { me: Me }) {
-  const intl = useIntl();
   const [, navigate] = useLocation();
   // Asked once per visit, so the answer stays on screen after the address becomes known.
   const [askAddress] = useState(() => shouldAskAddress(me));
@@ -484,7 +483,7 @@ function OverviewScreen({ me }: { me: Me }) {
       </div>
       {/* Always mounted: screen readers can miss a live region added along with its text. */}
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {newPost.error && errorText(newPost.error, intl.formatMessage({ id: "offline.body" }))}
+        {newPost.error && <Problem error={newPost.error} />}
       </p>
       {info ? (
         <>

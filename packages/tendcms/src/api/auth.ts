@@ -46,7 +46,7 @@ import {
 import type { SiteAddress } from "../site-address.ts";
 import type { DataRiskDetails } from "../volume.ts";
 import { registerAccountRoutes } from "./accounts.ts";
-import { ApiError, tendIsBusy, tooManyTries } from "./errors.ts";
+import { ApiError, type ApiErrorDetails, tendIsBusy, tooManyTries } from "./errors.ts";
 import { registerSetupBackupRoutes } from "./setup-backup.ts";
 
 export interface AuthOptions extends SetupCodeSource {
@@ -141,16 +141,19 @@ function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
   if (result.success) return result.data;
   const issue = result.error.issues[0];
-  throw new ApiError(400, "needs_fixing", issue?.message ?? "Check what you typed and try again.", {
+  throw new ApiError(400, "needs_fixing", issue?.message ?? "Something's missing.", {
     field: issue?.path.join("."),
-  });
+    fix: issue?.message ? undefined : "Check what you typed and try again.",
+  } as ApiErrorDetails);
 }
 
 async function readJson(c: Context): Promise<unknown> {
   try {
     return await c.req.json();
   } catch {
-    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request. Try again.");
+    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request.", {
+      fix: "Try again.",
+    });
   }
 }
 

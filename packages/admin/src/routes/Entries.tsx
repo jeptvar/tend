@@ -15,8 +15,9 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
 import { Icon } from "../components/icons.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
-import { api, errorText } from "../lib/api.ts";
+import { api } from "../lib/api.ts";
 import { releaseAllDrafts } from "../lib/held-drafts.ts";
 import {
   ENTRY_VIEWS,
@@ -242,7 +243,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
 
       {/* Always mounted: screen readers can miss a live region added along with its text. */}
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}
+        {error && <Problem error={error} />}
       </p>
 
       {list.isPending && (
@@ -392,8 +393,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
               <FormattedMessage id="list.confirmDeleteBody" />
             </p>
             <p role="alert" className="font-medium text-danger empty:sr-only">
-              {deleteForever.error &&
-                errorText(deleteForever.error, intl.formatMessage({ id: "offline.body" }))}
+              {deleteForever.error && <Problem error={deleteForever.error} />}
             </p>
             <div className="flex flex-wrap gap-3">
               <button

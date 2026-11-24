@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { FormattedMessage, useIntl } from "react-intl";
+import { FormattedMessage } from "react-intl";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
-import { api, errorText } from "../lib/api.ts";
+import { Problem } from "../components/Problem.tsx";
+import { api } from "../lib/api.ts";
 import { type MediaItem, rememberMedia } from "../lib/media.ts";
 
 /**
@@ -11,7 +12,6 @@ import { type MediaItem, rememberMedia } from "../lib/media.ts";
  * picture itself. It's saved to Media, so it's the same wherever the picture is used.
  */
 export function AltDialog({ item, onClose }: { item: MediaItem; onClose: () => void }) {
-  const intl = useIntl();
   const queryClient = useQueryClient();
   const headingId = useId();
   const altId = useId();
@@ -78,7 +78,7 @@ export function AltDialog({ item, onClose }: { item: MediaItem; onClose: () => v
           <FormattedMessage id="media.decorative" />
         </label>
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {save.error && errorText(save.error, intl.formatMessage({ id: "offline.body" }))}
+          {save.error && <Problem error={save.error} />}
         </p>
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={save.isPending} className={primaryButtonClass}>

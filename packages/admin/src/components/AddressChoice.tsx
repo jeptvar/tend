@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef } from "react";
-import { FormattedMessage, useIntl } from "react-intl";
-import { api, errorText } from "../lib/api.ts";
+import { FormattedMessage } from "react-intl";
+import { api } from "../lib/api.ts";
 import { onThisComputer } from "../lib/hosts.ts";
 import { ME_KEY, type Me } from "../lib/queries.ts";
 import { secondaryButtonClass } from "./AuthLayout.tsx";
+import { Problem } from "./Problem.tsx";
 
 /** Confirms that the address the admin is open at is the site's own. */
 export function useConfirmAddress(onDone?: () => void) {
@@ -26,7 +27,6 @@ export function useConfirmAddress(onDone?: () => void) {
  * new one and choosing it here, so that it can only be one that leads to this site.
  */
 export function AddressChoice({ me }: { me: Me }) {
-  const intl = useIntl();
   const statusRef = useRef<HTMLParagraphElement>(null);
   const confirm = useConfirmAddress(() => statusRef.current?.focus());
   const { address, addressFrom } = me.site;
@@ -70,7 +70,7 @@ export function AddressChoice({ me }: { me: Me }) {
         )}
       </p>
       <p role="alert" className="font-medium text-danger empty:sr-only">
-        {confirm.isError && errorText(confirm.error, intl.formatMessage({ id: "offline.body" }))}
+        {confirm.isError && <Problem error={confirm.error} />}
       </p>
     </div>
   );

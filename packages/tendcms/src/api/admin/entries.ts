@@ -113,7 +113,9 @@ function expectedRev(c: Context): number {
   const header = c.req.header("if-match");
   const rev = Number(header);
   if (!header || !Number.isInteger(rev) || rev < 1) {
-    throw new ApiError(400, "needs_fixing", "Tend needs to know which version you were editing.");
+    throw new ApiError(400, "needs_fixing", "Tend needs to know which version you were editing.", {
+      fix: "Send the number it had in an If-Match header, or reload the page and try again.",
+    });
   }
   return rev;
 }

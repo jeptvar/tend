@@ -8,6 +8,7 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { dismissToast, showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
@@ -555,7 +556,7 @@ function SiteMenuScreen({ me }: { me: Me }) {
       </div>
 
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {save.error && errorText(save.error, intl.formatMessage({ id: "offline.body" }))}
+        {save.error && <Problem error={save.error} />}
       </p>
       <p role="status" className="sr-only">
         {announcement}

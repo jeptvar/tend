@@ -11,6 +11,7 @@ import { Dialog } from "./Dialog.tsx";
 import { useNavigationFocus } from "./focus.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { OpenConnection } from "./OpenConnection.tsx";
+import { Problem } from "./Problem.tsx";
 import { showToast } from "./Toast.tsx";
 
 /**
@@ -97,7 +98,6 @@ function Menu({
   const intl = useIntl();
   const [location] = useLocation();
   const signOut = useSignOut();
-  const offline = intl.formatMessage({ id: "offline.body" });
 
   const label = (id: string) => (
     <span className={rail ? "sr-only" : "min-w-0 [overflow-wrap:anywhere]"}>
@@ -162,7 +162,7 @@ function Menu({
         </ul>
         {/* Always mounted: screen readers can miss a live region added along with its text. */}
         <p role="alert" className="px-3 py-1 text-sm font-medium text-danger empty:sr-only">
-          {signOut.isError && errorText(signOut.error, offline)}
+          {signOut.isError && <Problem error={signOut.error} />}
         </p>
         {!rail && (
           <p className="px-3 py-1 text-sm [overflow-wrap:anywhere] text-muted">

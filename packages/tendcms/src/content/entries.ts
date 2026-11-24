@@ -812,6 +812,7 @@ export async function discardChanges(
           409,
           "not_on_site",
           "This isn't on your site, so there's nothing to go back to.",
+          { fix: "Use History if you want an earlier version." },
         );
       }
       const keptRevisionId = keepRevision(tx, {

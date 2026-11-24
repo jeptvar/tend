@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
-import { api, errorText } from "../lib/api.ts";
+import { api } from "../lib/api.ts";
 import {
   ACCEPTED_PICTURES,
   MEDIA_KEY,
@@ -16,6 +16,7 @@ import {
 } from "../lib/media.ts";
 import { primaryButtonClass, secondaryButtonClass, textLinkClass } from "./AuthLayout.tsx";
 import { Dialog } from "./Dialog.tsx";
+import { Problem } from "./Problem.tsx";
 
 const SEARCH_DELAY_MS = 250;
 
@@ -135,8 +136,7 @@ export function MediaPicker({
           />
         )}
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {error ??
-            (list.error && errorText(list.error, intl.formatMessage({ id: "offline.body" })))}
+          {error ?? (list.error && <Problem error={list.error} />)}
         </p>
 
         <div className="grid gap-2">

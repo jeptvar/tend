@@ -396,6 +396,7 @@
   "list.showMore": "Show more",
   "common.ok": "OK",
   "common.newTab": "(opens in a new tab)",
+  "common.more": "More about this",
   "common.dismiss": "Dismiss",
   "nav.media": "Media",
   "media.pageTitle": "Media · Tend",
@@ -891,5 +892,7 @@
   "forgot.someone": "Ask someone",
   "forgot.someoneHint": "The Owner can send anyone a link to choose a new password, from People. Admins can for Editors.",
   "forgot.developer": "Ask your developer",
+  "forgot.npm": "In your site's folder, if it was made with npm:",
+  "forgot.docker": "On the server, if it's in Docker:",
   "forgot.developerHint": "They can run this where Tend is running, with your email. It shows a new password and signs you out everywhere."
 }

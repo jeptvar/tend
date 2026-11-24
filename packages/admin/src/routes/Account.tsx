@@ -14,6 +14,7 @@ import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Field, PasswordField } from "../components/fields.tsx";
 import { NewPasswordField, tooShort } from "../components/NewPasswordField.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
@@ -42,11 +43,10 @@ function fieldError(error: unknown, field: string): string | undefined {
 
 /** What went wrong that isn't about one of these fields. */
 function FormProblem({ error, fields }: { error: unknown; fields: string[] }) {
-  const intl = useIntl();
   const shown = error instanceof ApiError && error.field && fields.includes(error.field);
   return (
     <p role="alert" className="font-medium text-danger empty:sr-only">
-      {error && !shown ? errorText(error, intl.formatMessage({ id: "offline.body" })) : null}
+      {error && !shown ? <Problem error={error} /> : null}
     </p>
   );
 }

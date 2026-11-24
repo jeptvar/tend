@@ -8,6 +8,7 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { PreviewDialog } from "../editor/PreviewDialog.tsx";
@@ -553,7 +554,7 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
       )}
 
       <p role="alert" className="font-medium text-danger empty:sr-only">
-        {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}
+        {error && <Problem error={error} />}
       </p>
       <div className="sticky bottom-(--tend-bar) -mx-4 flex flex-wrap items-center gap-3 border-t border-ink/10 bg-paper px-4 py-3">
         <button

@@ -1,8 +1,9 @@
 import { type ReactNode, useEffect, useRef } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
-import { ApiError, errorText, OFFLINE } from "../lib/api.ts";
+import { ApiError, OFFLINE } from "../lib/api.ts";
 import { focusNextScreen, useNavigationFocus } from "./focus.ts";
 import { OpenConnection } from "./OpenConnection.tsx";
+import { Problem } from "./Problem.tsx";
 
 /** Tend's mark. */
 export function Leaf({ className }: { className: string }) {
@@ -81,7 +82,6 @@ export function CannotReachTend({
   retrying: boolean;
   onRetry: () => void;
 }) {
-  const intl = useIntl();
   const answered = error instanceof ApiError && error.code !== OFFLINE;
 
   // Whatever comes back next has to take focus, even at the same address.
@@ -90,7 +90,7 @@ export function CannotReachTend({
   return (
     <AuthLayout screen={answered ? "problem" : "offline"} focusOnMount>
       <p role="alert" className="mt-3 text-lg text-muted">
-        {errorText(error, intl.formatMessage({ id: "offline.body" }))}
+        {<Problem error={error} />}
       </p>
       <div className="mt-8">
         <button type="button" disabled={retrying} onClick={onRetry} className={primaryButtonClass}>

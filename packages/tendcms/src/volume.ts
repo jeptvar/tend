@@ -164,6 +164,10 @@ export function dataRiskWarning(
   { needsSetup }: { needsSetup: boolean },
 ): string {
   const frame = "!".repeat(72);
-  const lines = [`WARNING: ${dataRiskReason(risk)}`, ...dataRiskSteps(risk, needsSetup)];
+  const lines = [
+    `WARNING: ${dataRiskReason(risk)}`,
+    ...dataRiskSteps(risk, needsSetup),
+    "More about this: https://tendcms.dev/errors/no_volume",
+  ];
   return ["", frame, ...lines.map((line) => `!! ${line}`), frame, ""].join("\n");
 }

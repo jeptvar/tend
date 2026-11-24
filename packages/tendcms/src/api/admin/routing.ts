@@ -127,17 +127,22 @@ export function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
     field === "doc"
       ? "Tend couldn't save that content."
       : (issue?.message ?? "Check what you typed.");
-  throw new ApiError(400, "needs_fixing", message, {
-    ...(typeof field === "string" ? { field } : {}),
-    ...(message === FALLBACK_PROBLEM ? { fix: FALLBACK_FIX } : {}),
-  });
+  const fix = message === FALLBACK_PROBLEM ? { fix: FALLBACK_FIX } : {};
+  throw new ApiError(
+    400,
+    "needs_fixing",
+    message,
+    typeof field === "string" ? { field, ...fix } : { fix: FALLBACK_FIX },
+  );
 }
 
 export async function readJson(c: Context): Promise<unknown> {
   try {
     return await c.req.json();
   } catch {
-    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request. Try again.");
+    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request.", {
+      fix: "Try again.",
+    });
   }
 }
 

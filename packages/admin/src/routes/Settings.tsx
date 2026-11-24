@@ -11,6 +11,7 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Field } from "../components/fields.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
@@ -113,13 +114,12 @@ function SaveRow({
   /** The fields that show a refusal about them themselves. Any other is shown here. */
   fields?: string[];
 }) {
-  const intl = useIntl();
   const general =
     error instanceof ApiError && error.field && fields.includes(error.field) ? null : error;
   return (
     <div className="grid gap-2">
       <p role="alert" className="font-medium text-danger empty:sr-only">
-        {general ? errorText(general, intl.formatMessage({ id: "offline.body" })) : null}
+        {general ? <Problem error={general} /> : null}
       </p>
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -658,7 +658,7 @@ function Redirects() {
         <FormattedMessage id="redirects.hint" />
       </p>
       <p role="alert" className="font-medium text-danger empty:sr-only">
-        {remove.error && errorText(remove.error, intl.formatMessage({ id: "offline.body" }))}
+        {remove.error && <Problem error={remove.error} />}
       </p>
       {!rows ? (
         <Waiting query={list} />
@@ -723,9 +723,9 @@ function Redirects() {
           onChange={(event) => setTo(event.target.value)}
         />
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {add.error && !(add.error instanceof ApiError && add.error.field)
-            ? errorText(add.error, intl.formatMessage({ id: "offline.body" }))
-            : null}
+          {add.error && !(add.error instanceof ApiError && add.error.field) ? (
+            <Problem error={add.error} />
+          ) : null}
         </p>
         <div>
           <button type="submit" aria-disabled={add.isPending} className={smallButtonClass}>

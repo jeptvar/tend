@@ -88,7 +88,14 @@ test("J7: locked out, the Owner gets back in with a recovery code", async ({
   const codes = await setUpWithKit(page, site);
   const owner = await openAs(browser, `${site.base}/admin/login`);
   await owner.getByRole("link", { name: "Forgot password?" }).click();
+  for (const command of ["npx tendcms", "docker compose exec tend tendcms"]) {
+    await expect(owner.getByText(`${command} reset-password you@example.com`)).toBeVisible();
+  }
   await owner.getByRole("link", { name: "Use a recovery code" }).click();
+  // An address short enough to say over the phone leads to the same place.
+  await owner.goto(`${site.base}/recover`);
+  await expect(owner.getByRole("heading", { level: 1 })).toBeVisible();
+  expect(new URL(owner.url()).pathname).toBe("/admin/recover");
   await owner.getByLabel("Email").fill(OWNER.email);
   await owner.getByLabel("Recovery code").fill("WRONG-CODES");
   await owner.getByRole("button", { name: "Continue" }).click();

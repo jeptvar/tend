@@ -11,6 +11,7 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Field } from "../components/fields.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { dismissToast, showToast } from "../components/Toast.tsx";
 import { BodyEditor, type BodyHandle } from "../editor/BodyEditor.tsx";
 import {
@@ -1926,7 +1927,7 @@ function DeletedEntryRecovery({ me, held }: { me: Me; held: HeldDraft }) {
         <p className="mt-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{words}</p>
       </div>
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {problem ? errorText(problem, intl.formatMessage({ id: "offline.body" })) : null}
+        {problem ? <Problem error={problem} /> : null}
       </p>
       <div className="mt-4 flex flex-wrap gap-3">
         <button
@@ -1981,7 +1982,6 @@ function DeletedEntryRecovery({ me, held }: { me: Me; held: HeldDraft }) {
 }
 
 function LoadedEditor({ me, id, type }: { me: Me; id: string; type: EntryType }) {
-  const intl = useIntl();
   const entry = useQuery({
     queryKey: entryKey(id),
     queryFn: async () => {
@@ -2010,7 +2010,7 @@ function LoadedEditor({ me, id, type }: { me: Me; id: string; type: EntryType })
     return (
       <AdminLayout me={me} screen={type === "post" ? "editor.post" : "editor.page"}>
         <p role="alert" className="mt-6 text-lg text-muted">
-          {errorText(entry.error, intl.formatMessage({ id: "offline.body" }))}
+          {<Problem error={entry.error} />}
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-4">
           <button

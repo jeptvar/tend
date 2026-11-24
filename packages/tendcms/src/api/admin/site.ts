@@ -81,7 +81,9 @@ const addressSchema = z.object({
 });
 
 function unknownSetting(): ApiError {
-  return new ApiError(404, "not_found", "There's no setting by that name.");
+  return new ApiError(404, "not_found", "There's no setting by that name.", {
+    fix: "Reload this page, then try again.",
+  });
 }
 
 function settingsName(c: Context): SettingsName {
@@ -93,7 +95,9 @@ function settingsName(c: Context): SettingsName {
 function menuName(c: Context): MenuName {
   const name = c.req.param("name");
   if (name !== "main" && name !== "footer") {
-    throw new ApiError(404, "not_found", "There's no menu by that name.");
+    throw new ApiError(404, "not_found", "There's no menu by that name.", {
+      fix: "Use the main menu or the footer's.",
+    });
   }
   return name;
 }

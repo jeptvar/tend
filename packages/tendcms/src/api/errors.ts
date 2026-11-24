@@ -1,10 +1,13 @@
 const ERROR_DOCS = "https://tendcms.dev/errors";
 
-export interface ApiErrorDetails {
-  field?: string;
-  fix?: string;
-  retryAfterSeconds?: number;
-}
+/**
+ * What to do about it: always said, unless it's about one field, whose message says what it
+ * needs (PLAN.md P13).
+ */
+export type ApiErrorDetails = { retryAfterSeconds?: number } & (
+  | { fix: string; field?: string | undefined }
+  | { field: string; fix?: string | undefined }
+);
 
 /** A failure the admin can show as it is. Every error has the same shape (PLAN.md §9). */
 export class ApiError extends Error {
@@ -12,12 +15,7 @@ export class ApiError extends Error {
   readonly code: string;
   readonly details: ApiErrorDetails;
 
-  constructor(
-    status: ApiError["status"],
-    code: string,
-    message: string,
-    details: ApiErrorDetails = {},
-  ) {
+  constructor(status: ApiError["status"], code: string, message: string, details: ApiErrorDetails) {
     super(message);
     this.status = status;
     this.code = code;
@@ -40,7 +38,8 @@ export class ApiError extends Error {
 const BUSY_RETRY_SECONDS = 5;
 
 export function tendIsBusy(): ApiError {
-  return new ApiError(429, "busy", "Tend is busy right now. Try again in a few seconds.", {
+  return new ApiError(429, "busy", "Tend is busy right now.", {
+    fix: "Try again in a few seconds.",
     retryAfterSeconds: BUSY_RETRY_SECONDS,
   });
 }
@@ -50,7 +49,8 @@ export function tooManyTries(retryAfterSeconds: number): ApiError {
     retryAfterSeconds < 90
       ? `${retryAfterSeconds} ${retryAfterSeconds === 1 ? "second" : "seconds"}`
       : `${Math.ceil(retryAfterSeconds / 60)} minutes`;
-  return new ApiError(429, "too_many_tries", `Too many tries. Try again in ${wait}.`, {
+  return new ApiError(429, "too_many_tries", "Too many tries.", {
+    fix: `Try again in ${wait}.`,
     retryAfterSeconds,
   });
 }

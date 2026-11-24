@@ -226,10 +226,14 @@ export function createApp(options: AppOptions): Hono {
       const type = c.req.header("content-type")?.toLowerCase() ?? "";
       if (isUpload(c.req.method, c.req.path) || isBackupPart(c.req.method, c.req.path)) {
         if (!type.startsWith("application/octet-stream")) {
-          throw new ApiError(415, "needs_file", "Tend expected a file here.");
+          throw new ApiError(415, "needs_file", "Tend expected a file here.", {
+            fix: "Upload it from Media, or send the file itself as application/octet-stream.",
+          });
         }
       } else if (!type.startsWith("application/json")) {
-        throw new ApiError(415, "needs_json", "Tend only accepts JSON here.");
+        throw new ApiError(415, "needs_json", "Tend only accepts JSON here.", {
+          fix: "Send it as application/json.",
+        });
       }
     }
     await next();
@@ -345,7 +349,9 @@ export function createApp(options: AppOptions): Hono {
   );
 
   app.all("/api/*", () => {
-    throw new ApiError(404, "not_found", "There's nothing at this address.");
+    throw new ApiError(404, "not_found", "There's nothing at this address.", {
+      fix: "Reload this page. If it keeps happening, Tend may have been updated since it opened.",
+    });
   });
 
   app.onError((error, c) => {
@@ -371,6 +377,8 @@ export function createApp(options: AppOptions): Hono {
   });
 
   app.get("/admin", (c) => c.redirect("/admin/"));
+  // Easier to say over the phone to someone who's locked out (PLAN.md J7).
+  app.get("/recover", (c) => c.redirect("/admin/recover"));
   app.get("/admin/*", (c) => {
     if (options.adminDevUrl) {
       const { pathname, search } = new URL(c.req.url);

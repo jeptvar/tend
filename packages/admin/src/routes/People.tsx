@@ -5,6 +5,7 @@ import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
 import { Field, PasswordField } from "../components/fields.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
@@ -192,9 +193,7 @@ function InviteForm({ me }: { me: Me }) {
           ))}
         </fieldset>
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {send.isError &&
-            !emailError &&
-            errorText(send.error, intl.formatMessage({ id: "offline.body" }))}
+          {send.isError && !emailError && <Problem error={send.error} />}
         </p>
         <div>
           <button type="submit" disabled={send.isPending} className={primaryButtonClass}>
@@ -385,7 +384,7 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
         </div>
       )}
       <p role="alert" className="font-medium text-danger empty:sr-only">
-        {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}
+        {error && <Problem error={error} />}
       </p>
       {resetLink && (
         <OneTimeLink link={resetLink} label={intl.formatMessage({ id: "people.resetLink" })}>
@@ -405,7 +404,7 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
               <FormattedMessage id="people.confirmRemoveBody" />
             </p>
             <p role="alert" className="font-medium text-danger empty:sr-only">
-              {remove.error && errorText(remove.error, intl.formatMessage({ id: "offline.body" }))}
+              {remove.error && <Problem error={remove.error} />}
             </p>
             <div className="flex flex-wrap gap-3">
               <button
@@ -491,9 +490,7 @@ function HandOver({ person, onClose }: { person: Person; onClose: () => void }) 
           }}
         />
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {handOver.error &&
-            !aboutPassword &&
-            errorText(handOver.error, intl.formatMessage({ id: "offline.body" }))}
+          {handOver.error && !aboutPassword && <Problem error={handOver.error} />}
         </p>
         <div className="flex flex-wrap gap-3">
           <button type="button" className={primaryButtonClass} onClick={onClose}>
@@ -528,7 +525,7 @@ function InviteRow({ invite }: { invite: Invite }) {
           />
         </p>
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {takeBack.error && errorText(takeBack.error, intl.formatMessage({ id: "offline.body" }))}
+          {takeBack.error && <Problem error={takeBack.error} />}
         </p>
       </div>
       {invite.canManage && (

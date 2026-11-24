@@ -221,7 +221,7 @@ describe("tooManyTries", () => {
     [30, "30 seconds."],
     [120, "2 minutes."],
   ])("%i seconds reads naturally", (seconds, ending) => {
-    expect(tooManyTries(seconds).message).toContain(`Try again in ${ending}`);
+    expect(tooManyTries(seconds).details.fix).toBe(`Try again in ${ending}`);
   });
 });
 

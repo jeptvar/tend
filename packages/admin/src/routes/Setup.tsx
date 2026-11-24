@@ -19,6 +19,7 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Field, PasswordField } from "../components/fields.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
 import { looksLikeABackup, restoreBackup, sendBackup } from "../lib/backup-upload.ts";
 import { suggestPassphrase } from "../lib/passphrase.ts";
@@ -558,7 +559,7 @@ export function SetupStart() {
           </fieldset>
           {/* Always mounted: screen readers can miss a live region added along with its text. */}
           <p role="alert" className="font-medium text-danger empty:sr-only">
-            {finish.isError && errorText(finish.error, intl.formatMessage({ id: "offline.body" }))}
+            {finish.isError && <Problem error={finish.error} />}
           </p>
           <div className="flex items-center justify-between">
             <Link href="/setup/account" className={textLinkClass}>

@@ -11,6 +11,7 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Field } from "../components/fields.tsx";
 import { NewPasswordField, tooShort } from "../components/NewPasswordField.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
 import { forgetLinkToken, type LinkKind, readLinkToken } from "../lib/link-token.ts";
@@ -276,9 +277,7 @@ export function ResetPassword() {
           labelId="reset.password"
         />
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {save.isError &&
-            !error &&
-            errorText(save.error, intl.formatMessage({ id: "offline.body" }))}
+          {save.isError && !error && <Problem error={save.error} />}
         </p>
         <div className="flex justify-end">
           <button type="submit" disabled={save.isPending} className={primaryButtonClass}>
@@ -370,7 +369,7 @@ export function Recover() {
           required
         />
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {tryCode.isError && errorText(tryCode.error, intl.formatMessage({ id: "offline.body" }))}
+          {tryCode.isError && <Problem error={tryCode.error} />}
         </p>
         <div className="flex items-center justify-between gap-4">
           <Link href="/login/forgot" className={textLinkClass}>
