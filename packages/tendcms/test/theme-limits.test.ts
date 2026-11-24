@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { defaultThemeDir } from "../src/paths.ts";
+import { createTheme } from "../src/site/theme.ts";
 import { makeApp, setUp } from "./auth-helpers.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -62,6 +64,65 @@ describe("a theme that asks for too much", () => {
     });
     expect(status).toBe(200);
     expect(html).toMatch(MEADOW);
+  });
+});
+
+describe("a computer that's busy for a moment", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A theme of someone's own over Meadow, and Meadow. */
+  function themes(home: string) {
+    const dir = join(tempDir(), "own");
+    mkdirSync(join(dir, "templates"), { recursive: true });
+    writeFileSync(join(dir, "theme.json"), JSON.stringify({ name: "Own" }));
+    writeFileSync(join(dir, "templates", "home.liquid"), home);
+    const options = { cache: true, timezone: () => "UTC", locale: () => "en" };
+    const meadow = createTheme({ ...options, id: "meadow", dir: defaultThemeDir });
+    return { meadow, own: createTheme({ ...options, id: "own", dir, fallback: meadow }) };
+  }
+
+  /** The clock goes this far ahead once drawing has begun, as it does while nothing runs. */
+  function busyFor(ms: number): void {
+    const now = performance.now.bind(performance);
+    let looks = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now() + (looks++ > 0 ? ms : 0));
+  }
+
+  test("isn't a mistake in the theme: it's drawn again, with more time", async () => {
+    const { own } = themes("Mine, {{ site.name }}");
+    busyFor(800);
+    expect(await own.render("home", { site: { name: "Rise" } })).toBe("Mine, Rise");
+  });
+
+  test("doesn't stop the theme Tend comes with, which has nothing to take its place", async () => {
+    const { meadow } = themes("");
+    busyFor(5000);
+    const html = await meadow.render("404", {
+      site: { name: "Rise", locale: "en" },
+      design: {},
+      menus: { main: [], footer: [] },
+      request: { path: "/x" },
+      tend: {},
+    });
+    expect(html).toContain("Page not found");
+  });
+
+  test("is told from a theme that's always slow, which gets one second try, not one a page", async () => {
+    const { own } = themes(
+      "{% for a in (1..100000) %}{% for b in (1..100000) %}x{% endfor %}{% endfor %}",
+    );
+    const timed = async () => {
+      const began = performance.now();
+      await expect(own.render("home", {})).rejects.toThrow("render limit exceeded");
+      return performance.now() - began;
+    };
+    expect(await timed()).toBeGreaterThan(2000);
+    expect(await timed()).toBeLessThan(2000);
+    // Until its files change.
+    own.reload();
+    expect(await timed()).toBeGreaterThan(2000);
   });
 });
 

@@ -138,7 +138,7 @@ What people put on pages has stable classes to style: `.t-intro`, `.t-picture-te
 
 ## Limits
 
-A page has half a second and 100 MB to be drawn in, and a template 1 MB to be. Templates are read from the theme's own folder only.
+A page has half a second and 100 MB to be drawn in, and a template 1 MB to be. One that takes longer is tried once more, with two seconds, in case the computer was busy. Templates are read from the theme's own folder only.
 
 ## Make it good
 

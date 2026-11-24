@@ -1555,6 +1555,7 @@ Where the code differs from this plan, the code is right:
 - **Re-rendering** what's stored after an update that renders differently happens before Tend listens, not in the background, so nobody is sent a mixture.
 - **`GET /api/admin/health`** says what `tendcms doctor` can say about a running site. It runs no `quick_check`, which reads the whole database. That stays with the command, and with every restore.
 - **What Tend prints** is plain lines, not JSON. Nothing personal is in them: no emails, no addresses of visitors, no tokens. Hosting platforms show them as they are, and the person reading them is the one this is for.
+- **The 500 ms a theme has to draw a page** is on the clock, which goes on while the computer does something else. So a theme of someone's own gets a second try with 2 seconds, and Meadow, which nothing can take the place of, isn't stopped for 10.
 - **Entity tags** are weak and compared as the standard says, so they still match once a proxy has compressed a page again. `Server-Timing` on a page is `cache;desc="hit", total;dur=0.42`.
 - **Copies by hand:** an Admin can save a copy of the site's data at any time, and the Owner can download any kept copy. `tendcms restore` takes one, as well as a backup. All copies together, whatever made them, stay under 20% of the disk.
 - **Backups and copies** are made in a worker thread with a connection of its own, so the site answers as quickly meanwhile.

@@ -160,7 +160,13 @@ function readSettings(list: unknown): ThemeSetting[] {
 
 const DATE_STYLES = ["short", "medium", "long", "full"] as const;
 const GLOBALS = ["site", "design", "menus", "request", "tend"];
+/** How long a theme of someone's own gets to draw something... */
 const RENDER_LIMIT_MS = 500;
+/** ...and once more, in case it was the computer that was busy. */
+const SECOND_TRY_MS = 2000;
+/** There's nothing to draw a page with instead of the theme Tend comes with, so it isn't rushed. */
+const BUNDLED_LIMIT_MS = 10_000;
+const TOO_SLOW = /template render limit exceeded/;
 const PARSE_LIMIT_BYTES = 1_000_000;
 const MEMORY_LIMIT_BYTES = 100_000_000;
 
@@ -352,7 +358,6 @@ export function createTheme(options: ThemeOptions): Theme {
     ownPropertyOnly: true,
     strictFilters: true,
     parseLimit: PARSE_LIMIT_BYTES,
-    renderLimit: RENDER_LIMIT_MS,
     memoryLimit: MEMORY_LIMIT_BYTES,
   });
 
@@ -388,6 +393,35 @@ export function createTheme(options: ThemeOptions): Theme {
       timeZone: options.timezone(),
     }).format(value);
   });
+
+  /** What has been too slow even the second time, which it isn't given again until it isn't. */
+  const tooSlow = new Set<string>();
+
+  /**
+   * Draws something within the time it has. The limit is on the clock, which goes on while
+   * the computer does something else, like preparing a photo on its only processor. Stopped
+   * for that, a page would be drawn with another theme, and kept like it until the next change.
+   */
+  async function inTime(
+    what: string,
+    draw: (renderLimit: number) => Promise<string>,
+  ): Promise<string> {
+    if (!fallback) return draw(BUNDLED_LIMIT_MS);
+    const isTooSlow = (error: unknown) => TOO_SLOW.test((error as Error).message);
+    try {
+      const html = await draw(RENDER_LIMIT_MS);
+      tooSlow.delete(what);
+      return html;
+    } catch (error) {
+      if (!isTooSlow(error) || tooSlow.has(what)) throw error;
+    }
+    try {
+      return await draw(SECOND_TRY_MS);
+    } catch (error) {
+      if (isTooSlow(error)) tooSlow.add(what);
+      throw error;
+    }
+  }
 
   /** On a local site, edits show on refresh, so each page starts from the files as they are. */
   function startAfresh(): void {
@@ -429,6 +463,7 @@ export function createTheme(options: ThemeOptions): Theme {
     reload() {
       hashes.clear();
       locales.clear();
+      tooSlow.clear();
       file = readThemeFile(dir, id, version);
       (engine.options.cache as { clear?: () => void } | undefined)?.clear?.();
     },
@@ -437,7 +472,10 @@ export function createTheme(options: ThemeOptions): Theme {
     assetUrl,
     render: (template, context) => {
       startAfresh();
-      return engine.renderFile(template, context, { globals: globalsOf(context) });
+      const globals = globalsOf(context);
+      return inTime(`templates/${template}`, (renderLimit) =>
+        engine.renderFile(template, context, { globals, renderLimit }),
+      );
     },
     // A rendered partial sees only what it's handed, so everything given is passed along.
     renderPartial: (name, context) => {
@@ -445,10 +483,13 @@ export function createTheme(options: ThemeOptions): Theme {
         .filter((key) => /^[a-z_][a-z0-9_]*$/.test(key))
         .map((key) => `, ${key}: ${key}`)
         .join("");
-      return engine.parseAndRender(
-        `{% render "${name.replace(/[^a-z0-9-]/g, "")}"${passed} %}`,
-        context,
-        { globals: globalsOf(context) },
+      const partial = name.replace(/[^a-z0-9-]/g, "");
+      const globals = globalsOf(context);
+      return inTime(`partials/${partial}`, (renderLimit) =>
+        engine.parseAndRender(`{% render "${partial}"${passed} %}`, context, {
+          globals,
+          renderLimit,
+        }),
       );
     },
   };
