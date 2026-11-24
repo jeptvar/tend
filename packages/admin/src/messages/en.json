@@ -693,7 +693,7 @@
   "help.look": "Change how the site looks",
   "help.lookBody": "Design has the logo, colours, fonts and header. Preview shows your site with the changes before you save them, and Undo takes a saved one back.",
   "help.people": "Let someone else in",
-  "help.peopleBody": "Choose Invite person in People, then send them the link. It works once, for a week. Editors write and publish everything, and Admins can change settings and the design too.",
+  "help.peopleBody": "In People, type their email and choose Make an invite link, then send it to them. It works once, for a week. Editors write and publish everything, and Admins can change settings and the design too.",
   "help.backup": "Keep a copy of the site",
   "help.backupBody": "Tend saves a copy each day where it runs. Now and then, download a backup as well, and keep it somewhere else: it has everything, photos included.",
   "help.online": "Put the site online, or give it a domain",
