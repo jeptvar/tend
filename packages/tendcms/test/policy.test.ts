@@ -169,6 +169,7 @@ const WHO: Record<string, Who> = {
   "DELETE /redirects": "admins",
   "GET /backups": "admins",
   "GET /backups/download": "owner",
+  "GET /health": "admins",
   "GET /people": "admins",
   "POST /people/invites": "admins",
   "DELETE /people/invites/:iid": "admins",

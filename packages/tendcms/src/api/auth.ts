@@ -26,6 +26,7 @@ import { AccountBackoff, TokenBuckets, WorkGate } from "../auth/ratelimit.ts";
 import { completeSetup, loadStarter, SetupClosedError } from "../auth/setup.ts";
 import { type SetupCodeSource, setupCodeMatches } from "../auth/setup-code.ts";
 import type { RestoreTarget } from "../backups/restore.ts";
+import type { Platform } from "../config.ts";
 import { isLocale, settingValue } from "../content/settings.ts";
 import type { Orm } from "../db/client.ts";
 import {
@@ -57,6 +58,8 @@ export interface AuthOptions extends SetupCodeSource {
   unknownEmailKeys?: number;
   themeDir: string;
   onSiteChanged: () => void;
+  /** Where Tend runs, which decides how to give the site a domain. */
+  platform?: Platform | undefined;
   /** Why this site could be lost with its container, if it could. See volume.ts. */
   dataRisk?: DataRiskDetails | undefined;
   /** The data folder, which Start from a backup restores into. Absent in some tests. */
@@ -484,6 +487,7 @@ export function createAuthRoutes(options: AuthOptions): Hono {
         visibility: (await settingValue(orm, "visibility")).mode,
       },
       starter: setup?.starter ?? null,
+      platform: options.platform ?? "local",
       // For whoever can do something about it.
       dataRisk: user.role === "admin" ? (options.dataRisk ?? null) : null,
     });

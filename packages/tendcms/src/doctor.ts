@@ -48,9 +48,9 @@ export interface Surroundings {
   now: number;
 }
 
-const ok = (text: string): Finding => ({ kind: "OK", text });
-const look = (text: string): Finding => ({ kind: "LOOK", text });
-const fix = (text: string): Finding => ({ kind: "FIX", text });
+export const ok = (text: string): Finding => ({ kind: "OK", text });
+export const look = (text: string): Finding => ({ kind: "LOOK", text });
+export const fix = (text: string): Finding => ({ kind: "FIX", text });
 
 /** One check failing in a way nobody foresaw is no reason to skip the others. */
 async function attempt(
