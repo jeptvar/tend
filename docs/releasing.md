@@ -11,7 +11,10 @@ Only once, and only whoever owns the names can do it:
 3. On GitHub, make an environment called `release`, with yourself as a required reviewer, that only tags matching `v*` can use.
 4. Make sure `repository` in both packages' `package.json` names this repository. npm checks it against where the release was made.
 5. Make a key to sign tags with, and add it to your GitHub account, so that GitHub shows its tags as verified.
-6. After the first release, make the image public: on GitHub, the package **tend**, then **Package settings**, then **Change visibility**.
+6. Turn on **Private vulnerability reporting** in the repository's security settings: SECURITY.md sends people there.
+7. Make the addresses work that messages and screens lead to: `tendcms.dev/docs/…`, `tendcms.dev/errors/…`, and the short ones in [the guide](README.md#about-these-pages).
+8. Take out the notes that say nothing is released yet: in `README.md`, `docs/README.md` and `SECURITY.md`.
+9. After the first release, make the image public: on GitHub, the package **tend**, then **Package settings**, then **Change visibility**.
 
 ## Each release
 
