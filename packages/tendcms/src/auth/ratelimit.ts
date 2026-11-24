@@ -22,13 +22,17 @@ export class TokenBuckets {
   readonly #now: () => number;
   readonly #buckets = new Map<string, { tokens: number; updatedAt: number }>();
 
-  constructor(options: {
-    perMinute: number;
-    maxKeys?: number;
-    now?: () => number;
-  }) {
-    this.#capacity = options.perMinute;
-    this.#msPerToken = 60_000 / options.perMinute;
+  /** So many at once, filling up again over a minute, or over an hour. */
+  constructor(
+    options: ({ perMinute: number } | { perHour: number }) & {
+      maxKeys?: number;
+      now?: () => number;
+    },
+  ) {
+    const [many, ms] =
+      "perMinute" in options ? [options.perMinute, 60_000] : [options.perHour, 3_600_000];
+    this.#capacity = many;
+    this.#msPerToken = ms / many;
     this.#maxKeys = options.maxKeys ?? DEFAULT_MAX_KEYS;
     this.#now = options.now ?? Date.now;
   }
