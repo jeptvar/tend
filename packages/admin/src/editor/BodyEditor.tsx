@@ -28,6 +28,7 @@ import { editorExtensions } from "./extensions.ts";
 import { UPLOAD_META } from "./ImageNode.tsx";
 import { LinkDialog } from "./LinkDialog.tsx";
 import type { RemovedSection } from "./nodes.tsx";
+import { tidyPasted } from "./paste.ts";
 import type { SlashState } from "./slash.ts";
 import { forgetUpload, getUpload, isUploading, startUpload } from "./uploads.ts";
 
@@ -444,50 +445,6 @@ function SlashList({
 }
 
 /**
- * Tables can't be stored yet, and a picture from another site isn't in Media, so nothing
- * should vanish without a word.
- */
-function tidyPastedHtml(html: string, notify: (ids: string[]) => void): string {
-  const hasTable = /<table[\s>]/i.test(html);
-  const notices = [
-    ...(hasTable ? ["paste.table"] : []),
-    ...(/<img[\s>]/i.test(html) ? ["paste.image"] : []),
-  ];
-  if (notices.length > 0) notify(notices);
-  // The title is the page's only top-level heading, and three levels go below it.
-  const tidied = html
-    .replace(/<(\/?)h1(?=[\s>])/gi, "<$1h2")
-    .replace(/<(\/?)h[56](?=[\s>])/gi, "<$1h4");
-  return hasTable ? tablesAsLines(tidied) : tidied;
-}
-
-/**
- * A table becomes a line per row, with its cells kept apart, so opening hours stay readable
- * ("Mon · 9–5") rather than running together. Parsing this way loads nothing and runs nothing.
- */
-function tablesAsLines(html: string): string {
-  const parsed = new DOMParser().parseFromString(html, "text/html");
-  for (const table of parsed.querySelectorAll("table")) {
-    const lines = [...table.querySelectorAll("tr")]
-      .map((row) =>
-        [...row.querySelectorAll("th, td")]
-          .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() ?? "")
-          .filter(Boolean)
-          .join(" · "),
-      )
-      .filter(Boolean);
-    const replacement = parsed.createDocumentFragment();
-    for (const line of lines) {
-      const paragraph = parsed.createElement("p");
-      paragraph.textContent = line;
-      replacement.append(paragraph);
-    }
-    table.replaceWith(replacement);
-  }
-  return parsed.body.innerHTML;
-}
-
-/**
  * A document always ends with an empty line for the cursor, as the editor would add itself.
  * Adding it here means opening something isn't counted as a change to it.
  */
@@ -680,7 +637,11 @@ export function BodyEditor({
       // The sticky bar shouldn't cover the line being typed.
       scrollMargin: { top: 120, bottom: 24, left: 0, right: 0 },
       scrollThreshold: { top: 120, bottom: 24, left: 0, right: 0 },
-      transformPastedHTML: (html) => tidyPastedHtml(html, notifyMessages),
+      transformPastedHTML: (html) => {
+        const tidied = tidyPasted(html);
+        if (tidied.notices.length > 0) notifyMessages(tidied.notices);
+        return tidied.html;
+      },
       // A pasted or dropped file uploads where it lands, and shows how it's going there.
       handlePaste: (view, event) => {
         const data = event.clipboardData;
