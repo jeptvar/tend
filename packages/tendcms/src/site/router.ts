@@ -1296,7 +1296,10 @@ export function createSite(options: SiteOptions): Site {
       .catch(() => {});
   }
 
-  /** Work nobody waits on, started once the change that called for it is answered. */
+  /**
+   * Work nobody waits on, started once the change that called for it is answered. Nothing would
+   * catch what goes wrong in it, the disk failing say, and Node stops for that.
+   */
   function inBackground(work: () => Promise<unknown>): void {
     const done = new Promise((resolve) => setImmediate(resolve)).then(work).catch(() => {});
     options.onBackgroundWork?.(done);
@@ -1305,7 +1308,7 @@ export function createSite(options: SiteOptions): Site {
   function changed(path?: string): void {
     visibility = undefined;
     // The change may be to which theme the site uses.
-    if (options.watchTheme) void watchTheme();
+    if (options.watchTheme) inBackground(watchTheme);
     if (!cacheOn) return;
     generation++;
     cache.clear();
@@ -1433,7 +1436,7 @@ export function createSite(options: SiteOptions): Site {
       // Some systems can't watch folders. Changes then show after a restart.
     }
   }
-  if (options.watchTheme) void watchTheme();
+  if (options.watchTheme) inBackground(watchTheme);
 
   return { app, themes, changed, preview, previewDesign };
 }

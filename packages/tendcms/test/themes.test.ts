@@ -217,6 +217,31 @@ describe("a theme of someone's own", () => {
       interval: 50,
     });
   });
+
+  test("that changes while the database can't be read doesn't stop Tend", async () => {
+    const work: Promise<unknown>[] = [];
+    const { made, dir } = await siteWithMyTheme({
+      watchTheme: true,
+      onBackgroundWork: (started) => {
+        work.push(started);
+      },
+    });
+    expect(await html(made)).toContain("Drawn with my theme");
+    await Promise.all(work);
+    const uncaught = vi.fn();
+    process.on("unhandledRejection", uncaught);
+    try {
+      made.db.close();
+      const started = work.length;
+      edit(join(dir, "partials", "footer.liquid"), "Drawn with", "Redrawn with");
+      await vi.waitFor(() => expect(work.length).toBeGreaterThan(started), { timeout: 5000 });
+      await Promise.all(work);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(uncaught).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", uncaught);
+    }
+  });
 });
 
 describe("a mistake in a theme of someone's own", () => {
