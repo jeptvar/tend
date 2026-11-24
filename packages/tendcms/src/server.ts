@@ -1,4 +1,3 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { type Context, Hono, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -13,7 +12,7 @@ import { MAX_UPLOAD_BYTES } from "./media/process.ts";
 import { MediaStore } from "./media/store.ts";
 import { createSite } from "./site/router.ts";
 import { SiteAddress } from "./site-address.ts";
-import { contentTypeFor, resolveInside } from "./static-files.ts";
+import { resolveInside, StaticFiles } from "./static-files.ts";
 
 export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDir" | "address"> {
   version: string;
@@ -376,15 +375,16 @@ export function createApp(options: AppOptions): Hono {
     return c.json({ ok: true, version: options.version });
   });
 
+  const adminFiles = new StaticFiles();
   app.get("/admin", (c) => c.redirect("/admin/"));
   // Easier to say over the phone to someone who's locked out (PLAN.md J7).
   app.get("/recover", (c) => c.redirect("/admin/recover"));
-  app.get("/admin/*", (c) => {
+  app.get("/admin/*", async (c) => {
     if (options.adminDevUrl) {
       const { pathname, search } = new URL(c.req.url);
       return c.redirect(new URL(pathname + search, options.adminDevUrl).toString());
     }
-    return serveAdmin(options.adminDir, c.req.path);
+    return serveAdmin(c, adminFiles, options.adminDir);
   });
 
   // Last, because the public site answers every address nothing above has claimed.
@@ -393,40 +393,26 @@ export function createApp(options: AppOptions): Hono {
   return app;
 }
 
-/** Serves the built admin SPA: real files when they exist, index.html for client routes. */
-function serveAdmin(adminDir: string, requestPath: string): Response {
-  const indexPath = join(adminDir, "index.html");
-  if (!existsSync(indexPath)) return html(ADMIN_NOT_BUILT);
+const FOREVER = "public, max-age=31536000, immutable";
 
-  const encoded = requestPath.slice("/admin/".length);
+/** Serves the built admin SPA: real files when they exist, index.html for client routes. */
+async function serveAdmin(c: Context, files: StaticFiles, adminDir: string): Promise<Response> {
+  const encoded = c.req.path.slice("/admin/".length);
   let relative: string;
   try {
     relative = decodeURIComponent(encoded);
   } catch {
     return new Response("Bad request", { status: 400 });
   }
-  const filePath = resolveInside(adminDir, encoded);
-
-  if (filePath && existsSync(filePath) && statSync(filePath).isFile()) {
-    return new Response(readFileSync(filePath), {
-      headers: {
-        "Content-Type": contentTypeFor(filePath),
-        // Vite puts content hashes in everything under assets/.
-        "Cache-Control": relative.startsWith("assets/")
-          ? "public, max-age=31536000, immutable"
-          : "no-cache",
-      },
+  const index = async () =>
+    (await files.send(c, join(adminDir, "index.html"), "no-cache")) ??
+    new Response(ADMIN_NOT_BUILT, {
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
     });
-  }
-  if (relative.startsWith("assets/")) return new Response("Not found", { status: 404 });
-  return html(readFileSync(indexPath, "utf8"));
-}
-
-function html(body: string): Response {
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-cache",
-    },
-  });
+  const path = resolveInside(adminDir, encoded);
+  // Vite puts content hashes in everything under assets/.
+  const isAsset = relative.startsWith("assets/");
+  const file = path && (await files.send(c, path, isAsset ? FOREVER : "no-cache"));
+  if (file) return file;
+  return isAsset ? new Response("Not found", { status: 404 }) : index();
 }

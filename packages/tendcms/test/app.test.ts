@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { beforeEach, describe, expect, test } from "vitest";
 import { makeApp } from "./auth-helpers.ts";
 import { tempDir } from "./helpers.ts";
@@ -9,10 +10,11 @@ const SECRET = "secret file contents";
 
 describe("serving the admin", () => {
   let app: Awaited<ReturnType<typeof makeApp>>["app"];
+  let adminDir: string;
 
   beforeEach(async () => {
     const root = tempDir();
-    const adminDir = join(root, "admin");
+    adminDir = join(root, "admin");
     mkdirSync(join(adminDir, "assets"), { recursive: true });
     writeFileSync(join(adminDir, "index.html"), INDEX);
     writeFileSync(join(adminDir, "favicon.svg"), "<svg/>");
@@ -40,6 +42,36 @@ describe("serving the admin", () => {
     expect(response.headers.get("cache-control")).toContain("immutable");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(await response.text()).toBe("console.log(1)");
+  });
+
+  test("big files are compressed, as the browser can take them, and kept until they change", async () => {
+    const script = join(adminDir, "assets", "big-abc.js");
+    const code = "console.log('the same words again and again');\n".repeat(500);
+    writeFileSync(script, code);
+    const plain = await app.request("/admin/assets/big-abc.js");
+    expect(plain.headers.get("content-encoding")).toBeNull();
+    for (const encoding of ["br", "gzip"] as const) {
+      const response = await app.request("/admin/assets/big-abc.js", {
+        headers: { "Accept-Encoding": `${encoding}, deflate` },
+      });
+      expect(response.headers.get("content-encoding")).toBe(encoding);
+      const body = Buffer.from(await response.arrayBuffer());
+      expect(body.length).toBeLessThan(code.length / 10);
+      const back = encoding === "br" ? brotliDecompressSync(body) : gunzipSync(body);
+      expect(back.toString()).toBe(code);
+    }
+    const etag = plain.headers.get("etag") as string;
+    const again = await app.request("/admin/assets/big-abc.js", {
+      headers: { "If-None-Match": `"other", ${etag}` },
+    });
+    expect(again.status).toBe(304);
+
+    writeFileSync(script, `${code}// changed`);
+    const changed = await app.request("/admin/assets/big-abc.js", {
+      headers: { "If-None-Match": etag },
+    });
+    expect(changed.status).toBe(200);
+    expect(await changed.text()).toBe(`${code}// changed`);
   });
 
   test("other files are served but revalidated", async () => {

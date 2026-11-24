@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, readFileSync, statSync, watch } from "node:fs";
+import { createReadStream, existsSync, statSync, watch } from "node:fs";
 import { relative } from "node:path";
 import { Readable } from "node:stream";
 import { domainToUnicode } from "node:url";
@@ -58,8 +58,14 @@ import {
 import { isIconSize, makeIcon, makeVariant } from "../media/process.ts";
 import type { MediaStore } from "../media/store.ts";
 import type { SiteAddress } from "../site-address.ts";
-import { contentTypeFor, resolveInside } from "../static-files.ts";
-import { type CachedPage, PageCache, pageEtag, type RenderedPage } from "./cache.ts";
+import {
+  etagOf,
+  hasAlready,
+  preferredEncoding,
+  resolveInside,
+  StaticFiles,
+} from "../static-files.ts";
+import { type CachedPage, PageCache, type RenderedPage } from "./cache.ts";
 import { readableOn } from "./color.ts";
 import { type FeedItem, robots, rss, type SitemapEntry, sitemap } from "./feeds.ts";
 import { siteMenus } from "./menus.ts";
@@ -192,18 +198,6 @@ function trimSlashes(path: string): string {
   while (start < end && path[start] === "/") start++;
   while (end > start && path[end - 1] === "/") end--;
   return path.slice(start, end);
-}
-
-/** The encoding to send: only one the visitor listed and didn't refuse with q=0. */
-function preferredEncoding(acceptEncoding: string | undefined): "br" | "gzip" | undefined {
-  const accepted = new Set<string>();
-  for (const part of (acceptEncoding ?? "").split(",")) {
-    const [name, ...parameters] = part.split(";").map((piece) => piece.trim().toLowerCase());
-    const quality = parameters.find((parameter) => parameter.startsWith("q="));
-    if (name && !(quality && Number(quality.slice(2)) === 0)) accepted.add(name);
-  }
-  if (accepted.has("br")) return "br";
-  return accepted.has("gzip") ? "gzip" : undefined;
 }
 
 /**
@@ -898,6 +892,15 @@ export function createSite(options: SiteOptions): Site {
     return { status: 200, type: "application/xml; charset=utf-8", html: sitemap(entries) };
   }
 
+  /** When each request being answered began. */
+  const began = new WeakMap<Request, number>();
+
+  /** How long a request has taken so far, in milliseconds, for Server-Timing. */
+  function tookSince(c: Context): string {
+    const at = began.get(c.req.raw);
+    return at === undefined ? "0" : (performance.now() - at).toFixed(2);
+  }
+
   /** Sends a page, in the best encoding the visitor accepts, or a 304 if they have it already. */
   function send(
     c: Context,
@@ -906,16 +909,16 @@ export function createSite(options: SiteOptions): Site {
     privately = false,
   ): Response {
     const raw = "raw" in page ? page.raw : Buffer.from(page.html);
-    const etag = "etag" in page ? page.etag : pageEtag(raw);
+    const etag = "etag" in page ? page.etag : etagOf(raw);
     const headers: Record<string, string> = {
       "Content-Type": page.type ?? "text/html; charset=utf-8",
       "Cache-Control": privately ? "private, no-store" : "public, max-age=0, must-revalidate",
       ETag: etag,
       Vary: "Accept-Encoding",
-      "Server-Timing": `cache;desc="${cacheState}"`,
+      "Server-Timing": `cache;desc="${cacheState}", total;dur=${tookSince(c)}`,
     };
     if (page.status === 503) headers["Retry-After"] = "86400";
-    if (page.status === 200 && !privately && c.req.header("if-none-match") === etag) {
+    if (page.status === 200 && !privately && hasAlready(c.req.header("if-none-match"), etag)) {
       return new Response(null, { status: 304, headers });
     }
     let body: Buffer = raw;
@@ -1003,6 +1006,11 @@ export function createSite(options: SiteOptions): Site {
 
   const app = new Hono();
 
+  app.use("*", (c, next) => {
+    began.set(c.req.raw, performance.now());
+    return next();
+  });
+
   app.onError((error, c) => {
     if (!(error instanceof ThemeMistake)) throw error;
     const told = error.message.replace(/[&<>]/g, (sign) => `&#${sign.charCodeAt(0)};`);
@@ -1013,7 +1021,9 @@ export function createSite(options: SiteOptions): Site {
     );
   });
 
-  app.get("/assets/:theme/:hash/*", (c) => {
+  const themeFiles = new StaticFiles();
+
+  app.get("/assets/:theme/:hash/*", async (c) => {
     const { theme: id, hash } = c.req.param();
     const theme = themes.at(id);
     if (!theme) return fileNotFound(c);
@@ -1022,17 +1032,10 @@ export function createSite(options: SiteOptions): Site {
       new URL(c.req.url).pathname.split("/").slice(4).join("/"),
     );
     if (!file || !existsSync(file) || !statSync(file).isFile()) return fileNotFound(c);
-    return new Response(readFileSync(file), {
-      headers: {
-        "Content-Type": contentTypeFor(file),
-        // Forever only if the address names the current file. An old or made-up hash
-        // mustn't get a stale copy stuck in someone's browser.
-        "Cache-Control":
-          hash === theme.assetHash(relative(theme.assetsDir, file))
-            ? "public, max-age=31536000, immutable"
-            : "no-cache",
-      },
-    });
+    // Forever only if the address names the current file. An old or made-up hash mustn't get
+    // a stale copy stuck in someone's browser.
+    const current = hash === theme.assetHash(relative(theme.assetsDir, file));
+    return (await themeFiles.send(c, file, current ? FOREVER : "no-cache")) ?? fileNotFound(c);
   });
 
   /**
