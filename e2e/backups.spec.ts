@@ -68,7 +68,7 @@ test("an Admin who isn't the Owner is told to ask the Owner for the backup", asy
   await expect(notice).toContainText("/data isn't on a volume, so your site is lost");
   await expect(notice.getByRole("listitem")).toHaveText([
     "Ask the Owner to download a backup.",
-    "Attach a volume mounted at /data to this service in Railway, and deploy again.",
+    "Attach a volume mounted at /data to this service in Railway.",
     "A new volume starts empty, so choose Start from a backup to put your site back.",
   ]);
   await expect(notice.getByRole("link")).toHaveCount(0);
