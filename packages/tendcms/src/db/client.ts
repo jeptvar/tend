@@ -7,12 +7,19 @@ export type SqliteDatabase = Database.Database;
 /** Opens tend.db with the pragmas every connection needs (PLAN.md §11). */
 export function openDatabase(path: string): SqliteDatabase {
   const db = new Database(path);
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = NORMAL");
-  db.pragma("busy_timeout = 5000");
-  db.pragma("foreign_keys = ON");
-  db.pragma("temp_store = MEMORY");
-  db.pragma("trusted_schema = OFF");
+  try {
+    // The first to read the file, so this is what fails on one that's damaged.
+    db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = NORMAL");
+    db.pragma("busy_timeout = 5000");
+    db.pragma("foreign_keys = ON");
+    db.pragma("temp_store = MEMORY");
+    db.pragma("trusted_schema = OFF");
+  } catch (error) {
+    // Left open, Windows wouldn't let a backup be put in its place.
+    db.close();
+    throw error;
+  }
   // SQLite only ignores case for A to Z. Searching for "école" should find "École", and
   // "ecole" should too, as people type it on any keyboard.
   db.function("tend_fold", { deterministic: true }, (value: unknown) =>

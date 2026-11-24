@@ -21,6 +21,7 @@ import {
 import { cleanUp } from "./content/entries.ts";
 import { rerenderPublished } from "./content/rerender.ts";
 import { createOrm, openDatabase, type SqliteDatabase } from "./db/client.ts";
+import { damagedDatabase, isDamage } from "./db/damage.ts";
 import { acquireLock, type Lock, LockError } from "./db/lock.ts";
 import { MigrationError, migrate, SNAPSHOT_TMP_PREFIX, schemaIsCurrent } from "./db/migrate.ts";
 import { getSetting } from "./db/repo/settings.ts";
@@ -42,12 +43,13 @@ import { dataRiskWarning, findDataRisk } from "./volume.ts";
 
 // What each tendcms command does. cli.ts loads this once its components are known to load.
 
-function takeDataFolder(config: Config): Lock {
+/** Takes the data folder over. Restoring a backup brings its own key, whatever's there now. */
+function takeDataFolder(config: Config, options: { restoring?: boolean } = {}): Lock {
   prepareDataDir(config);
   let lock: Lock | undefined;
   try {
     lock = acquireLock(config.dataDir);
-    ensureSecretKey(config);
+    if (!options.restoring) ensureSecretKey(config);
     tightenPrivateFiles(config);
     return lock;
   } catch (error) {
@@ -64,8 +66,16 @@ function openExistingDatabase(config: Config): SqliteDatabase {
       `There's no site in ${config.dataDir} yet. Start Tend first, or run this from your site's folder.`,
     );
   }
-  const db = openDatabase(config.dbPath);
-  if (!schemaIsCurrent(db, migrationsDir)) {
+  let db: SqliteDatabase | undefined;
+  let isCurrent: boolean;
+  try {
+    db = openDatabase(config.dbPath);
+    isCurrent = schemaIsCurrent(db, migrationsDir);
+  } catch (error) {
+    db?.close();
+    throw isDamage(error) ? damagedDatabase((error as Error).message) : error;
+  }
+  if (!isCurrent) {
     db.close();
     throw new ConfigError(
       "Start Tend once so it can update this site's data, then run this again.",
@@ -169,15 +179,21 @@ export async function restore(file: string | undefined): Promise<void> {
   const zipPath = resolve(file);
   if (!existsSync(zipPath)) throw new ConfigError(`There's no file at ${zipPath}.`);
   const config = loadConfig();
-  const lock = takeDataFolder(config);
+  const lock = takeDataFolder(config, { restoring: true });
   const folder = join(config.backupsDir, `${SNAPSHOT_TMP_PREFIX}restore-${Date.now()}`);
   try {
     const newestSchema = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).length;
     const checked = await checkBackup(zipPath, folder, newestSchema);
-    const { snapshotPath } = await restoreBackup(checked, config);
+    const { snapshotPath, wasDamaged } = await restoreBackup(checked, config);
     const { site, createdAt } = checked.manifest;
     console.log(`Restored ${site} as it was on ${createdAt.slice(0, 10)}. Start Tend to see it.`);
-    if (snapshotPath) console.log(`The site that was here before is saved in ${snapshotPath}.`);
+    if (wasDamaged) {
+      console.log(
+        `The database that was here was damaged. It's kept as it was, in ${snapshotPath}.`,
+      );
+    } else if (snapshotPath) {
+      console.log(`The site that was here before is saved in ${snapshotPath}.`);
+    }
   } finally {
     rmSync(folder, { recursive: true, force: true });
     lock.release();
@@ -217,6 +233,7 @@ export async function start(options: { open: boolean } = { open: false }): Promi
     });
   } catch (error) {
     if (error instanceof MigrationError) throw error;
+    if (isDamage(error)) throw damagedDatabase((error as Error).message);
     throw new MigrationError(
       `The database update stopped. Nothing in your site changed. (${(error as Error).message})`,
       { cause: error },

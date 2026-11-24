@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  copyFileSync,
   createReadStream,
   existsSync,
   fsyncSync,
@@ -19,6 +20,7 @@ import Database from "better-sqlite3";
 import { Unzip, UnzipInflate } from "fflate";
 import { parseSecretKey, SECRET_KEY_BYTES, secretKeyText } from "../config.ts";
 import { openDatabase, type SqliteDatabase } from "../db/client.ts";
+import { isDamage } from "../db/damage.ts";
 import { migrate, readSchemaVersion, saveSnapshot } from "../db/migrate.ts";
 import { fsyncDir, fsyncFile } from "../durable.ts";
 import { PlainError } from "../plain-error.ts";
@@ -261,6 +263,7 @@ function checkDatabase(path: string, manifest: BackupManifest, newestSchema: num
  * Puts a checked backup in place of the site in the data folder. Whoever calls it holds the
  * data folder's lock, and nothing else has the database open. The site as it was is saved
  * first, as before-restore-<time>.db.gz in the backups folder, so a restore can be undone.
+ * A database too damaged for that is kept as it is, since it may be why this is being done.
  * Originals go in first; they're named by their content, so one already there is the same
  * file. Then the key and the database, each by a rename, so neither is ever half there.
  */
@@ -268,20 +271,18 @@ export async function restoreBackup(
   checked: CheckedBackup,
   target: RestoreTarget,
   now = new Date(),
-): Promise<{ snapshotPath: string | undefined }> {
+): Promise<{ snapshotPath: string | undefined; wasDamaged: boolean }> {
   let snapshotPath: string | undefined;
+  let wasDamaged = false;
   if (existsSync(target.dbPath)) {
-    const db = openDatabase(target.dbPath);
+    const name = `before-restore-${now.toISOString().replace(/[-:]/g, "")}`;
     try {
-      const stamp = now.toISOString().replace(/[-:]/g, "");
-      snapshotPath = await saveSnapshot(
-        db,
-        target.dbPath,
-        target.backupsDir,
-        `before-restore-${stamp}.db.gz`,
-      );
-    } finally {
-      db.close();
+      checkReadable(target.dbPath);
+      snapshotPath = await saveDatabase(target, `${name}.db.gz`);
+    } catch (error) {
+      if (!isDamage(error)) throw error;
+      wasDamaged = true;
+      snapshotPath = keepDamaged(target, `${name}-damaged.db`);
     }
   }
 
@@ -293,7 +294,41 @@ export async function restoreBackup(
   }
   renameSync(join(checked.folder, DATABASE_ENTRY), target.dbPath);
   fsyncDir(target.dataDir);
-  return { snapshotPath };
+  return { snapshotPath, wasDamaged };
+}
+
+/**
+ * Throws if a database can't be read at all. It's opened only to read, because opening it to
+ * write does away with a WAL that doesn't fit it, and that may hold what it lost.
+ */
+function checkReadable(path: string): void {
+  const db = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    db.prepare("SELECT count(*) FROM sqlite_master").get();
+  } finally {
+    db.close();
+  }
+}
+
+async function saveDatabase(target: RestoreTarget, name: string): Promise<string> {
+  const db = openDatabase(target.dbPath);
+  try {
+    return await saveSnapshot(db, target.dbPath, target.backupsDir, name);
+  } finally {
+    db.close();
+  }
+}
+
+/** Keeps a database that can't be read, and its WAL, for anyone who can get more out of them. */
+function keepDamaged(target: RestoreTarget, name: string): string {
+  const kept = join(target.backupsDir, name);
+  for (const ending of ["", "-wal"]) {
+    if (!existsSync(`${target.dbPath}${ending}`)) continue;
+    copyFileSync(`${target.dbPath}${ending}`, `${kept}${ending}`);
+    fsyncFile(`${kept}${ending}`);
+  }
+  fsyncDir(target.backupsDir);
+  return kept;
 }
 
 /** Moves a checked backup's originals into the media store. Named by content, so one there is the same. */

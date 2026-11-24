@@ -172,6 +172,67 @@ describe("backing up and restoring a site", () => {
     expect(siteName(saved)).toBe("Corner Café");
   });
 
+  test.each<[string, (bytes: Buffer) => Buffer]>([
+    ["isn't one any more", () => Buffer.from("not a database ".repeat(500))],
+    ["is cut short", (bytes) => bytes.subarray(0, 8192)],
+    [
+      "lost its first page",
+      (bytes) => Buffer.concat([bytes.subarray(0, 100), Buffer.alloc(4096), bytes.subarray(4196)]),
+    ],
+  ])("a site is put back over a database that %s", async (_how, damage) => {
+    const { made } = await siteWithPicture();
+    const zip = await backUp(made);
+    const other = await makeApp();
+    await setUp(other);
+    other.db.pragma("wal_checkpoint(TRUNCATE)");
+    other.db.close();
+    const dbPath = join(other.root, "tend.db");
+    writeFileSync(dbPath, damage(readFileSync(dbPath)));
+
+    const { where, snapshotPath } = await restoreInto(zip, other.root);
+    expect(siteName(where.dbPath)).toBe("Rise Bakery");
+    expect(existsSync(snapshotPath as string)).toBe(true);
+  });
+
+  test("a database too damaged to read is kept as it was, with its WAL", async () => {
+    const { made } = await siteWithPicture();
+    const zip = await backUp(made);
+    const where = dataFolder();
+    const damaged = Buffer.from("not a database ".repeat(500));
+    writeFileSync(where.dbPath, damaged);
+    writeFileSync(`${where.dbPath}-wal`, "its WAL");
+    const { snapshotPath, wasDamaged } = await restoreInto(zip, where.dataDir);
+    expect(wasDamaged).toBe(true);
+    expect(snapshotPath).toMatch(/before-restore-[0-9TZ.]+-damaged\.db$/);
+    expect(readFileSync(snapshotPath as string).equals(damaged)).toBe(true);
+    expect(readFileSync(`${snapshotPath}-wal`, "utf8")).toBe("its WAL");
+    expect(siteName(where.dbPath)).toBe("Rise Bakery");
+  });
+
+  test("tendcms restore works over a damaged database and a damaged key", async () => {
+    const { made } = await siteWithPicture();
+    const zip = await backUp(made);
+    const where = dataFolder();
+    writeFileSync(where.dbPath, "not a database ".repeat(500));
+    writeFileSync(where.secretKeyPath, "not a key");
+    const env = { TEND_DATA_DIR: where.dataDir, PORT: "0" };
+
+    // Until then, everything else says what to do, and not with a stack trace.
+    for (const command of [["start"], ["setup-code"], ["reset-password", OWNER_EMAIL]]) {
+      const cli = runCli(command, env);
+      expect(await exitedWithin(cli)).toBe(1);
+      expect(cli.output()).toMatch(/is damaged.*from a backup/);
+      expect(cli.output()).not.toMatch(/^\s+at /m);
+    }
+
+    const restored = runCli(["restore", zip], env);
+    expect(await exitedWithin(restored)).toBe(0);
+    expect(restored.output()).toContain("Restored Rise Bakery as it was on");
+    expect(restored.output()).toContain("The database that was here was damaged. It's kept");
+    expect(siteName(where.dbPath)).toBe("Rise Bakery");
+    expect(readFileSync(where.secretKeyPath, "utf8").trim()).toBe(made.secretKey.toString("hex"));
+  });
+
   test("a restore cut short leaves nothing behind once Tend starts again", async () => {
     const where = dataFolder();
     const leftover = join(where.backupsDir, ".tmp-restore-1800000000000");
