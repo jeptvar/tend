@@ -70,12 +70,27 @@ export interface Design {
   footerText: string | null;
   social: { network: SocialNetwork; url: string | null }[];
   customCss: string | null;
+  /** The theme of someone's own the site uses. Null is the one Tend comes with. */
+  themeId: string | null;
   theme: Record<string, string>;
+}
+
+export interface ThemeChoice {
+  id: string | null;
+  name: string;
+  settings: ThemeSetting[];
+  problem: string | null;
+  usable: boolean;
 }
 
 export interface DesignReply {
   value: Design;
-  schema: ThemeSetting[];
+  /** Every theme there is, the one Tend comes with first. */
+  themes: [ThemeChoice, ...ThemeChoice[]];
+  /** The theme that was chosen, if it isn't here any more. */
+  missing: string | null;
+  /** Where Tend runs, which decides how a theme of someone's own is started. */
+  platform: "railway" | "render" | "fly" | "docker" | "local";
   updatedAt: number | null;
   undoId: string | null;
   canUndo: boolean;
@@ -84,6 +99,17 @@ export interface DesignReply {
 }
 
 export const DESIGN_KEY = ["design"];
+
+/** The choice made for a theme's setting, or the theme's own if that isn't one it offers. */
+export function themeValue(setting: ThemeSetting, chosen: Record<string, string>): string {
+  const value = chosen[setting.id];
+  if (value === undefined) return setting.default;
+  const offered =
+    setting.type === "color"
+      ? /^#[0-9a-f]{6}$/i.test(value)
+      : setting.options.some((option) => option.value === value);
+  return offered ? value : setting.default;
+}
 
 export interface Stored<T> {
   value: T;

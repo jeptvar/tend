@@ -3,7 +3,9 @@ import { relative } from "node:path";
 import { Readable } from "node:stream";
 import { domainToUnicode } from "node:url";
 import { type Context, Hono } from "hono";
+import { ApiError } from "../api/errors.ts";
 import { currentUser } from "../auth/current-user.ts";
+import { isLocalAddress } from "../config.ts";
 import { entryPath } from "../content/address.ts";
 import { type Doc, type EntryData, isMediaId } from "../content/doc.ts";
 import {
@@ -66,12 +68,21 @@ import {
   resolveMediaPlaceholders,
 } from "./placeholders.ts";
 import { buildHead, type SharedImage } from "./seo.ts";
-import { createTheme, type Theme } from "./theme.ts";
+import type { Theme } from "./theme.ts";
+import { createThemes, mistakeIn, type Themes } from "./themes.ts";
 
 export interface SiteOptions {
   orm: Orm;
   store: MediaStore;
+  /** The theme Tend comes with. */
   themeDir: string;
+  /** Where themes of people's own are. */
+  themeFolders?: string[] | undefined;
+  /**
+   * Shows a mistake in a theme of someone's own instead of the page, to whoever is working on
+   * it on their own computer. Visitors get the page with the theme Tend comes with.
+   */
+  showThemeMistakes?: boolean | undefined;
   /** How much memory the page cache may use. 0 turns it off, as on a local site. */
   pageCacheBytes: number;
   /**
@@ -95,7 +106,7 @@ export interface SiteOptions {
 
 export interface Site {
   app: Hono;
-  theme: Theme;
+  themes: Themes;
   /** Purges the page cache after a change, then refills the pages most likely to be asked for. */
   changed(path?: string): void;
   /** How something would look on the site, whether or not it's published. Never cached. */
@@ -161,6 +172,9 @@ class NotFound extends Error {}
 
 /** The homepage has one address: its own would only split up links to it. */
 class MovedToHome extends Error {}
+
+/** A mistake in a theme of someone's own, where they're the one to show it to. */
+class ThemeMistake extends Error {}
 
 function pageNumber(c: Context): number {
   const page = Number(c.req.query("page"));
@@ -232,6 +246,7 @@ export function phoneHref(phone: string): string {
 
 /** Everything the whole site shares, read once per page that isn't cached. */
 interface SiteData {
+  theme: Theme;
   site: SiteSettings;
   design: DesignSettings;
   business: BusinessSettings;
@@ -257,6 +272,14 @@ interface PageFacts {
   showsBusiness?: boolean;
 }
 
+/** What every template of a page is given, and the theme they're from. */
+interface PageBase {
+  theme: Theme;
+  /** Whether a mistake in the theme is shown instead of the page. */
+  strict: boolean;
+  context: Record<string, unknown>;
+}
+
 type Access = "public" | "signedIn" | "comingSoon" | "private";
 
 /** The public website: everything that isn't the admin or the API. */
@@ -274,8 +297,9 @@ export function createSite(options: SiteOptions): Site {
   // Once there's an Owner, there always is, so the homepage only asks until then.
   let setUp = false;
 
-  const theme = createTheme({
-    themeDir: options.themeDir,
+  const themes = createThemes({
+    bundledDir: options.themeDir,
+    folders: options.themeFolders ?? [],
     cache: cacheOn,
     timezone: () => site.timezone,
     locale: () => site.locale,
@@ -328,7 +352,9 @@ export function createSite(options: SiteOptions): Site {
   async function loadSiteData(design?: DesignSettings): Promise<SiteData> {
     await loadSite();
     const chosen = design ?? (await settingValue(orm, "design"));
+    const theme = themes.chosen(chosen.themeId);
     return {
+      theme,
       site,
       design: { ...chosen, theme: theme.designValues(chosen.theme) },
       business: await settingValue(orm, "business"),
@@ -431,14 +457,14 @@ export function createSite(options: SiteOptions): Site {
   }
 
   /** Everything every template gets: the site, its menus, its design and its <head>. */
-  async function baseContext(
+  async function pageBase(
     c: Context | undefined,
     facts: PageFacts,
     extra: { design?: DesignSettings; preview?: boolean } = {},
-  ): Promise<Record<string, unknown>> {
+  ): Promise<PageBase> {
     const data = await loadSiteData(extra.design);
     const origin = originOf(c);
-    const { design } = data;
+    const { design, theme } = data;
     const iconId = siteIconId(design);
     const pictures = await findMedia(
       orm,
@@ -485,7 +511,7 @@ export function createSite(options: SiteOptions): Site {
     // a dark-mode version worked out for it.
     const accent = design.theme.accent;
     const themeAccent = theme.settings.find((setting) => setting.id === "accent")?.default;
-    return {
+    const context = {
       site: {
         name: data.site.name,
         tagline: data.site.tagline,
@@ -508,6 +534,38 @@ export function createSite(options: SiteOptions): Site {
       request: { path: facts.path },
       tend: { head, body_end: extra.preview ? "" : (data.code.bodyEnd ?? "") },
     };
+    // Someone trying a design out needs to know, and so does someone making a theme on their
+    // own computer. A visitor only needs the page.
+    const strict = Boolean(
+      extra.design || (options.showThemeMistakes && c && isLocalAddress(new URL(c.req.url).origin)),
+    );
+    return { theme, strict, context };
+  }
+
+  /**
+   * Draws something with a theme. If the theme is someone's own and has a mistake in it, it's
+   * drawn with the one Tend comes with, so a mistake never takes the site down.
+   */
+  async function drawn(
+    { theme, strict }: Pick<PageBase, "theme" | "strict">,
+    what: string,
+    draw: (theme: Theme) => Promise<string>,
+  ): Promise<string> {
+    try {
+      const html = await draw(theme);
+      themes.drew(theme, what, null);
+      return html;
+    } catch (error) {
+      if (theme === themes.bundled) throw error;
+      const mistake = mistakeIn(theme, error);
+      if (themes.drew(theme, what, mistake)) {
+        console.error(
+          `The theme ${theme.id} has a mistake in it, so pages that need it use ${themes.bundled.name} instead: ${mistake}`,
+        );
+      }
+      if (strict) throw new ThemeMistake(mistake, { cause: error });
+      return draw(themes.bundled);
+    }
   }
 
   function summaryJson(entry: LiveSummary, tags?: Tag[]) {
@@ -563,7 +621,11 @@ export function createSite(options: SiteOptions): Site {
    * business details, each looked up once for the whole page. They're never stored filled
    * in, so they can't go stale. A feed needs full addresses, so it gives an origin.
    */
-  async function resolvePage(html: string, origin = ""): Promise<string> {
+  async function resolvePage(
+    html: string,
+    base: Pick<PageBase, "theme" | "strict">,
+    origin = "",
+  ): Promise<string> {
     const paths = await findLivePaths(orm, placeholderIds(html));
     if (origin) for (const [id, path] of paths) paths.set(id, `${origin}${path}`);
     const pictures = await findMedia(orm, mediaPlaceholderIds(html));
@@ -572,7 +634,9 @@ export function createSite(options: SiteOptions): Site {
     });
     if (resolved.includes(BUSINESS_PLACEHOLDER)) {
       const business = businessJson(await settingValue(orm, "business"));
-      const partial = await theme.renderPartial("business", { business });
+      const partial = await drawn(base, "partials/business", (theme) =>
+        theme.renderPartial("business", { business }),
+      );
       // Put in as it is. Given as a string, "$$" or "$`" in what someone typed would be read
       // as instructions to copy other parts of the page in.
       resolved = resolved.replaceAll(BUSINESS_PLACEHOLDER, () => partial);
@@ -580,8 +644,15 @@ export function createSite(options: SiteOptions): Site {
     return resolved;
   }
 
-  async function renderTemplate(template: string, context: Record<string, unknown>) {
-    return resolvePage(await theme.render(template, context));
+  async function renderTemplate(
+    template: string,
+    base: PageBase,
+    more: Record<string, unknown> = {},
+  ): Promise<string> {
+    const html = await drawn(base, `templates/${template}`, (theme) =>
+      theme.render(template, { ...base.context, ...more }),
+    );
+    return resolvePage(html, base);
   }
 
   async function postsContext(page: number, basePath: string, tagId?: string) {
@@ -628,8 +699,8 @@ export function createSite(options: SiteOptions): Site {
       facts.description =
         home.seo.description ?? seo.description ?? (site.tagline || facts.description);
       facts.structured = [websiteData(c)];
-      const context = { ...(await baseContext(c, facts)), page: liveJson(home) };
-      return { status: 200, html: await renderTemplate("home", context) };
+      const base = await pageBase(c, facts);
+      return { status: 200, html: await renderTemplate("home", base, { page: liveJson(home) }) };
     }
     const facts: PageFacts = {
       path: pagedPath("/", page),
@@ -641,8 +712,8 @@ export function createSite(options: SiteOptions): Site {
       showsBusiness: true,
       structured: [websiteData(c)],
     };
-    const context = { ...(await baseContext(c, facts)), ...(await postsContext(page, "/")) };
-    return { status: 200, html: await renderTemplate("home", context) };
+    const base = await pageBase(c, facts);
+    return { status: 200, html: await renderTemplate("home", base, await postsContext(page, "/")) };
   }
 
   async function renderBlog(c: Context | undefined, page: number): Promise<RenderedPage> {
@@ -655,8 +726,9 @@ export function createSite(options: SiteOptions): Site {
       imageId: null,
       noindex: false,
     };
-    const context = { ...(await baseContext(c, facts)), ...(await postsContext(page, "/blog")) };
-    return { status: 200, html: await renderTemplate("blog", context) };
+    const base = await pageBase(c, facts);
+    const posts = await postsContext(page, "/blog");
+    return { status: 200, html: await renderTemplate("blog", base, posts) };
   }
 
   async function renderTag(
@@ -681,12 +753,8 @@ export function createSite(options: SiteOptions): Site {
       imageId: null,
       noindex: false,
     };
-    const context = {
-      ...(await baseContext(c, facts)),
-      ...listed,
-      tag: { name: tag.name, url: path, description: tag.description },
-    };
-    return { status: 200, html: await renderTemplate("tag", context) };
+    const more = { ...listed, tag: { name: tag.name, url: path, description: tag.description } };
+    return { status: 200, html: await renderTemplate("tag", await pageBase(c, facts), more) };
   }
 
   async function renderEntry(
@@ -700,12 +768,9 @@ export function createSite(options: SiteOptions): Site {
     if (!entry) throw new NotFound();
     await loadSite();
     const tags = type === "post" ? (await liveTagsFor(orm, [entry.id])).get(entry.id) : undefined;
-    const live = liveJson(entry, tags);
-    const context = {
-      ...(await baseContext(c, entryFacts(entry))),
-      ...(type === "post" ? { post: live } : { page: live }),
-    };
-    return { status: 200, html: await renderTemplate(type, context) };
+    const base = await pageBase(c, entryFacts(entry));
+    const html = await renderTemplate(type, base, { [type]: liveJson(entry, tags) });
+    return { status: 200, html };
   }
 
   async function renderNotFound(c: Context | undefined): Promise<RenderedPage> {
@@ -718,7 +783,7 @@ export function createSite(options: SiteOptions): Site {
       imageId: null,
       noindex: true,
     };
-    return { status: 404, html: await renderTemplate("404", await baseContext(c, facts)) };
+    return { status: 404, html: await renderTemplate("404", await pageBase(c, facts)) };
   }
 
   async function renderComingSoon(c: Context | undefined): Promise<RenderedPage> {
@@ -733,12 +798,12 @@ export function createSite(options: SiteOptions): Site {
     };
     return {
       status: 503,
-      html: await renderTemplate("coming-soon", await baseContext(c, facts)),
+      html: await renderTemplate("coming-soon", await pageBase(c, facts)),
     };
   }
 
   async function renderFeed(c: Context | undefined): Promise<RenderedPage> {
-    await loadSite();
+    const { theme } = await loadSiteData();
     const origin = originOf(c);
     const posts = await listLivePosts(orm, { offset: 0, limit: FEED_SIZE });
     const items: FeedItem[] = [];
@@ -749,7 +814,7 @@ export function createSite(options: SiteOptions): Site {
         title: post.title,
         url: `${origin}${entryPath(entry)}`,
         summary: post.summary ?? summarize(post.lead),
-        html: await resolvePage(entry.html, origin),
+        html: await resolvePage(entry.html, { theme, strict: false }, origin),
         publishedAt: post.firstPublishedAt ?? post.publishedAt,
       });
     }
@@ -890,9 +955,20 @@ export function createSite(options: SiteOptions): Site {
 
   const app = new Hono();
 
+  app.onError((error, c) => {
+    if (!(error instanceof ThemeMistake)) throw error;
+    const told = error.message.replace(/[&<>]/g, (sign) => `&#${sign.charCodeAt(0)};`);
+    return c.html(
+      `<!doctype html><html lang="en"><meta charset="utf-8"><title>A mistake in your theme</title><h1>Your theme has a mistake in it</h1><pre style="white-space: pre-wrap">${told}</pre><p>Fix that file, then reload this page. Only you see this, because the site is on your computer. Online, visitors would see the page with ${themes.bundled.name}.</p></html>`,
+      500,
+      { "Cache-Control": "no-store" },
+    );
+  });
+
   app.get("/assets/:theme/:hash/*", (c) => {
-    const { theme: themeName, hash } = c.req.param();
-    if (themeName !== theme.name) return fileNotFound(c);
+    const { theme: id, hash } = c.req.param();
+    const theme = themes.at(id);
+    if (!theme) return fileNotFound(c);
     const file = resolveInside(
       theme.assetsDir,
       new URL(c.req.url).pathname.split("/").slice(4).join("/"),
@@ -1159,6 +1235,8 @@ export function createSite(options: SiteOptions): Site {
 
   function changed(path?: string): void {
     visibility = undefined;
+    // The change may be to which theme the site uses.
+    if (options.watchTheme) void watchTheme();
     if (!cacheOn) return;
     generation++;
     cache.clear();
@@ -1217,22 +1295,29 @@ export function createSite(options: SiteOptions): Site {
       html,
     };
     await loadSite();
-    const context = {
-      ...(await baseContext(undefined, entryFacts(entry), { preview: true })),
-      ...(input.type === "post" ? { post: liveJson(entry) } : { page: liveJson(entry) }),
-    };
-    return asPreview(await renderTemplate(input.isHome === 1 ? "home" : input.type, context));
+    const base = await pageBase(undefined, entryFacts(entry), { preview: true });
+    const more = { [input.type === "post" ? "post" : "page"]: liveJson(entry) };
+    return asPreview(await renderTemplate(input.isHome === 1 ? "home" : input.type, base, more));
   }
 
   async function previewDesign(design: DesignSettings): Promise<string> {
+    try {
+      return asPreview(await homeWith(design));
+    } catch (error) {
+      if (!(error instanceof ThemeMistake)) throw error;
+      throw new ApiError(400, "theme_mistake", `This theme has a mistake in it: ${error.message}`, {
+        field: "themeId",
+        fix: `Fix that in the theme's files, then try again. Until then, visitors see ${themes.bundled.name}.`,
+      });
+    }
+  }
+
+  async function homeWith(design: DesignSettings): Promise<string> {
     await loadSite();
     const home = await findLiveHome(orm);
     if (home) {
-      const context = {
-        ...(await baseContext(undefined, entryFacts(home), { design, preview: true })),
-        page: liveJson(home),
-      };
-      return asPreview(await renderTemplate("home", context));
+      const base = await pageBase(undefined, entryFacts(home), { design, preview: true });
+      return renderTemplate("home", base, { page: liveJson(home) });
     }
     const facts: PageFacts = {
       path: "/",
@@ -1242,30 +1327,44 @@ export function createSite(options: SiteOptions): Site {
       imageId: null,
       noindex: true,
     };
-    const context = {
-      ...(await baseContext(undefined, facts, { design, preview: true })),
-      ...(await postsContext(1, "/")),
-    };
-    return asPreview(await renderTemplate("home", context));
+    const base = await pageBase(undefined, facts, { design, preview: true });
+    return renderTemplate("home", base, await postsContext(1, "/"));
   }
 
-  if (options.watchTheme) {
+  let watched: { theme: Theme; close: () => void } | undefined;
+
+  /** Watches the folder of the theme the site uses now, so a change in it shows straight away. */
+  async function watchTheme(): Promise<void> {
+    const { themeId } = await settingValue(orm, "design");
+    const theme = themes.chosen(themeId);
+    if (watched?.theme === theme) return;
+    watched?.close();
+    watched = { theme, close: () => {} };
     let timer: NodeJS.Timeout | undefined;
     try {
-      const watcher = watch(options.themeDir, { recursive: true }, () => {
+      const watcher = watch(theme.dir, { recursive: true }, () => {
         // An editor saving one file can fire several events. One reload is enough.
         clearTimeout(timer);
         timer = setTimeout(() => {
           theme.reload();
+          themes.forget(theme);
           changed();
         }, THEME_SETTLE_MS);
       });
       watcher.on("error", () => watcher.close());
       watcher.unref();
+      watched = {
+        theme,
+        close: () => {
+          clearTimeout(timer);
+          watcher.close();
+        },
+      };
     } catch {
       // Some systems can't watch folders. Changes then show after a restart.
     }
   }
+  if (options.watchTheme) void watchTheme();
 
-  return { app, theme, changed, preview, previewDesign };
+  return { app, themes, changed, preview, previewDesign };
 }

@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { z } from "zod";
+import type { Platform } from "../../config.ts";
 import { isLivePath } from "../../content/entries.ts";
 import {
   addManualRedirect,
@@ -21,6 +22,7 @@ import {
   type SettingTypes,
   type StoredSetting,
   seoSchema,
+  settingValue,
   undoSetting,
   visibilitySchema,
   writeSetting,
@@ -28,17 +30,17 @@ import {
 import { countLivePostsWithTag, createTag, findTag, listTags } from "../../content/tags.ts";
 import { getSetting, type SiteSettings } from "../../db/repo/settings.ts";
 import { describeMenuItems, type MenuName, menuSetting } from "../../site/menus.ts";
-import type { ThemeSetting } from "../../site/theme.ts";
+import type { Themes } from "../../site/themes.ts";
 import { ApiError } from "../errors.ts";
 import { type AdminOptions, parseBody, type Routing, readJson } from "./routing.ts";
 
 export interface SiteRouteOptions extends AdminOptions {
   /** TEND_PUBLIC_URL, when it's known, so a redirect to the site's own address stays a path. */
   publicUrl?: string | undefined;
-  /** The theme's design choices, for the Design form. */
-  themeSettings?: () => ThemeSetting[];
-  /** Checks the theme's choices, keeping only ones it offers. */
-  designValues?: (chosen: Record<string, string>) => Record<string, string>;
+  /** The themes the site can use, for the Design form. */
+  themes: Themes;
+  /** Where Tend runs, which decides how a theme of someone's own is started. */
+  platform?: Platform | undefined;
   /** The homepage as it would look with a design that isn't saved yet. */
   previewDesign?: (design: SettingTypes["design"]) => Promise<string>;
 }
@@ -99,7 +101,7 @@ function menuName(c: Context): MenuName {
 
 /** The routes behind Site menu, Design and Settings, plus tags. */
 export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions): void {
-  const { orm } = options;
+  const { orm, themes } = options;
   const { now, route } = routing;
 
   // Tags
@@ -269,25 +271,47 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
 
   // Design
 
+  /**
+   * A design with the choices its theme offers filled in. Choices for other themes are kept,
+   * so going back to one brings its own back.
+   */
+  function withThemeChoices(design: SettingTypes["design"]): SettingTypes["design"] {
+    const theme = themes.chosen(design.themeId);
+    return { ...design, theme: { ...design.theme, ...theme.designValues(design.theme) } };
+  }
+
   async function designJson() {
     const stored = await readSetting(orm, "design");
     const value = { ...DEFAULTS.design, ...(stored?.value ?? {}) };
     return {
-      value: { ...value, theme: options.designValues?.(value.theme) ?? value.theme },
-      schema: options.themeSettings?.() ?? [],
+      value: withThemeChoices(value),
+      themes: themes.list(),
+      platform: options.platform ?? "local",
+      /** A theme that was chosen and isn't here any more. */
+      missing: themes.has(value.themeId) ? null : value.themeId,
       ...versionJson(stored),
     };
   }
 
-  function checkedDesign(body: unknown): SettingTypes["design"] {
+  async function checkedDesign(body: unknown): Promise<SettingTypes["design"]> {
     const design = parseBody(designSchema, body);
-    return { ...design, theme: options.designValues?.(design.theme) ?? {} };
+    if (!themes.has(design.themeId)) {
+      // One that's gone missing stays chosen, so the rest can still be changed meanwhile.
+      const { themeId } = await settingValue(orm, "design");
+      if (design.themeId !== themeId) {
+        throw new ApiError(400, "theme_gone", "That theme isn't here any more.", {
+          field: "themeId",
+          fix: "Reload this page, then choose another.",
+        });
+      }
+    }
+    return withThemeChoices(design);
   }
 
   route("get", "/design", "design:manage", async (c) => c.json(await designJson()));
 
   route("put", "/design", "design:manage", async (c, user) => {
-    const design = checkedDesign(await readJson(c));
+    const design = await checkedDesign(await readJson(c));
     const { saved } = await writeSetting(orm, {
       key: "design",
       value: design,
@@ -306,7 +330,7 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
   });
 
   route("post", "/design/preview", "design:manage", async (c) => {
-    const design = checkedDesign(await readJson(c));
+    const design = await checkedDesign(await readJson(c));
     if (!options.previewDesign) throw new Error("Previews aren't available here.");
     c.header("Cache-Control", "no-store");
     // JSON rather than a page of its own, so this can only be shown in the sandboxed frame.

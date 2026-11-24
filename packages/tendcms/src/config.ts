@@ -21,6 +21,8 @@ export interface Config {
   uploadsDir: string;
   backupsDir: string;
   secretKeyPath: string;
+  /** Where themes of people's own are. The first is where a copy of one goes. */
+  themeFolders: string[];
   platform: Platform;
   /** Undefined means "PORT was not set". */
   port: number | undefined;
@@ -186,6 +188,18 @@ function resolveHosts(env: NodeJS.ProcessEnv, platform: Platform): string[] {
   return platform === "local" ? ["127.0.0.1", "::1"] : ["0.0.0.0"];
 }
 
+/**
+ * Beside the data folder in a site someone made with npm, where it can go in their own
+ * repository. In a container it's on the volume, or built into an image made from Tend's.
+ */
+function themeFolders(dataDir: string, platform: Platform): string[] {
+  const beside = resolve("themes");
+  const inData = join(dataDir, "themes");
+  const folders =
+    platform === "local" ? [beside, inData] : [inData, resolve("/opt/tend/themes"), beside];
+  return [...new Set(folders)];
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const serverless = detectServerless(env);
   if (serverless) {
@@ -204,6 +218,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     uploadsDir: join(dataDir, "uploads"),
     backupsDir: join(dataDir, "backups"),
     secretKeyPath: join(dataDir, "secret.key"),
+    themeFolders: themeFolders(dataDir, platform),
     platform,
     port: parsePort(env.PORT),
     hosts: resolveHosts(env, platform),

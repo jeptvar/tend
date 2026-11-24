@@ -19,6 +19,7 @@ Commands:
                            Keep it private. Tend can keep running while it's saved.
   restore <file>           Put the site back as it is in a backup. Close Tend first. The site
                            that was here is saved in the backups folder before it's replaced.
+  theme copy <from> <to>   Start a theme of your own from a copy of another. Tend comes with meadow.
   doctor                   Check what Tend needs to run here, and say how to fix what's wrong.
   setup-code               Show the code that first-time setup asks for.
   reset-password <email>   Give an account a new password and sign it out everywhere.
@@ -54,7 +55,8 @@ async function loadCommands() {
 async function main(argv: string[]): Promise<void> {
   const { values, positionals } = parseCommandLine(argv);
   if (values.version) return console.log(appVersion);
-  const [command, argument] = positionals;
+  const [command, ...rest] = positionals;
+  const [argument] = rest;
   if (values.help || command === undefined) return console.log(HELP);
 
   checkNodeVersion();
@@ -67,6 +69,8 @@ async function main(argv: string[]): Promise<void> {
       return (await loadCommands()).backup(argument);
     case "restore":
       return (await loadCommands()).restore(argument);
+    case "theme":
+      return (await loadCommands()).theme(rest);
     // Not through loadCommands: it says what's wrong with components that don't load.
     case "doctor":
       return (await import("./doctor.ts")).doctor();

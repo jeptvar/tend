@@ -39,6 +39,7 @@ import { clearSizesIfLow, MediaStore } from "./media/store.ts";
 import { openInBrowser } from "./open-browser.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
+import { copyTheme } from "./theme-copy.ts";
 import { dataRiskWarning, findDataRisk } from "./volume.ts";
 
 // What each tendcms command does. cli.ts loads this once its components are known to load.
@@ -200,6 +201,17 @@ export async function restore(file: string | undefined): Promise<void> {
   }
 }
 
+/** Themes of people's own: for now, starting one from a copy of another. */
+export async function theme([action, from, to]: string[]): Promise<void> {
+  if (action !== "copy") {
+    throw new ConfigError("Say what to do, for example: tendcms theme copy meadow my-theme");
+  }
+  const { themeFolders } = loadConfig();
+  const copied = copyTheme({ from, to, bundledDir: defaultThemeDir, folders: themeFolders });
+  console.log(`Copied ${copied.from} to ${copied.dir}`);
+  console.log("Choose it in your site's admin, under Design, then change its files.");
+}
+
 const HOUR_MS = 60 * 60 * 1000;
 // How often Tend looks at whether a daily copy is due, and whether the disk is nearly full.
 const CHECK_EVERY_MS = 10 * 60 * 1000;
@@ -266,6 +278,9 @@ export async function start(options: { open: boolean } = { open: false }): Promi
     secureCookies: config.secureCookies,
     trustProxy: config.trustProxy,
     themeDir: defaultThemeDir,
+    themeFolders: config.themeFolders,
+    showThemeMistakes: config.platform === "local" && !config.isPublic,
+    platform: config.platform,
     uploadsDir: config.uploadsDir,
     backupsDir: config.backupsDir,
     dataFolder: config,

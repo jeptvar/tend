@@ -337,11 +337,11 @@ describe("the site menu", () => {
 });
 
 describe("design", () => {
-  test("the form comes from the theme, and only choices it offers are kept", async () => {
+  test("the form comes from the theme, and only choices it offers reach its templates", async () => {
     const made = await makeApp();
     const owner = await setUp(made);
     const design = await (await owner.get("/api/admin/design")).json();
-    expect(design.schema.map((setting: { id: string }) => setting.id)).toEqual([
+    expect(design.themes[0].settings.map((setting: { id: string }) => setting.id)).toEqual([
       "accent",
       "fonts",
       "header",
@@ -351,17 +351,24 @@ describe("design", () => {
     const saved = await (
       await owner.put("/api/admin/design", {
         ...design.value,
-        theme: { accent: "#FFCC00", fonts: "classic", header: "sideways", extra: "nope" },
+        theme: { accent: "#FFCC00", fonts: "classic", header: "sideways", other: "its own" },
         customCss: "body { color: red } </style><script>alert(1)</script>",
         footerText: "Made with flour",
         social: [{ network: "instagram", url: "instagram.com/rise" }],
       })
     ).json();
-    expect(saved.value.theme).toEqual({ accent: "#ffcc00", fonts: "classic", header: "simple" });
+    // One it doesn't offer is another theme's, and waits for that theme.
+    expect(saved.value.theme).toEqual({
+      accent: "#ffcc00",
+      fonts: "classic",
+      header: "simple",
+      other: "its own",
+    });
 
     const { html } = await page(made, "/");
     expect(html).toContain('data-fonts="classic"');
     expect(html).toContain("--tend-accent: #ffcc00;");
+    expect(html).not.toContain("its own");
     expect(html).toContain("<\\/style><script>");
     expect(html).not.toContain("</style><script>");
     expect(html).toContain("Made with flour");

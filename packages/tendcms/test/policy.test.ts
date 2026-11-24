@@ -196,6 +196,7 @@ describe("every admin route", () => {
     orm: undefined as never,
     store: undefined as never,
     secureCookies: false,
+    themes: undefined as never,
     onSiteChanged: () => {},
   };
   const { app, policies } = createAdminRoutes(options);

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   type Context,
   Hash,
@@ -14,7 +14,11 @@ import { isMediaId } from "../content/doc.ts";
 import { imagePlaceholder } from "./placeholders.ts";
 
 export interface ThemeOptions {
-  themeDir: string;
+  /** Its folder's name, which is part of its files' addresses. */
+  id: string;
+  dir: string;
+  /** Where to find what this theme doesn't have: the theme Tend comes with. */
+  fallback?: Theme | undefined;
   /** Off for local sites, so edits to a template show on refresh. */
   cache: boolean;
   timezone: () => string;
@@ -34,9 +38,14 @@ export type ThemeSetting =
     };
 
 export interface Theme {
-  name: string;
+  readonly id: string;
+  readonly dir: string;
+  /** What it calls itself, in its theme.json. */
+  readonly name: string;
+  /** Why its theme.json can't be used, if it can't. */
+  readonly problem: string | null;
   /** The choices the theme offers, which make up most of the Design form. */
-  settings: ThemeSetting[];
+  readonly settings: ThemeSetting[];
   /** The choices made, checked against what the theme offers, with its defaults for the rest. */
   designValues(chosen: Record<string, string>): Record<string, string>;
   /** Forgets everything read from the theme's folder, after a file in it changed. */
@@ -45,20 +54,34 @@ export interface Theme {
   /** One partial on its own, for pieces filled in after the page is done. */
   renderPartial(name: string, context: Record<string, unknown>): Promise<string>;
   assetHash(file: string): string;
-  assetsDir: string;
+  assetUrl(file: string): string;
+  readonly assetsDir: string;
 }
 
 const COLOR = /^#[0-9a-f]{6}$/i;
+const LONGEST_NAME = 60;
 
-/** Reads theme.json's settings, keeping only what Tend knows how to show. */
-function readSettings(themeDir: string): ThemeSetting[] {
+interface ThemeFile {
+  name: string;
+  problem: string | null;
+  settings: ThemeSetting[];
+}
+
+/** Reads theme.json. A theme without a name of its own goes by its folder's. */
+function readThemeFile(dir: string, id: string): ThemeFile {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(join(themeDir, "theme.json"), "utf8"));
-  } catch {
-    return [];
+    parsed = JSON.parse(readFileSync(join(dir, "theme.json"), "utf8"));
+  } catch (error) {
+    return { name: id, problem: `theme.json: ${(error as Error).message}`, settings: [] };
   }
-  const list = (parsed as { settings?: unknown }).settings;
+  const { name, settings } = (parsed ?? {}) as { name?: unknown; settings?: unknown };
+  const called = typeof name === "string" ? name.trim().slice(0, LONGEST_NAME) : "";
+  return { name: called || id, problem: null, settings: readSettings(settings) };
+}
+
+/** The settings in theme.json, keeping only what Tend knows how to show. */
+function readSettings(list: unknown): ThemeSetting[] {
   if (!Array.isArray(list)) return [];
   return list.flatMap((item): ThemeSetting[] => {
     if (typeof item !== "object" || item === null) return [];
@@ -134,15 +157,14 @@ class ImageTag extends Tag {
 
 /** A theme's templates, run with the plan's limits (§10). Themes can't run server code. */
 export function createTheme(options: ThemeOptions): Theme {
-  const { themeDir } = options;
-  const name = basename(themeDir);
-  const assetsDir = join(themeDir, "assets");
+  const { id, dir, fallback } = options;
+  const assetsDir = join(dir, "assets");
   const hashes = new Map<string, string>();
-  let settings = readSettings(themeDir);
+  let file = readThemeFile(dir, id);
 
   function designValues(chosen: Record<string, string>): Record<string, string> {
     const values: Record<string, string> = {};
-    for (const setting of settings) {
+    for (const setting of file.settings) {
       const value = chosen[setting.id];
       const valid =
         typeof value === "string" &&
@@ -169,10 +191,20 @@ export function createTheme(options: ThemeOptions): Theme {
     return hash;
   }
 
+  function assetUrl(file: string): string {
+    if (fallback && !existsSync(join(assetsDir, file))) return fallback.assetUrl(file);
+    return `/assets/${id}/${assetHash(file)}/${file}`;
+  }
+
+  // Its own files first, then the ones of the theme Tend comes with. So a theme can change
+  // only what it wants to, and one made today has what later versions of Tend add.
+  const within = (folder: string) =>
+    [dir, ...(fallback ? [fallback.dir] : [])].map((each) => join(each, folder));
+
   const engine = new Liquid({
-    root: join(themeDir, "templates"),
-    partials: join(themeDir, "partials"),
-    layouts: join(themeDir, "templates"),
+    root: within("templates"),
+    partials: within("partials"),
+    layouts: within("templates"),
     extname: ".liquid",
     cache: options.cache,
     relativeReference: false,
@@ -184,10 +216,7 @@ export function createTheme(options: ThemeOptions): Theme {
     memoryLimit: MEMORY_LIMIT_BYTES,
   });
 
-  engine.registerFilter(
-    "asset_url",
-    (file: string) => `/assets/${name}/${assetHash(file)}/${file}`,
-  );
+  engine.registerFilter("asset_url", assetUrl);
   engine.registerTag("image", ImageTag);
   engine.registerFilter("iso_date", (value: number | null) =>
     value === null || value === undefined ? "" : new Date(value).toISOString(),
@@ -201,18 +230,26 @@ export function createTheme(options: ThemeOptions): Theme {
   });
 
   return {
-    name,
+    id,
+    dir,
+    get name() {
+      return file.name;
+    },
+    get problem() {
+      return file.problem;
+    },
     get settings() {
-      return settings;
+      return file.settings;
     },
     designValues,
     reload() {
       hashes.clear();
-      settings = readSettings(themeDir);
+      file = readThemeFile(dir, id);
       (engine.options.cache as { clear?: () => void } | undefined)?.clear?.();
     },
     assetsDir,
     assetHash,
+    assetUrl,
     render: (template, context) => engine.renderFile(template, context),
     // A rendered partial sees only what it's handed, so everything given is passed along.
     renderPartial: (name, context) => {

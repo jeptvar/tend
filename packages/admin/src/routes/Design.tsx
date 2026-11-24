@@ -23,7 +23,9 @@ import {
   readableOnLight,
   SOCIAL_NETWORKS,
   type SocialNetwork,
+  type ThemeChoice,
   type ThemeSetting,
+  themeValue,
 } from "../lib/site.ts";
 
 const smallButtonClass = `${secondaryButtonClass} aria-disabled:opacity-60`;
@@ -42,6 +44,11 @@ const SOCIAL_NAMES: Record<SocialNetwork, string> = {
   mastodon: "Mastodon",
   whatsapp: "WhatsApp",
   other: "Other",
+};
+/** How a theme of one's own is started, where there's a terminal to do it in. */
+const COPY_COMMANDS: Partial<Record<DesignReply["platform"], string>> = {
+  local: "npx tendcms theme copy meadow my-theme",
+  docker: "docker exec tend tendcms theme copy meadow my-theme",
 };
 /** The warning for each place a colour can be hard to read, so it names where to look. */
 const HARD_TO_READ: Record<LightBackground, string> = {
@@ -242,6 +249,60 @@ function SelectChoice({
   );
 }
 
+/** Which theme the site uses, once there's more than the one Tend comes with. */
+function ThemePicker({
+  themes,
+  value,
+  onChange,
+}: {
+  themes: DesignReply["themes"];
+  value: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  const name = useId();
+  const [bundled] = themes;
+  return (
+    <fieldset className="grid gap-2">
+      <legend className="mb-2 font-medium">
+        <FormattedMessage id="design.theme" />
+      </legend>
+      {themes.map((theme) => (
+        <label
+          key={theme.id ?? ""}
+          className={`flex min-h-11 items-start gap-3 rounded-lg border p-3 [overflow-wrap:anywhere] ${theme.usable ? "cursor-pointer" : ""} ${value === theme.id ? "border-brand" : "border-muted"}`}
+        >
+          <input
+            type="radio"
+            name={name}
+            checked={value === theme.id}
+            disabled={!theme.usable}
+            onChange={() => onChange(theme.id)}
+            className="mt-1 h-5 w-5 shrink-0 accent-brand"
+          />
+          <span className="grid">
+            <span className="font-medium">{theme.name}</span>
+            <span className="text-sm text-muted">
+              <FormattedMessage id={theme.id === null ? "design.themeTends" : "design.themeOwn"} />
+            </span>
+            {theme.problem && (
+              <span className="text-sm font-medium text-danger">
+                {theme.usable ? (
+                  <FormattedMessage
+                    id="design.themeMistake"
+                    values={{ bundled: bundled.name, problem: theme.problem }}
+                  />
+                ) : (
+                  theme.problem
+                )}
+              </span>
+            )}
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
   const intl = useIntl();
   const queryClient = useQueryClient();
@@ -249,6 +310,10 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
   const draft = useScreenDraft<Design>("design", reply.value);
   const design = draft.value ?? reply.value;
   const { changed } = draft;
+  const [bundled] = reply.themes;
+  const copyCommand = COPY_COMMANDS[reply.platform];
+  // A theme that's gone is drawn with Tend's own, so its choices are the ones to show.
+  const theme: ThemeChoice = reply.themes.find(({ id }) => id === design.themeId) ?? bundled;
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const footerId = useId();
   const cssId = useId();
@@ -313,6 +378,21 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
 
   return (
     <form onSubmit={onSubmit} className="mt-6 grid gap-8">
+      {reply.missing !== null && (
+        <p className="rounded-lg border border-danger p-3 [overflow-wrap:anywhere]">
+          <FormattedMessage
+            id="design.themeMissing"
+            values={{ name: reply.missing, bundled: bundled.name }}
+          />
+        </p>
+      )}
+      {(reply.themes.length > 1 || reply.missing !== null) && (
+        <ThemePicker
+          themes={reply.themes}
+          value={design.themeId}
+          onChange={(themeId) => change({ themeId })}
+        />
+      )}
       <PictureChoice
         label={intl.formatMessage({ id: "design.logo" })}
         hint={intl.formatMessage({ id: "design.logoHint" })}
@@ -327,19 +407,19 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
         value={design.iconId}
         onChange={(iconId) => change({ iconId })}
       />
-      {reply.schema.map((setting) =>
+      {theme.settings.map((setting) =>
         setting.type === "color" ? (
           <ColorChoice
-            key={setting.id}
+            key={`${theme.id}:${setting.id}`}
             setting={setting}
-            value={design.theme[setting.id] ?? setting.default}
+            value={themeValue(setting, design.theme)}
             onChange={(value) => setTheme(setting.id, value)}
           />
         ) : (
           <SelectChoice
-            key={setting.id}
+            key={`${theme.id}:${setting.id}`}
             setting={setting}
-            value={design.theme[setting.id] ?? setting.default}
+            value={themeValue(setting, design.theme)}
             onChange={(value) => setTheme(setting.id, value)}
           />
         ),
@@ -449,6 +529,24 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
           />
         </div>
       </details>
+      {copyCommand && (
+        <details className="rounded-lg border border-muted">
+          <summary className="flex min-h-11 cursor-pointer items-center px-3 font-medium focus-visible:outline-3 focus-visible:outline-brand">
+            <FormattedMessage id="design.ownTheme" />
+          </summary>
+          <div className="grid gap-2 border-t border-muted p-3">
+            <p>
+              <FormattedMessage id={`design.ownThemeHint.${reply.platform}`} />
+            </p>
+            <pre className="rounded-lg border border-muted/50 bg-white/60 p-3 text-sm break-all whitespace-pre-wrap dark:bg-white/5">
+              <code>{copyCommand}</code>
+            </pre>
+            <p className="text-sm text-muted">
+              <FormattedMessage id="design.ownThemeNote" />
+            </p>
+          </div>
+        </details>
+      )}
 
       <p role="alert" className="font-medium text-danger empty:sr-only">
         {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}

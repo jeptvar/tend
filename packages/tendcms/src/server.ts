@@ -9,6 +9,7 @@ import { ApiError } from "./api/errors.ts";
 import { BACKUP_PART_BYTES, BACKUP_PART_PATH } from "./api/setup-backup.ts";
 import { isForeignRequest } from "./auth/csrf.ts";
 import { currentUser } from "./auth/current-user.ts";
+import type { Platform } from "./config.ts";
 import { MAX_UPLOAD_BYTES } from "./media/process.ts";
 import { MediaStore } from "./media/store.ts";
 import { createSite } from "./site/router.ts";
@@ -20,6 +21,11 @@ export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDi
   adminDevUrl: string | undefined;
   publicUrl: string | undefined;
   themeDir: string;
+  /** Where themes of people's own are. */
+  themeFolders?: string[] | undefined;
+  showThemeMistakes?: boolean | undefined;
+  /** Where Tend runs. */
+  platform?: Platform | undefined;
   uploadsDir: string;
   /** Where Tend keeps copies of the site, for Settings → Backups. */
   backupsDir?: string | undefined;
@@ -296,6 +302,8 @@ export function createApp(options: AppOptions): Hono {
     orm: options.orm,
     store,
     themeDir: options.themeDir,
+    themeFolders: options.themeFolders,
+    showThemeMistakes: options.showThemeMistakes,
     pageCacheBytes: options.pageCacheBytes,
     publicUrl: options.siteUrl ?? options.publicUrl,
     secureCookies: options.secureCookies,
@@ -317,8 +325,8 @@ export function createApp(options: AppOptions): Hono {
       onSiteChanged,
       preview: (input) => site.preview(input),
       publicUrl: options.siteUrl ?? options.publicUrl,
-      themeSettings: () => site.theme.settings,
-      designValues: (chosen) => site.theme.designValues(chosen),
+      themes: site.themes,
+      platform: options.platform,
       previewDesign: (design) => site.previewDesign(design),
       backupsDir: options.backupsDir,
       uploadsDir: options.uploadsDir,

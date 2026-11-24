@@ -1,6 +1,9 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import {
+  copyTheme,
   createEntry,
   expect,
   photo,
@@ -165,6 +168,8 @@ async function richPage(page: Page, site: Site, publish = true) {
 async function adminScreens(page: Page, site: Site): Promise<[string, string][]> {
   const post = await createEntry(page, site, { title: "A post", publish: true });
   await upload(page, site, await photo(page, 900, 600), "In the library.jpg");
+  // So Design has themes to choose between.
+  copyTheme(site);
   return [
     ["overview", "/admin/"],
     ["posts", "/admin/posts"],
@@ -474,6 +479,8 @@ test.describe("at phone widths", () => {
     });
     const rich = await richPage(page, signedIn);
     await upload(page, signedIn, await photo(page, 900, 600), `${UNBROKEN}.jpg`);
+    const theme = copyTheme(signedIn);
+    writeFileSync(join(theme, "theme.json"), JSON.stringify({ name: UNBROKEN.slice(0, 60) }));
     await page.setViewportSize({ width: 320, height: 640 });
     for (const path of [
       "/admin/",

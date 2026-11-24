@@ -243,6 +243,11 @@ jobs:
             http://127.0.0.1:3000/api/auth/setup
           curl --fail --silent --show-error --cookie cookies.txt http://127.0.0.1:3000/api/auth/me |
             grep --quiet '"dataRisk":{"why":"unnamed","path":"/data","platform":"docker"}'
+          # A theme of someone's own goes on the volume, and Design offers it.
+          docker exec tend tendcms theme copy meadow my-theme
+          docker exec tend test -f /data/themes/my-theme/theme.json
+          curl --fail --silent --show-error --cookie cookies.txt http://127.0.0.1:3000/api/admin/design |
+            grep --quiet '"id":"my-theme","name":"My theme"'
           docker run --detach --name tend-unmounted --publish 3002:3000 \
             --env TEND_DATA_DIR=/tmp/site tend:test
           docker run --detach --name tend-named --publish 3003:3000 \
