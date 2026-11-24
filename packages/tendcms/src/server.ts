@@ -312,6 +312,7 @@ export function createApp(options: AppOptions): Hono {
     address,
     trustProxy: options.trustProxy,
     now: options.now,
+    version: options.version,
     watchTheme: options.watchTheme ?? false,
     onBackgroundWork: options.onBackgroundWork,
   });

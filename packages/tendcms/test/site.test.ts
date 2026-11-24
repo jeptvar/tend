@@ -8,8 +8,12 @@ import { tempDir } from "./helpers.ts";
 
 const ENTRIES = "/api/admin/entries";
 
-function withoutStructuredData(html: string): string {
-  return html.replace(/<script type="application\/ld\+json">[^<]*<\/script>/g, "");
+/** Without the two kinds of script element that are data, which browsers read and never run. */
+function withoutData(html: string): string {
+  return html.replace(
+    /<script type="(?:application\/ld\+json|speculationrules)">[^<]*<\/script>/g,
+    "",
+  );
 }
 
 function doc(text: string) {
@@ -96,8 +100,7 @@ describe("public pages", () => {
     await setUp(made);
     for (const path of ["/", "/contact", "/does-not-exist"]) {
       const html = await (await made.app.request(path)).text();
-      // Structured data for search engines is a script element, but nothing ever runs it.
-      expect(withoutStructuredData(html), path).not.toContain("<script");
+      expect(withoutData(html), path).not.toContain("<script");
       expect(html, path).toContain('href="#content"');
       expect(html, path).toContain('lang="en-PH"');
       expect(html, path).toContain('name="viewport"');
@@ -196,7 +199,7 @@ describe("public pages", () => {
       expect(reply.status).toBe(404);
       const html = await reply.text();
       expect(html).toContain("Page not found");
-      expect(withoutStructuredData(html)).not.toContain("<script");
+      expect(withoutData(html)).not.toContain("<script");
     },
   );
 

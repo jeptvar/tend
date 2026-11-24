@@ -1,0 +1,23 @@
+{
+  "skip": "Skip to content",
+  "main_menu": "Main",
+  "footer_menu": "Footer",
+  "elsewhere": "Elsewhere",
+  "tags": "Tags",
+  "blog": "Blog",
+  "no_posts": "There are no posts yet.",
+  "no_posts_tagged": "There are no posts with this tag yet.",
+  "more_posts": "More posts",
+  "newer": "Newer posts",
+  "older": "Older posts",
+  "not_found": "Page not found",
+  "not_found_body": "There's nothing at this address. It may have moved, or the link may have a typo.",
+  "go_home": "Go to the homepage",
+  "coming_soon": "This site is coming soon.",
+  "address": "Address",
+  "directions": "Get directions",
+  "contact": "Contact",
+  "call": "Call {phone}",
+  "hours": "Opening hours",
+  "closed": "Closed"
+}

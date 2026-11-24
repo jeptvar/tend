@@ -1,8 +1,8 @@
 {% layout "layout" %}
 {% block content %}
 <div class="t-wrap">
-  <h1>Page not found</h1>
-  <p>There's nothing at this address. It may have moved, or the link may have a typo.</p>
-  <p><a href="/">Go to the homepage</a></p>
+  <h1>{{ "not_found" | t }}</h1>
+  <p>{{ "not_found_body" | t }}</p>
+  <p><a href="/">{{ "go_home" | t }}</a></p>
 </div>
 {% endblock %}

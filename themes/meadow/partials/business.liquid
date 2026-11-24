@@ -8,25 +8,25 @@
 <div class="t-business">
   {% if business.address_lines.size > 0 %}
   <div class="t-business-part">
-    <h{{ level }}>Address</h{{ level }}>
+    <h{{ level }}>{{ "address" | t }}</h{{ level }}>
     <p>{% for line in business.address_lines %}{{ line }}{% unless forloop.last %}<br>{% endunless %}{% endfor %}</p>
-    {% if business.map_url %}<p><a href="{{ business.map_url }}">Get directions</a></p>{% endif %}
+    {% if business.map_url %}<p><a href="{{ business.map_url }}">{{ "directions" | t }}</a></p>{% endif %}
   </div>
   {% endif %}
   {% if business.phone or business.email %}
   <div class="t-business-part">
-    <h{{ level }}>Contact</h{{ level }}>
-    {% if business.phone %}<p><a class="t-button" href="{{ business.phone_href }}">Call {{ business.phone }}</a></p>{% endif %}
+    <h{{ level }}>{{ "contact" | t }}</h{{ level }}>
+    {% if business.phone %}<p><a class="t-button" href="{{ business.phone_href }}">{{ "call" | t: phone: business.phone }}</a></p>{% endif %}
     {% if business.email %}<p><a href="{{ business.email_href }}">{{ business.email }}</a></p>{% endif %}
   </div>
   {% endif %}
   {% if business.hours or business.hours_note %}
   <div class="t-business-part">
-    <h{{ level }}>Opening hours</h{{ level }}>
+    <h{{ level }}>{{ "hours" | t }}</h{{ level }}>
     {% if business.hours %}
     <table class="t-hours">
       {% for day in business.hours %}
-      <tr><th scope="row">{{ day.day_name }}</th><td>{% if day.closed %}Closed{% else %}<time datetime="{{ day.opens_24 }}">{{ day.opens }}</time>–<time datetime="{{ day.closes_24 }}">{{ day.closes }}</time>{% endif %}</td></tr>
+      <tr><th scope="row">{{ day.day_name }}</th><td>{% if day.closed %}{{ "closed" | t }}{% else %}<time datetime="{{ day.opens_24 }}">{{ day.opens }}</time>–<time datetime="{{ day.closes_24 }}">{{ day.closes }}</time>{% endif %}</td></tr>
       {% endfor %}
     </table>
     {% endif %}

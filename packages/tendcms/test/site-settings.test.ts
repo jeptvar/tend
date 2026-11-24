@@ -695,8 +695,10 @@ describe("search engines and sharing", () => {
       structured: [],
       icon: null,
       hasFeed: false,
+      themeCss: null,
       customCss: null,
       extraHead: null,
+      prefetch: true,
     });
     expect(head).not.toContain("<script>");
     expect(

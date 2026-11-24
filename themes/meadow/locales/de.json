@@ -1,0 +1,23 @@
+{
+  "skip": "Zum Inhalt springen",
+  "main_menu": "Hauptmenü",
+  "footer_menu": "Fußzeile",
+  "elsewhere": "Anderswo",
+  "tags": "Schlagwörter",
+  "blog": "Blog",
+  "no_posts": "Es gibt noch keine Beiträge.",
+  "no_posts_tagged": "Es gibt noch keine Beiträge mit diesem Schlagwort.",
+  "more_posts": "Weitere Beiträge",
+  "newer": "Neuere Beiträge",
+  "older": "Ältere Beiträge",
+  "not_found": "Seite nicht gefunden",
+  "not_found_body": "Unter dieser Adresse gibt es nichts. Vielleicht ist die Seite umgezogen, oder der Link enthält einen Tippfehler.",
+  "go_home": "Zur Startseite",
+  "coming_soon": "Diese Website ist bald da.",
+  "address": "Adresse",
+  "directions": "Route planen",
+  "contact": "Kontakt",
+  "call": "{phone} anrufen",
+  "hours": "Öffnungszeiten",
+  "closed": "Geschlossen"
+}

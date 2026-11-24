@@ -91,6 +91,8 @@ export interface SiteOptions {
   /** How many proxies sit in front, so their X-Forwarded-Proto can be believed. */
   trustProxy?: number;
   now?: (() => number) | undefined;
+  /** Which Tend this is, for the versions a theme says it's made for. */
+  version?: string | undefined;
   /** Watches the theme's folder, so an edited template shows straight away (PLAN.md §10). */
   watchTheme?: boolean;
   /**
@@ -241,6 +243,40 @@ export function phoneHref(phone: string): string {
   return `tel:${plus}${digits.replace(/\+/g, "")}`;
 }
 
+interface HoursSummary {
+  /** One day, or the first and last of several that are the same. */
+  days: string;
+  closed: boolean;
+  opens: string;
+  closes: string;
+}
+
+/** Opening hours in as few lines as they take: the same days in a row go together. */
+export function hoursSummary(
+  hours: NonNullable<BusinessSettings["hours"]>,
+  dayName: (index: number) => string,
+  time: (value: string) => string,
+): HoursSummary[] {
+  const lines: (HoursSummary & { key: string; from: number })[] = [];
+  for (const [index, day] of hours.entries()) {
+    const key = day.closed ? "closed" : `${day.opens}-${day.closes}`;
+    const last = lines.at(-1);
+    if (last?.key === key) {
+      last.days = `${dayName(last.from)} – ${dayName(index)}`;
+      continue;
+    }
+    lines.push({
+      key,
+      from: index,
+      days: dayName(index),
+      closed: day.closed,
+      opens: time(day.opens),
+      closes: time(day.closes),
+    });
+  }
+  return lines.map(({ days, closed, opens, closes }) => ({ days, closed, opens, closes }));
+}
+
 /** Everything the whole site shares, read once per page that isn't cached. */
 interface SiteData {
   theme: Theme;
@@ -300,6 +336,7 @@ export function createSite(options: SiteOptions): Site {
     cache: cacheOn,
     timezone: () => site.timezone,
     locale: () => site.locale,
+    version: options.version,
   });
 
   async function loadSite(): Promise<SiteSettings> {
@@ -384,6 +421,7 @@ export function createSite(options: SiteOptions): Site {
           opens_24: day.opens,
           closes_24: day.closes,
         })) ?? null,
+      hours_summary: business.hours ? hoursSummary(business.hours, dayName, time) : null,
       hours_note: business.hoursNote,
       has_any: Boolean(
         business.address ||
@@ -472,6 +510,19 @@ export function createSite(options: SiteOptions): Site {
         facts.imageAlt,
       ) ?? sharedImage(data.seo.imageId ? pictures.get(data.seo.imageId) : undefined, origin);
     const business = facts.showsBusiness ? localBusiness(data, origin) : undefined;
+    // The theme's own dark-mode colours are chosen with care, so only a changed accent needs
+    // a dark-mode version worked out for it.
+    const accent = design.theme.accent;
+    const themeAccent = theme.settings.find((setting) => setting.id === "accent")?.default;
+    const accentDark = accent && accent !== themeAccent ? darkAccent(accent) : null;
+    const chosen = theme.styleFor(design.theme);
+    const siteIcon =
+      icon?.kind === "image"
+        ? {
+            small: `/media/${icon.id}/${mediaHash(icon)}/icon-32.png`,
+            touch: `/media/${icon.id}/${mediaHash(icon)}/icon-180.png`,
+          }
+        : null;
     const head = buildHead({
       origin,
       path: facts.path,
@@ -485,27 +536,27 @@ export function createSite(options: SiteOptions): Site {
       publishedAt: facts.publishedAt ?? null,
       modifiedAt: facts.modifiedAt ?? null,
       structured: [...(facts.structured ?? []), ...(business ? [business] : [])],
-      icon:
-        icon?.kind === "image"
-          ? {
-              small: `/media/${icon.id}/${mediaHash(icon)}/icon-32.png`,
-              touch: `/media/${icon.id}/${mediaHash(icon)}/icon-180.png`,
-            }
-          : null,
+      icon: siteIcon,
       hasFeed: data.hasPosts,
+      themeCss: [
+        chosen && `:root { ${chosen} }`,
+        accentDark &&
+          `@media (prefers-color-scheme: dark) { :root { --tend-accent: ${accentDark}; } }`,
+      ]
+        .filter(Boolean)
+        .join(" "),
       customCss: design.customCss,
       // Code someone added for every page never runs in a preview inside the admin.
       extraHead: extra.preview ? null : data.code.head,
+      prefetch: extra.preview !== true,
     });
-    // The theme's own dark-mode colours are chosen with care, so only a changed accent needs
-    // a dark-mode version worked out for it.
-    const accent = design.theme.accent;
-    const themeAccent = theme.settings.find((setting) => setting.id === "accent")?.default;
     const context = {
       site: {
         name: data.site.name,
         tagline: data.site.tagline,
+        url: origin,
         locale: data.site.locale,
+        icon: siteIcon,
         logo: logo?.kind === "image" && logo.width ? { id: logo.id, alt: data.site.name } : null,
         footer_text: design.footerText,
         social: design.social.map((link) => ({
@@ -518,7 +569,7 @@ export function createSite(options: SiteOptions): Site {
       },
       design: {
         ...design.theme,
-        ...(accent && accent !== themeAccent ? { accent_dark: darkAccent(accent) } : {}),
+        ...(accentDark ? { accent_dark: accentDark } : {}),
       },
       menus: data.menus,
       request: { path: facts.path },
@@ -572,7 +623,14 @@ export function createSite(options: SiteOptions): Site {
   }
 
   function liveJson(entry: LiveEntry, tags?: Tag[]) {
-    return { ...summaryJson(entry, tags), url: entryPath(entry), html: entry.html };
+    const { title, description, noindex } = entry.seo;
+    return {
+      ...summaryJson(entry, tags),
+      url: entryPath(entry),
+      html: entry.html,
+      updated_at: entry.publishedAt,
+      seo: { title, description, noindex },
+    };
   }
 
   /** What a page says about itself, from its search settings or else its own words. */
@@ -707,10 +765,10 @@ export function createSite(options: SiteOptions): Site {
   }
 
   async function renderBlog(c: Context | undefined, page: number): Promise<RenderedPage> {
-    await loadSite();
+    const { theme } = await loadSiteData();
     const facts: PageFacts = {
       path: pagedPath("/blog", page),
-      title: `Blog · ${site.name}`,
+      title: `${theme.words("blog")} · ${site.name}`,
       description: site.tagline || null,
       type: "website",
       imageId: null,
@@ -764,10 +822,10 @@ export function createSite(options: SiteOptions): Site {
   }
 
   async function renderNotFound(c: Context | undefined): Promise<RenderedPage> {
-    await loadSite();
+    const { theme } = await loadSiteData();
     const facts: PageFacts = {
       path: "/404",
-      title: `Page not found · ${site.name}`,
+      title: `${theme.words("not_found")} · ${site.name}`,
       description: null,
       type: "website",
       imageId: null,

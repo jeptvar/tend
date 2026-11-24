@@ -20,8 +20,7 @@ import {
   type Design,
   type DesignReply,
   hardToReadOn,
-  type LightBackground,
-  readableOnLight,
+  readableOn,
   SOCIAL_NETWORKS,
   type SocialNetwork,
   type ThemeChoice,
@@ -51,10 +50,10 @@ const COPY_COMMANDS: Partial<Record<DesignReply["platform"], string>> = {
   local: "npx tendcms theme copy meadow my-theme",
   docker: "docker exec tend tendcms theme copy meadow my-theme",
 };
-/** The warning for each place a colour can be hard to read, so it names where to look. */
-const HARD_TO_READ: Record<LightBackground, string> = {
-  page: "design.lowContrast",
-  soft: "design.lowContrastSoft",
+/** The warning for each of Meadow's backgrounds, so it names where to look. */
+const HARD_TO_READ: Record<string, string> = {
+  "#ffffff": "design.lowContrast",
+  "#f1f2f2": "design.lowContrastSoft",
 };
 
 /** A picture from Media for the logo or icon, with a way to change or remove it. */
@@ -135,10 +134,11 @@ function ColorChoice({
   useEffect(() => {
     setTyped((current) => (current.toLowerCase() === value ? current : value));
   }, [value]);
-  // Checked against every light background links sit on, not only white: a colour that only
-  // just reads on white is too light in a section with a Soft background.
-  const hardToRead = hardToReadOn(value);
-  const suggestion = readableOnLight(value);
+  // Checked against every background the theme says it goes on, not only white: a colour that
+  // only just reads on white is too light in a section with a Soft background.
+  const backgrounds = setting.contrastAgainst ?? [];
+  const hardToRead = hardToReadOn(value, backgrounds);
+  const suggestion = readableOn(value, backgrounds);
   return (
     <div className="grid gap-2">
       <label htmlFor={inputId} className="font-medium">
@@ -195,7 +195,10 @@ function ColorChoice({
                 className="inline-block h-6 w-6 rounded border border-ink/20"
                 style={{ background: suggestion }}
               />
-              <FormattedMessage id={HARD_TO_READ[hardToRead]} values={{ color: suggestion }} />
+              <FormattedMessage
+                id={HARD_TO_READ[hardToRead] ?? "design.lowContrastOn"}
+                values={{ color: suggestion, background: hardToRead }}
+              />
             </span>
             <button
               type="button"

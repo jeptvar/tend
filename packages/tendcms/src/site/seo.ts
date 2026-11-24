@@ -28,10 +28,37 @@ export interface HeadInput {
   structured: object[];
   icon: { small: string; touch: string } | null;
   hasFeed: boolean;
+  /** The theme's choices, as rules for the page. */
+  themeCss: string | null;
   customCss: string | null;
   /** Settings, Advanced, "Add code to every page". Never in a preview. */
   extraHead: string | null;
+  /** Whether browsers may fetch a page as its link is pointed at. Not in a preview. */
+  prefetch: boolean;
 }
+
+/** Moving between pages fades instead of flashing, unless someone asked for less motion. */
+const VIEW_TRANSITIONS =
+  "@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }";
+
+/**
+ * Lets the browser fetch one of the site's own pages while its link is pointed at, so it's
+ * there by the time it's clicked. Not files, and nothing that isn't a page. It's data, not code.
+ */
+const SPECULATION_RULES = JSON.stringify({
+  prefetch: [
+    {
+      where: {
+        and: [
+          { href_matches: "/*" },
+          { not: { href_matches: ["/admin", "/admin/*", "/api/*", "/media/*", "/assets/*"] } },
+          { not: { selector_matches: "[download], [rel~=nofollow]" } },
+        ],
+      },
+      eagerness: "moderate",
+    },
+  ],
+});
 
 const DESCRIPTION_LIMIT = 300;
 
@@ -113,6 +140,9 @@ export function buildHead(input: HeadInput): string {
   for (const data of input.structured) {
     parts.push(`<script type="application/ld+json">${jsonForScript(data)}</script>`);
   }
+  if (input.prefetch) parts.push(`<script type="speculationrules">${SPECULATION_RULES}</script>`);
+  const rules = [VIEW_TRANSITIONS, input.themeCss].filter(Boolean).join(" ");
+  parts.push(`<style>${cssForStyle(rules)}</style>`);
   if (input.customCss) parts.push(`<style>${cssForStyle(input.customCss)}</style>`);
   if (input.extraHead) parts.push(input.extraHead);
   return parts.join("\n");

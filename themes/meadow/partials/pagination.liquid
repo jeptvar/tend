@@ -1,6 +1,6 @@
 {% if pagination.page_count > 1 %}
-<nav class="t-pagination" aria-label="More posts">
-  {% if pagination.newer_url %}<a href="{{ pagination.newer_url }}">Newer posts</a>{% endif %}
-  {% if pagination.older_url %}<a href="{{ pagination.older_url }}">Older posts</a>{% endif %}
+<nav class="t-pagination" aria-label="{{ 'more_posts' | t }}">
+  {% if pagination.newer_url %}<a href="{{ pagination.newer_url }}">{{ "newer" | t }}</a>{% endif %}
+  {% if pagination.older_url %}<a href="{{ pagination.older_url }}">{{ "older" | t }}</a>{% endif %}
 </nav>
 {% endif %}

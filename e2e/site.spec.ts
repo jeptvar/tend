@@ -396,7 +396,10 @@ test.describe("settings", () => {
       "href",
       "tel:+15550100200",
     );
-    await expect(visitor.getByText("Closed on public holidays")).toBeVisible();
+    // In the Contact & hours section, and in the footer.
+    for (const place of ["main", "contentinfo"] as const) {
+      await expect(visitor.getByRole(place).getByText("Closed on public holidays")).toBeVisible();
+    }
     await expect(visitor.getByRole("rowheader", { name: "Monday" })).toBeVisible();
   });
 

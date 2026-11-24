@@ -15,6 +15,8 @@ export interface ThemesOptions {
   cache: boolean;
   timezone: () => string;
   locale: () => string;
+  /** Which Tend this is, for the versions a theme says it's made for. */
+  version?: string | undefined;
 }
 
 /** A theme as the Design screen offers it. */
@@ -92,7 +94,7 @@ export function mistakeIn(theme: Theme, error: unknown): string {
 }
 
 export function createThemes(options: ThemesOptions): Themes {
-  const { bundledDir, folders, cache, timezone, locale } = options;
+  const { bundledDir, folders, cache, timezone, locale, version } = options;
   const bundled = createTheme({
     id: basename(bundledDir),
     dir: bundledDir,
@@ -111,7 +113,7 @@ export function createThemes(options: ThemesOptions): Themes {
     if (!dir) return undefined;
     let theme = made.get(dir);
     if (!theme) {
-      theme = createTheme({ id, dir, fallback: bundled, cache, timezone, locale });
+      theme = createTheme({ id, dir, fallback: bundled, cache, timezone, locale, version });
       made.set(dir, theme);
     }
     return theme;

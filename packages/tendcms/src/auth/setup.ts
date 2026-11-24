@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { textToDoc } from "../content/doc.ts";
+import { parseDoc, textToDoc } from "../content/doc.ts";
 import { type StarterEntry, seedStarterEntries } from "../content/entries.ts";
 import type { Orm } from "../db/client.ts";
 import type { SetupSettings, SiteSettings, Starter } from "../db/repo/settings.ts";
@@ -22,10 +22,17 @@ export interface CompleteSetupInput {
 /** Reads a starting point's example content from the theme, with the site's name filled in. */
 export function loadStarter(themeDir: string, starter: Starter, siteName: string): StarterEntry[] {
   const file = readFileSync(join(themeDir, "starters", `${starter}.json`), "utf8");
-  const { entries } = JSON.parse(file) as { entries: StarterEntry[] };
-  // A function, because a plain replacement string gives "$&" and friends special meanings.
-  const named = (text: string) => text.replaceAll("{site}", () => siteName);
-  return entries.map((entry) => ({ ...entry, title: named(entry.title), body: named(entry.body) }));
+  // Every string in it, wherever it is, with the name put in after it's been read: a name with
+  // a quote in it can't change what the file says.
+  const { entries } = JSON.parse(file, (_key, value) =>
+    // A function, because a plain replacement string gives "$&" and friends special meanings.
+    typeof value === "string" ? value.replaceAll("{site}", () => siteName) : value,
+  ) as { entries: StarterEntry[] };
+  return entries.map((entry) =>
+    entry.doc
+      ? { ...entry, doc: parseDoc(entry.doc, { allowSections: entry.type === "page" }) }
+      : entry,
+  );
 }
 
 /** Creates the Owner, the site's settings and its first content together: all of it or none. */

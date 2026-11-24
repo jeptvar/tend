@@ -312,6 +312,7 @@ describe("tendcms theme copy", () => {
     expect(copied).toEqual({ from: "Meadow", dir: join(folder, "rise-bakery") });
     expect(readdirSync(copied.dir).sort()).toEqual([
       "assets",
+      "locales",
       "partials",
       "templates",
       "theme.json",
