@@ -2,11 +2,13 @@
 // every package bundled into it, with its licence in full (PLAN.md §14). tsdown has no option
 // for this. The packages come from the bundle itself, from the files each chunk was made
 // from, so one added later can't be left out. Zero dependencies.
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const NODE_MODULES = "/node_modules/";
 const LICENCE_FILE = /^(licen[cs]e|copying)(\.(md|txt))?$/i;
+/** The standard text of licences that some packages name without including. */
+const STANDARD_TEXTS = join(import.meta.dirname, "licences");
 
 /** The folder of the package a bundled file came from, or undefined for the project's own. */
 export function packageRoot(id) {
@@ -18,12 +20,23 @@ export function packageRoot(id) {
   return name ? `${path.slice(0, at + NODE_MODULES.length)}${name}` : undefined;
 }
 
-function noticeFor(root) {
-  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+/** A package's licence in full: its own file, or the standard text of the one it names. */
+function licenceOf(root, pkg) {
   const file = readdirSync(root).find((name) => LICENCE_FILE.test(name));
-  const text = file
-    ? readFileSync(join(root, file), "utf8").trim()
-    : `(The package has no licence file. Its package.json gives ${pkg.license ?? "no licence"}.)`;
+  if (file) return readFileSync(join(root, file), "utf8").trim();
+  const standard = join(STANDARD_TEXTS, `${pkg.license}.txt`);
+  if (typeof pkg.license !== "string" || !existsSync(standard)) {
+    throw new Error(
+      `${pkg.name} has no licence file, and there's no text for "${pkg.license}" in scripts/licences. Every bundled package's licence has to be published with it.`,
+    );
+  }
+  const text = readFileSync(standard, "utf8").trim();
+  return `(The package has no licence file. Its package.json gives ${pkg.license}, which says:)\n\n${text}`;
+}
+
+export function noticeFor(root) {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const text = licenceOf(root, pkg);
   const repository = typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url;
   const source = pkg.homepage ?? repository;
   const about = [pkg.license, source].filter(Boolean).join(" · ");

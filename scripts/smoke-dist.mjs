@@ -68,6 +68,10 @@ try {
     check(notices.includes(`## ${name} `), `THIRD_PARTY_NOTICES.md has ${name}'s licence`);
   }
   check(
+    notices.includes("END OF TERMS AND CONDITIONS"),
+    "the licence of a package that doesn't include one is there in full",
+  );
+  check(
     existsSync(join(dist, "admin", "THIRD_PARTY_NOTICES.md")),
     "the admin's THIRD_PARTY_NOTICES.md is there too",
   );
