@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
@@ -8,8 +8,12 @@ import {
   ensureSecretKey,
   explainDataFolderFailure,
   loadConfig,
+  parseSecretKey,
   portsToTry,
   prepareDataDir,
+  readSecretKey,
+  SECRET_KEY_BYTES,
+  secretKeyText,
 } from "../src/config.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -160,6 +164,25 @@ describe("explainDataFolderFailure, for the lock file", () => {
     const explained = explainDataFolderFailure("/data", error) as Error;
     expect(explained.message).toContain(".lock.db");
     expect(explained.message).not.toContain("write access");
+  });
+});
+
+describe("the key's file", () => {
+  test("holds the key as text, and nothing else counts as one", () => {
+    const key = Buffer.alloc(SECRET_KEY_BYTES, 0xab);
+    expect(secretKeyText(key)).toBe(`${"ab".repeat(32)}\n`);
+    expect(parseSecretKey(Buffer.from(secretKeyText(key)))?.equals(key)).toBe(true);
+    expect(parseSecretKey(Buffer.from("ab".repeat(32)))?.equals(key)).toBe(true);
+    expect(parseSecretKey(key)).toBeUndefined();
+    expect(parseSecretKey(Buffer.from("ab".repeat(31)))).toBeUndefined();
+    expect(parseSecretKey(Buffer.from(`${"ab".repeat(32)}\n\n`))).toBeUndefined();
+    expect(parseSecretKey(Buffer.alloc(0))).toBeUndefined();
+  });
+
+  test("isn't read as a key when it's damaged", () => {
+    const config = configIn(tempDir());
+    writeFileSync(config.secretKeyPath, "ab".repeat(31));
+    expect(() => readSecretKey(config)).toThrow(/is damaged.*Restore it from a backup/);
   });
 });
 

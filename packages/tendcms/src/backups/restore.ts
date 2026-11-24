@@ -17,6 +17,7 @@ import { dirname, join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import Database from "better-sqlite3";
 import { Unzip, UnzipInflate } from "fflate";
+import { parseSecretKey, SECRET_KEY_BYTES, secretKeyText } from "../config.ts";
 import { openDatabase, type SqliteDatabase } from "../db/client.ts";
 import { migrate, readSchemaVersion, saveSnapshot } from "../db/migrate.ts";
 import { fsyncDir, fsyncFile } from "../durable.ts";
@@ -37,6 +38,8 @@ export class BackupError extends PlainError {}
 
 export interface CheckedBackup {
   manifest: BackupManifest;
+  /** The key the site was saved with. */
+  key: Buffer;
   /** Where it was unpacked, every file checked. */
   folder: string;
 }
@@ -52,6 +55,7 @@ export interface RestoreTarget {
 /** More files than any site has: a backup holding more is refused before they fill the disk. */
 const MAX_ENTRIES = 200_000;
 const MAX_MANIFEST_BYTES = 32 * 1024 * 1024;
+const MAX_KEY_BYTES = 1024;
 
 const NOT_A_BACKUP =
   "This file isn't a Tend backup, or it's damaged. Download a new backup from the site and try that.";
@@ -61,9 +65,10 @@ const DAMAGED =
 /**
  * Unpacks a backup into `folder` and checks all of it before anything is restored
  * (PLAN.md §12): only the names a backup can hold, each file's SHA-256 against the
- * manifest, nothing missing or extra, and a database that passes integrity_check, opened
- * with trusted_schema off, from a Tend no newer than this one. It never takes more than 90%
- * of the free space, so a zip that unpacks to far more than it says stops early.
+ * manifest, nothing missing or extra, a key Tend can start with, and a database that passes
+ * integrity_check, opened with trusted_schema off, from a Tend no newer than this one. It
+ * never takes more than 90% of the free space, so a zip that unpacks to far more than it
+ * says stops early.
  */
 export async function checkBackup(
   zipPath: string,
@@ -164,8 +169,31 @@ export async function checkBackup(
   if (problem) throw problem;
 
   const manifest = readManifest(Buffer.concat(manifestParts), found);
+  if ((found.get(KEY_ENTRY)?.bytes ?? 0) > MAX_KEY_BYTES) throw new BackupError(NOT_A_BACKUP);
+  const key = keyIn(readFileSync(join(folder, KEY_ENTRY)));
   checkDatabase(join(folder, DATABASE_ENTRY), manifest, newestSchema);
-  return { manifest, folder };
+  return { manifest, key, folder };
+}
+
+/** The key a backup holds. The first ones, before Tend had a release, held only its bytes. */
+function keyIn(contents: Buffer): Buffer {
+  const bytes = contents.length === SECRET_KEY_BYTES ? contents : undefined;
+  const key = parseSecretKey(contents) ?? bytes;
+  if (!key) throw new BackupError(NOT_A_BACKUP);
+  return key;
+}
+
+/** Puts a key in place of the one a site has, in one step, as Tend reads it when it starts. */
+function replaceKey(path: string, key: Buffer): void {
+  const tmpPath = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmpPath, secretKeyText(key), { mode: 0o600 });
+    fsyncFile(tmpPath);
+    renameSync(tmpPath, path);
+  } catch (error) {
+    rmSync(tmpPath, { force: true });
+    throw error;
+  }
 }
 
 function readManifest(text: Buffer, found: Map<string, BackupFile>): BackupManifest {
@@ -258,7 +286,7 @@ export async function restoreBackup(
   }
 
   moveOriginals(checked, target.uploadsDir);
-  renameSync(join(checked.folder, KEY_ENTRY), target.secretKeyPath);
+  replaceKey(target.secretKeyPath, checked.key);
   // The site that was here may have left changes in its WAL. They belong to that database.
   for (const leftover of [`${target.dbPath}-wal`, `${target.dbPath}-shm`]) {
     rmSync(leftover, { force: true });
@@ -303,8 +331,6 @@ export async function restoreRunning(
   site: RunningSite,
   now = new Date(),
 ): Promise<{ snapshotPath: string }> {
-  const key = readFileSync(join(checked.folder, KEY_ENTRY));
-  if (key.length !== site.secretKey.length) throw new BackupError(NOT_A_BACKUP);
   const stamp = now.toISOString().replace(/[-:]/g, "");
   const snapshotPath = await saveSnapshot(
     site.db,
@@ -313,7 +339,6 @@ export async function restoreRunning(
     `before-restore-${stamp}.db.gz`,
   );
   moveOriginals(checked, site.uploadsDir);
-  const keyTmp = `${site.secretKeyPath}.${process.pid}.tmp`;
   try {
     await copyInto(join(checked.folder, DATABASE_ENTRY), site.dbPath);
     await migrate({
@@ -325,15 +350,12 @@ export async function restoreRunning(
     });
     // Inside the try, so the site never keeps the backup's data without the key it was
     // saved with: if the key can't be written, the site is put back as it was.
-    writeFileSync(keyTmp, key, { mode: 0o600 });
-    fsyncFile(keyTmp);
-    renameSync(keyTmp, site.secretKeyPath);
+    replaceKey(site.secretKeyPath, checked.key);
   } catch (error) {
-    rmSync(keyTmp, { force: true });
     await putBack(snapshotPath, site, error);
     throw error;
   }
-  site.secretKey.set(key);
+  site.secretKey.set(checked.key);
   return { snapshotPath };
 }
 

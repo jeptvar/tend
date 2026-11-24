@@ -28,11 +28,11 @@ child.stderr.on("data", (chunk) => {
   output += chunk;
 });
 
-async function waitForPort() {
+async function waitForPort(tend = child) {
   for (let i = 0; i < 300; i++) {
     const match = output.match(/localhost:(\d+)\/admin|listening on port (\d+)/);
     if (match) return match[1] ?? match[2];
-    if (child.exitCode !== null) break;
+    if (tend.exitCode !== null) break;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("Tend didn't start");
@@ -44,6 +44,7 @@ function check(condition, message) {
 }
 
 let failed = false;
+let again;
 try {
   const base = `http://127.0.0.1:${await waitForPort()}`;
 
@@ -150,13 +151,35 @@ try {
   const restored = join(cwd, "restored");
   run("restore", zip, restored);
   check(existsSync(join(restored, "tend.db")), "tendcms restore puts it in a new data folder");
+
+  // And that the site it put there starts, and knows its owner. Restoring and starting each
+  // read the folder in their own way, so nothing short of starting it proves they agree.
+  again = spawn(process.execPath, [cli, "start"], {
+    cwd,
+    env: { ...process.env, PORT: "0", TEND_ADMIN_DEV_URL: "", TEND_DATA_DIR: restored },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  output = "";
+  for (const stream of [again.stdout, again.stderr]) {
+    stream.on("data", (chunk) => {
+      output += chunk;
+    });
+  }
+  const restoredBase = `http://127.0.0.1:${await waitForPort(again)}`;
+  const backIn = await fetch(`${restoredBase}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "smoke@example.com", password }),
+  });
+  check(backIn.status === 200, "the restored site starts, and its owner can sign in");
 } catch (error) {
   failed = true;
   console.error(`\nSmoke test failed: ${error.message}\n\nTend's output:\n${output}`);
 } finally {
-  if (child.exitCode === null && child.signalCode === null) {
-    const exited = new Promise((resolve) => child.once("exit", resolve));
-    child.kill("SIGTERM");
+  for (const tend of [child, again]) {
+    if (!tend || tend.exitCode !== null || tend.signalCode !== null) continue;
+    const exited = new Promise((resolve) => tend.once("exit", resolve));
+    tend.kill("SIGTERM");
     await exited;
   }
   rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });

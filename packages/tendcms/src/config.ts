@@ -54,6 +54,7 @@ const DOCS = "https://tendcms.dev/docs";
 const MIN_NODE_MAJOR = 24;
 const DEFAULT_PORT = 3000;
 const FALLBACK_PORTS = 10;
+export const SECRET_KEY_BYTES = 32;
 const SECRET_KEY_FORMAT = /^[0-9a-f]{64}\n?$/;
 const MIN_SETUP_PASSWORD_LENGTH = 8;
 const DEFAULT_PAGE_CACHE_MB = 32;
@@ -313,21 +314,33 @@ export function tightenPrivateFiles(config: Config): void {
 export function ensureSecretKey(config: Config): void {
   const path = config.secretKeyPath;
   if (existsSync(path)) {
-    if (!SECRET_KEY_FORMAT.test(readFileSync(path, "utf8"))) {
-      throw new ConfigError(
-        `The key file ${path} is damaged, so Tend won't start. Restore it from a backup. ` +
-          "Fix: https://tendcms.dev/errors/secret_key_damaged",
-      );
-    }
+    readSecretKey(config);
     return;
   }
   const tmpPath = `${path}.tmp`;
-  writeFileSync(tmpPath, `${randomBytes(32).toString("hex")}\n`, { mode: 0o600 });
+  writeFileSync(tmpPath, secretKeyText(randomBytes(SECRET_KEY_BYTES)), { mode: 0o600 });
   fsyncFile(tmpPath);
   renameSync(tmpPath, path);
   fsyncDir(config.dataDir);
 }
 
-export function readSecretKey(config: Pick<Config, "secretKeyPath">): Buffer {
-  return Buffer.from(readFileSync(config.secretKeyPath, "utf8").trim(), "hex");
+/** The key in the key file, which has to be there. Throws if it's damaged. */
+export function readSecretKey({ secretKeyPath }: Pick<Config, "secretKeyPath">): Buffer {
+  const key = parseSecretKey(readFileSync(secretKeyPath));
+  if (key) return key;
+  throw new ConfigError(
+    `The key file ${secretKeyPath} is damaged, so Tend won't start. Restore it from a backup. ` +
+      "Fix: https://tendcms.dev/errors/secret_key_damaged",
+  );
+}
+
+/** A key as its file holds it. Backups hold the same, so one can also be put back by hand. */
+export function secretKeyText(key: Buffer): string {
+  return `${key.toString("hex")}\n`;
+}
+
+/** The key that a key file's contents are, or undefined if they aren't one. */
+export function parseSecretKey(contents: Buffer): Buffer | undefined {
+  const text = contents.toString("latin1");
+  return SECRET_KEY_FORMAT.test(text) ? Buffer.from(text.trim(), "hex") : undefined;
 }

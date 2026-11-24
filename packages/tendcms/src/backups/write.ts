@@ -6,6 +6,7 @@ import type { Writable } from "node:stream";
 import { finished } from "node:stream/promises";
 import Database from "better-sqlite3";
 import { Zip, ZipDeflate } from "fflate";
+import { secretKeyText } from "../config.ts";
 import type { SqliteDatabase } from "../db/client.ts";
 import { quickCheck, readSchemaVersion, SNAPSHOT_TMP_PREFIX } from "../db/migrate.ts";
 import {
@@ -55,7 +56,8 @@ export async function writeBackup(
     const schemaVersion = checkCopy(copy);
     const database = await zip.addFile(DATABASE_ENTRY, copy, 6);
     if (!database) throw new Error("The copy of the site's data went missing.");
-    const files: BackupFile[] = [database, await zip.addData(KEY_ENTRY, source.secretKey)];
+    const key = Buffer.from(secretKeyText(source.secretKey));
+    const files: BackupFile[] = [database, await zip.addData(KEY_ENTRY, key)];
     for (const name of originalsIn(source.uploadsDir)) {
       const path = join(source.uploadsDir, "originals", name);
       // One deleted forever since the list was made is no longer part of the site.

@@ -88,6 +88,14 @@ test("a backup moves a site to a new address: its pages, pictures and sign-ins",
   const sitemap = await (await page.request.get(`${base}/sitemap.xml`)).text();
   expect(sitemap).toContain(`<loc>${base}/blog/fresh-loaves</loc>`);
   expect(sitemap).not.toContain("localhost");
+
+  // It's the same site when Tend next starts, on an update for example.
+  await newSite.crash();
+  await newSite.restart();
+  await visitor.reload();
+  await expect(visitor.getByRole("heading", { name: "Fresh loaves" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Rise Bakery" })).toBeVisible();
 });
 
 test("a site that's online is asked once whether the address it's at is its own", async ({

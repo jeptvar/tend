@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -21,6 +22,7 @@ import {
   takeDailySnapshot,
 } from "../src/backups/snapshots.ts";
 import { writeBackup } from "../src/backups/write.ts";
+import { readSecretKey } from "../src/config.ts";
 import { migrate } from "../src/db/migrate.ts";
 import { migrationsDir } from "../src/paths.ts";
 import {
@@ -32,7 +34,7 @@ import {
   setUp,
   signedInAs,
 } from "./auth-helpers.ts";
-import { tempDir } from "./helpers.ts";
+import { exitedWithin, runCli, tempDir, waitForRunning } from "./helpers.ts";
 
 const NEWEST = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).length;
 
@@ -110,15 +112,12 @@ describe("backing up and restoring a site", () => {
       "secret.key",
       expect.stringMatching(/^uploads\/originals\/[0-9a-f]{2}\/[0-9a-f-]{36}\.[0-9a-f]{12}\.png$/),
     ]);
-    expect(readFileSync(where.secretKeyPath).equals(made.secretKey)).toBe(true);
+    expect(readSecretKey(where).equals(made.secretKey)).toBe(true);
     expect(existsSync(join(where.uploadsDir, "variants"))).toBe(false);
 
     // Started on what was restored, the site signs its Owner in and shows its pages. Its
     // picture's sizes are made again from the original the first time they're asked for.
-    const restored = await makeApp(
-      {},
-      { root: where.dataDir, secretKey: readFileSync(where.secretKeyPath) },
-    );
+    const restored = await makeApp({}, { root: where.dataDir, secretKey: readSecretKey(where) });
     const signIn = await browser(restored.app).post("/api/auth/login", {
       email: OWNER_EMAIL,
       password: GOOD_PASSWORD,
@@ -128,6 +127,32 @@ describe("backing up and restoring a site", () => {
     const size = await restored.app.request(uploaded.srcset.split(", ")[0].split(" ")[0]);
     expect(size.status).toBe(200);
     expect(size.headers.get("content-type")).toBe("image/webp");
+  });
+
+  test("tendcms restore leaves a site that tendcms start can start", async () => {
+    const { made } = await siteWithPicture();
+    const zip = await backUp(made);
+    const dataDir = join(tempDir(), "data");
+    const env = { TEND_DATA_DIR: dataDir, PORT: "0" };
+    const restored = runCli(["restore", zip], env);
+    expect(await exitedWithin(restored)).toBe(0);
+    expect(restored.output()).toContain("Restored Rise Bakery as it was on");
+    const { secretKeyPath } = dataFolder(dataDir);
+    expect(readFileSync(secretKeyPath, "utf8")).toBe(`${made.secretKey.toString("hex")}\n`);
+    if (process.platform !== "win32") expect(statSync(secretKeyPath).mode & 0o777).toBe(0o600);
+
+    const start = runCli(["start"], env);
+    try {
+      const { origin } = await waitForRunning(start);
+      const signIn = await fetch(`${origin}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: OWNER_EMAIL, password: GOOD_PASSWORD }),
+      });
+      expect(signIn.status).toBe(200);
+    } finally {
+      await start.stop();
+    }
   });
 
   test("restoring over a site saves that site first, so it can be put back", async () => {
@@ -205,6 +230,32 @@ describe("a backup is checked before anything is restored", () => {
     expect(existsSync(where.secretKeyPath)).toBe(false);
     return (error as Error).message;
   }
+
+  /** A backup whose key is this, and whose manifest agrees. */
+  function withKey(key: Buffer): Promise<string> {
+    return changed((files) => {
+      files["secret.key"] = key;
+      editManifest(files, (manifest) => {
+        const listed = manifest.files as { path: string; bytes: number; sha256: string }[];
+        const entry = listed.find(({ path }) => path === "secret.key");
+        Object.assign(entry as object, {
+          bytes: key.length,
+          sha256: createHash("sha256").update(key).digest("hex"),
+        });
+      });
+    });
+  }
+
+  test("a key Tend couldn't start with", async () => {
+    expect(await refusal(await withKey(Buffer.from("not a key")))).toContain("isn't a Tend backup");
+    expect(await refusal(await withKey(Buffer.alloc(5000, "a")))).toContain("isn't a Tend backup");
+  });
+
+  test("but the first backups, from before any release, held only the key's bytes", async () => {
+    const key = Buffer.alloc(32, 7);
+    const { where } = await restoreInto(await withKey(key));
+    expect(readSecretKey(where).equals(key)).toBe(true);
+  });
 
   test("a file changed since it was saved", async () => {
     const zip = await changed((files) => {
