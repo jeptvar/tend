@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { PasswordField } from "../components/fields.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
 import type { Me } from "../lib/queries.ts";
 import {
@@ -157,19 +158,23 @@ function AccountScreen({ me }: { me: Me }) {
           <KitCodes me={me} kit={shown} takeFocus={madeHere} onDone={done} />
         ) : (
           <>
-            <p className="mt-1">
-              {status.data && status.data.codesLeft > 0 && status.data.madeAt !== null ? (
-                <FormattedMessage
-                  id="kit.left"
-                  values={{
-                    left: status.data.codesLeft,
-                    date: <FormattedDate value={status.data.madeAt} dateStyle="long" />,
-                  }}
-                />
-              ) : status.data ? (
-                <FormattedMessage id="kit.none" />
-              ) : null}
-            </p>
+            {status.data ? (
+              <p className="mt-1">
+                {status.data.codesLeft > 0 && status.data.madeAt !== null ? (
+                  <FormattedMessage
+                    id="kit.left"
+                    values={{
+                      left: status.data.codesLeft,
+                      date: <FormattedDate value={status.data.madeAt} dateStyle="long" />,
+                    }}
+                  />
+                ) : (
+                  <FormattedMessage id="kit.none" />
+                )}
+              </p>
+            ) : (
+              <Waiting query={status} />
+            )}
             <p className="mt-1 text-muted">
               <FormattedMessage id="kit.about" />
             </p>

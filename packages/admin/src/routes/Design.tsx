@@ -9,6 +9,7 @@ import {
 } from "../components/AuthLayout.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
 import { showToast } from "../components/Toast.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { PreviewDialog } from "../editor/PreviewDialog.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { useMediaItems } from "../lib/media.ts";
@@ -583,7 +584,6 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
 }
 
 function DesignScreen({ me }: { me: Me }) {
-  const intl = useIntl();
   const design = useQuery({
     queryKey: DESIGN_KEY,
     queryFn: () => api<DesignReply>("/admin/design"),
@@ -595,19 +595,11 @@ function DesignScreen({ me }: { me: Me }) {
       <p className="mt-2 text-muted">
         <FormattedMessage id="design.hint" />
       </p>
-      <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {design.error && errorText(design.error, intl.formatMessage({ id: "offline.body" }))}
-      </p>
-      {design.isPending && (
-        <p className="mt-6 text-muted">
-          <FormattedMessage id="common.loading" />
-        </p>
-      )}
-      {design.data && <DesignForm me={me} reply={design.data} />}
+      {design.data ? <DesignForm me={me} reply={design.data} /> : <Waiting query={design} />}
     </AdminLayout>
   );
 }
 
 export function DesignPage() {
-  return <SignedIn>{(me) => <DesignScreen me={me} />}</SignedIn>;
+  return <SignedIn roles={["admin"]}>{(me) => <DesignScreen me={me} />}</SignedIn>;
 }

@@ -56,12 +56,23 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const hoursSchema = z
   .array(
-    z.object({
-      day: z.enum(DAYS),
-      closed: z.boolean(),
-      opens: z.string().regex(TIME, "Use a time like 09:00."),
-      closes: z.string().regex(TIME, "Use a time like 17:30."),
-    }),
+    z
+      .object({
+        day: z.enum(DAYS),
+        closed: z.boolean(),
+        opens: z.string().max(5),
+        closes: z.string().max(5),
+      })
+      .transform((day, context) => {
+        if (TIME.test(day.opens) && TIME.test(day.closes)) return day;
+        // Nobody sees a closed day's times, so one left empty is no reason to refuse the rest.
+        if (day.closed) return { ...day, opens: "09:00", closes: "17:00" };
+        context.addIssue({
+          code: "custom",
+          message: "Give each open day a time it opens and a time it closes, like 09:00 and 17:30.",
+        });
+        return z.NEVER;
+      }),
   )
   .length(7, "Every day of the week needs a row, Monday first.")
   .refine(

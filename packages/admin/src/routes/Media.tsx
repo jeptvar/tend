@@ -10,6 +10,7 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
 import { showToast } from "../components/Toast.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
 import {
   ACCEPTED_FILES,
@@ -431,14 +432,12 @@ function MediaScreen({ me }: { me: Me }) {
 
       {/* Always mounted: screen readers can miss a live region added along with its text. */}
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {list.error && errorText(list.error, intl.formatMessage({ id: "offline.body" }))}
+        {list.data &&
+          list.error &&
+          errorText(list.error, intl.formatMessage({ id: "offline.body" }))}
       </p>
 
-      {list.isPending && (
-        <p className="mt-8 text-muted">
-          <FormattedMessage id="common.loading" />
-        </p>
-      )}
+      {!list.data && <Waiting query={list} />}
       {items?.length === 0 && (
         <p className="mt-8 text-muted">
           <FormattedMessage

@@ -9,6 +9,7 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
 import { showToast } from "../components/Toast.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { toHref } from "../lib/href.ts";
 import type { LinkTarget, Me } from "../lib/queries.ts";
@@ -525,18 +526,13 @@ function SiteMenuScreen({ me }: { me: Me }) {
       </div>
 
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {(menus.error ?? save.error) &&
-          errorText(menus.error ?? save.error, intl.formatMessage({ id: "offline.body" }))}
+        {save.error && errorText(save.error, intl.formatMessage({ id: "offline.body" }))}
       </p>
       <p role="status" className="sr-only">
         {announcement}
       </p>
 
-      {menus.isPending && (
-        <p className="mt-6 text-muted">
-          <FormattedMessage id="common.loading" />
-        </p>
-      )}
+      {!menus.data && <Waiting query={menus} />}
       {stored?.automatic && !changed && (
         <p className="mt-4 rounded-lg bg-ink/5 p-3">
           <FormattedMessage id={which === "main" ? "menu.automatic" : "menu.footerEmpty"} />
@@ -639,5 +635,5 @@ function SiteMenuScreen({ me }: { me: Me }) {
 }
 
 export function SiteMenu() {
-  return <SignedIn>{(me) => <SiteMenuScreen me={me} />}</SignedIn>;
+  return <SignedIn roles={["admin", "editor"]}>{(me) => <SiteMenuScreen me={me} />}</SignedIn>;
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, useId, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useParams } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
@@ -11,6 +11,7 @@ import {
 import { Field } from "../components/fields.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
 import { showToast } from "../components/Toast.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
 import { useMediaItems } from "../lib/media.ts";
 import { ME_KEY, type Me } from "../lib/queries.ts";
@@ -91,14 +92,26 @@ function useSetting<T>(name: string) {
   return { query, save };
 }
 
-/** The field a refusal was about, so its message can sit under that field. */
+/** What a refusal about this field says, to sit under it. */
 function fieldError(error: unknown, field: string): string | undefined {
-  return error instanceof ApiError && error.field === field ? error.message : undefined;
+  return error instanceof ApiError && error.field === field ? errorText(error, "") : undefined;
 }
 
-function SaveRow({ busy, changed, error }: { busy: boolean; changed: boolean; error: unknown }) {
+function SaveRow({
+  busy,
+  changed,
+  error,
+  fields = [],
+}: {
+  busy: boolean;
+  changed: boolean;
+  error: unknown;
+  /** The fields that show a refusal about them themselves. Any other is shown here. */
+  fields?: string[];
+}) {
   const intl = useIntl();
-  const general = error instanceof ApiError && error.field ? null : error;
+  const general =
+    error instanceof ApiError && error.field && fields.includes(error.field) ? null : error;
   return (
     <div className="grid gap-2">
       <p role="alert" className="font-medium text-danger empty:sr-only">
@@ -120,10 +133,6 @@ function SaveRow({ busy, changed, error }: { busy: boolean; changed: boolean; er
       </div>
     </div>
   );
-}
-
-function Loading({ children }: { children: ReactNode }) {
-  return <p className="mt-6 text-muted">{children}</p>;
 }
 
 function GeneralForm({
@@ -183,7 +192,7 @@ function GeneralForm({
           ))}
         </select>
       </label>
-      <SaveRow busy={busy} changed={changed} error={error} />
+      <SaveRow busy={busy} changed={changed} error={error} fields={["name", "tagline"]} />
     </form>
   );
 }
@@ -258,17 +267,18 @@ function GeneralSection({ me }: { me: Me }) {
           error={general.save.error}
         />
       ) : (
-        <Loading>
-          <FormattedMessage id="common.loading" />
-        </Loading>
+        <Waiting query={general.query} />
       )}
-      {visibility.query.data && (
+      {visibility.query.data ? (
         <VisibilityForm
           value={visibility.query.data.value}
           onSave={(value, done) => visibility.save.mutate(value, { onSuccess: done })}
           busy={visibility.save.isPending}
           error={visibility.save.error}
         />
+      ) : (
+        // One of the two is enough to say that it's loading.
+        visibility.query.error && <Waiting query={visibility.query} />
       )}
       <p className="text-sm text-muted">
         <FormattedMessage id="settings.signedInAs" values={{ email: me.user.email }} />
@@ -446,20 +456,14 @@ function BusinessForm({
           className={inputClass}
         />
       </div>
-      <SaveRow busy={busy} changed={changed} error={error} />
+      <SaveRow busy={busy} changed={changed} error={error} fields={["phone", "email", "mapUrl"]} />
     </form>
   );
 }
 
 function BusinessSection() {
   const business = useSetting<Business>("business");
-  if (!business.query.data) {
-    return (
-      <Loading>
-        <FormattedMessage id="common.loading" />
-      </Loading>
-    );
-  }
+  if (!business.query.data) return <Waiting query={business.query} />;
   return (
     <BusinessForm
       value={business.query.data.value}
@@ -544,7 +548,7 @@ function SearchForm({
           onClose={() => setPicking(false)}
         />
       )}
-      <SaveRow busy={busy} changed={changed} error={error} />
+      <SaveRow busy={busy} changed={changed} error={error} fields={["description"]} />
     </form>
   );
 }
@@ -587,7 +591,14 @@ function Redirects() {
                   void api<{ redirects: RedirectRow[] }>("/admin/redirects", {
                     method: "POST",
                     body: { from: removed.fromPath, to: removed.toPath },
-                  }).then((again) => queryClient.setQueryData(["redirects"], again));
+                  })
+                    .then((again) => queryClient.setQueryData(["redirects"], again))
+                    .catch((error: unknown) =>
+                      showToast({
+                        message: errorText(error, intl.formatMessage({ id: "offline.body" })),
+                        sticky: true,
+                      }),
+                    );
                 },
               },
             }
@@ -595,7 +606,7 @@ function Redirects() {
       });
     },
   });
-  const rows = list.data?.redirects ?? [];
+  const rows = list.data?.redirects;
   return (
     <section aria-labelledby="redirects-heading" className="grid gap-4">
       <h2 id="redirects-heading" className="text-xl font-semibold">
@@ -604,7 +615,12 @@ function Redirects() {
       <p className="text-muted">
         <FormattedMessage id="redirects.hint" />
       </p>
-      {rows.length === 0 ? (
+      <p role="alert" className="font-medium text-danger empty:sr-only">
+        {remove.error && errorText(remove.error, intl.formatMessage({ id: "offline.body" }))}
+      </p>
+      {!rows ? (
+        <Waiting query={list} />
+      ) : rows.length === 0 ? (
         <p className="text-muted">
           <FormattedMessage id="redirects.none" />
         </p>
@@ -691,9 +707,7 @@ function SearchSection() {
           error={seo.save.error}
         />
       ) : (
-        <Loading>
-          <FormattedMessage id="common.loading" />
-        </Loading>
+        <Waiting query={seo.query} />
       )}
       <Redirects />
     </div>
@@ -764,13 +778,7 @@ function CodeForm({
 
 function AdvancedSection() {
   const code = useSetting<CodeSettings>("code");
-  if (!code.query.data) {
-    return (
-      <Loading>
-        <FormattedMessage id="common.loading" />
-      </Loading>
-    );
-  }
+  if (!code.query.data) return <Waiting query={code.query} />;
   return (
     <CodeForm
       value={code.query.data.value}
@@ -816,20 +824,7 @@ function BackupsSection({ me }: { me: Me }) {
     queryKey: BACKUPS_KEY,
     queryFn: () => api<BackupsInfo>("/admin/backups"),
   });
-  if (query.error) {
-    return (
-      <p role="alert" className="font-medium text-danger">
-        {errorText(query.error, intl.formatMessage({ id: "offline.body" }))}
-      </p>
-    );
-  }
-  if (!query.data) {
-    return (
-      <Loading>
-        <FormattedMessage id="common.loading" />
-      </Loading>
-    );
-  }
+  if (!query.data) return <Waiting query={query} />;
   const { snapshots, disk, lastDownloadAt } = query.data;
   const used = Math.max(0, disk.total - disk.free);
   const share = disk.total > 0 ? used / disk.total : 0;
@@ -978,14 +973,6 @@ export function SettingsPage() {
   const section = SECTIONS.find((name) => name === params.section);
   if (!section) return <Redirect to="/settings/general" replace />;
   return (
-    <SignedIn>
-      {(me) =>
-        me.user.role === "admin" ? (
-          <SettingsScreen me={me} section={section} />
-        ) : (
-          <Redirect to="/" replace />
-        )
-      }
-    </SignedIn>
+    <SignedIn roles={["admin"]}>{(me) => <SettingsScreen me={me} section={section} />}</SignedIn>
   );
 }

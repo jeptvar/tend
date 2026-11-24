@@ -5,6 +5,7 @@ import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
 import { Field } from "../components/fields.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
 import type { Me } from "../lib/queries.ts";
 
@@ -402,7 +403,6 @@ function InviteRow({ invite }: { invite: Invite }) {
 }
 
 function PeopleScreen({ me }: { me: Me }) {
-  const intl = useIntl();
   const list = useQuery({
     queryKey: PEOPLE_KEY,
     queryFn: () => api<PeopleList>("/admin/people"),
@@ -412,10 +412,7 @@ function PeopleScreen({ me }: { me: Me }) {
       <p className="mt-2 text-lg text-muted">
         <FormattedMessage id="people.intro" />
       </p>
-      <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {list.isError && errorText(list.error, intl.formatMessage({ id: "offline.body" }))}
-      </p>
-      {list.data && (
+      {list.data ? (
         <>
           <ul className="mt-6">
             {list.data.people.map((person) => (
@@ -435,6 +432,8 @@ function PeopleScreen({ me }: { me: Me }) {
             </section>
           )}
         </>
+      ) : (
+        <Waiting query={list} />
       )}
       <InviteForm me={me} />
     </AdminLayout>
@@ -442,5 +441,5 @@ function PeopleScreen({ me }: { me: Me }) {
 }
 
 export function People() {
-  return <SignedIn>{(me) => <PeopleScreen me={me} />}</SignedIn>;
+  return <SignedIn roles={["admin"]}>{(me) => <PeopleScreen me={me} />}</SignedIn>;
 }

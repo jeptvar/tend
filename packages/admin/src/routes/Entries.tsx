@@ -350,5 +350,9 @@ export function PostList() {
 }
 
 export function PageList() {
-  return <SignedIn>{(me) => <EntryListScreen me={me} type="page" />}</SignedIn>;
+  return (
+    <SignedIn roles={["admin", "editor"]}>
+      {(me) => <EntryListScreen me={me} type="page" />}
+    </SignedIn>
+  );
 }

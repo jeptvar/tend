@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Redirect, Route, Router, Switch } from "wouter";
+import { Route, Router, Switch } from "wouter";
 import { Loading } from "./components/AuthLayout.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { Toaster } from "./components/Toast.tsx";
@@ -10,6 +10,7 @@ import { DesignPage } from "./routes/Design.tsx";
 import { PageList, PostList } from "./routes/Entries.tsx";
 import { ForgotPassword, Login } from "./routes/Login.tsx";
 import { MediaLibrary } from "./routes/Media.tsx";
+import { NotFound } from "./routes/NotFound.tsx";
 import { Overview } from "./routes/Overview.tsx";
 import { People } from "./routes/People.tsx";
 import { SettingsPage } from "./routes/Settings.tsx";
@@ -61,9 +62,7 @@ export function App() {
               <Route path="/recover" component={Recover} />
               <Route path="/reset" component={ResetPassword} />
               <Route path="/invite" component={AcceptInvite} />
-              <Route>
-                <Redirect to="/" replace />
-              </Route>
+              <Route component={NotFound} />
             </Switch>
           </Suspense>
         </ErrorBoundary>

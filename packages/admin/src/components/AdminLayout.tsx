@@ -8,8 +8,17 @@ import { ME_KEY, type Me, SETUP_STATUS_KEY, useMe, useSetupStatus } from "../lib
 import { CannotReachTend, Loading } from "./AuthLayout.tsx";
 import { useNavigationFocus } from "./focus.ts";
 
-/** Only shows its children to someone who's signed in, and sends everyone else on their way. */
-export function SignedIn({ children }: { children: (me: Me) => ReactNode }) {
+/**
+ * Only shows its children to someone who's signed in, and has one of the roles if the screen is
+ * for some, and sends everyone else on their way. The server checks again.
+ */
+export function SignedIn({
+  roles,
+  children,
+}: {
+  roles?: string[];
+  children: (me: Me) => ReactNode;
+}) {
   const me = useMe();
   const status = useSetupStatus();
 
@@ -29,6 +38,7 @@ export function SignedIn({ children }: { children: (me: Me) => ReactNode }) {
     );
   }
   if (!me.data) return <Redirect to={status.data?.needsSetup ? "/setup" : "/login"} replace />;
+  if (roles && !roles.includes(me.data.user.role)) return <Redirect to="/" replace />;
   return children(me.data);
 }
 
