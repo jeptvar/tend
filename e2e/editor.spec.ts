@@ -731,6 +731,45 @@ test.describe("never losing what's typed", () => {
     await expect(again.getByText("hadn't reached the server")).toHaveCount(0);
   });
 
+  test("a crash while someone types without a pause, and then the tab closing, loses nothing typed 2 seconds before", async ({
+    page,
+    signedIn,
+    context,
+  }) => {
+    test.setTimeout(60_000);
+    const post = await createEntry(page, signedIn, { title: "Draft", body: "" });
+    await openPost(page, signedIn, post.id);
+    await body(page).click();
+    const typed: { word: string; at: number }[] = [];
+    let open = true;
+    const typing = (async () => {
+      for (let n = 1; open; n++) {
+        const word = `word${n}`;
+        await page.keyboard.type(`${word} `, { delay: 25 });
+        typed.push({ word, at: Date.now() });
+      }
+    })().catch(() => {});
+
+    // Long enough that some of it has reached the server, and never long enough for it all.
+    await page.waitForTimeout(12_000);
+    expect(bodyText(await readEntry(page, signedIn, post.id))).toContain("word1 ");
+    await signedIn.crash();
+    await page.waitForTimeout(3000);
+    const closedAt = Date.now();
+    open = false;
+    await page.close();
+    await typing;
+
+    await signedIn.restart();
+    const again = await context.newPage();
+    await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
+    await expect(again.getByText("hadn't reached the server")).toBeVisible();
+    const words = typed.filter(({ at }) => at <= closedAt - 2000).map(({ word }) => word);
+    expect(words.length).toBeGreaterThan(30);
+    const kept = ((await body(again).textContent()) ?? "").trim().split(/\s+/);
+    expect(kept.slice(0, words.length)).toEqual(words);
+  });
+
   test("closing the tab straight after typing keeps it", async ({ page, signedIn, context }) => {
     const post = await createEntry(page, signedIn, { title: "Draft", body: "Saved earlier" });
     await openPost(page, signedIn, post.id);
