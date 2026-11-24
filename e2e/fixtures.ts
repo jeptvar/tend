@@ -211,6 +211,31 @@ export async function holdRequests(page: Page, url: string, method?: string): Pr
   return release;
 }
 
+export interface DataRisk {
+  why: "unmounted" | "unnamed";
+  path: string;
+  platform: "railway" | "render" | "fly" | "docker";
+}
+
+/**
+ * Has Tend tell the admin its site would be lost, as it does in a container whose data folder
+ * isn't on a volume that's kept. Tend can't be in one here, so this changes what it answers.
+ */
+export async function pretendDataIsAtRisk(
+  page: Page,
+  risk: DataRisk,
+  user: { isOwner?: boolean } = {},
+): Promise<void> {
+  await page.route("**/api/auth/me", async (route) => {
+    const reply = await route.fetch();
+    const me = await reply.json();
+    await route.fulfill({
+      response: reply,
+      json: { ...me, dataRisk: risk, user: { ...me.user, ...user } },
+    });
+  });
+}
+
 /**
  * Whether Tab moves to links in this browser. Safari's skips them until "Press Tab to
  * highlight each item" is turned on, and WebKit's does on Windows, where Alt+Tab is just Tab.

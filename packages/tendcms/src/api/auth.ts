@@ -38,6 +38,7 @@ import {
   type User,
   upgradePasswordHash,
 } from "../db/repo/users.ts";
+import type { DataRiskDetails } from "../volume.ts";
 import { registerAccountRoutes } from "./accounts.ts";
 import { ApiError, tendIsBusy, tooManyTries } from "./errors.ts";
 import { registerSetupBackupRoutes } from "./setup-backup.ts";
@@ -55,6 +56,8 @@ export interface AuthOptions extends SetupCodeSource {
   isPublic: boolean;
   /** The address pages name as their own, when it's known for sure. See Config.siteUrl. */
   siteUrl?: string | undefined;
+  /** Why this site could be lost with its container, if it could. See volume.ts. */
+  dataRisk?: DataRiskDetails | undefined;
   /** The data folder, which Start from a backup restores into. Absent in some tests. */
   dataFolder?: RestoreTarget | undefined;
 }
@@ -464,6 +467,8 @@ export function createAuthRoutes(options: AuthOptions): Hono {
       siteIsPublic: options.isPublic || Boolean(confirmed && !isLocalAddress(confirmed)),
       // Until it's known, Overview asks whether the address in the browser is the site's.
       addressKnown: Boolean(options.siteUrl ?? confirmed),
+      // For whoever can do something about it.
+      dataRisk: user.role === "admin" ? (options.dataRisk ?? null) : null,
     });
   });
 

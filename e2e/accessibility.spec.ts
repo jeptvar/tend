@@ -1,6 +1,14 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { createEntry, expect, photo, type Site, test, upload } from "./fixtures.ts";
+import {
+  createEntry,
+  expect,
+  photo,
+  pretendDataIsAtRisk,
+  type Site,
+  test,
+  upload,
+} from "./fixtures.ts";
 
 async function expectNoViolations(
   page: Page,
@@ -245,6 +253,17 @@ for (const colorScheme of ["light", "dark"] as const) {
       }
     });
 
+    test("the warning that a site could be lost has no accessibility violations", async ({
+      page,
+      signedIn,
+    }) => {
+      await pretendDataIsAtRisk(page, { why: "unnamed", path: "/data", platform: "docker" });
+      await page.goto(`${signedIn.base}/admin/`);
+      await expect(page.getByRole("region", { name: "Your site could be lost" })).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await expectNoViolations(page, "at risk");
+    });
+
     test("the editor has no accessibility violations, whatever's open", async ({
       page,
       signedIn,
@@ -478,6 +497,15 @@ test.describe("at phone widths", () => {
       await page.waitForLoadState("networkidle");
       await expectNoSidewaysScrolling(page, path);
     }
+
+    await pretendDataIsAtRisk(page, {
+      why: "unmounted",
+      path: `/${UNBROKEN}`,
+      platform: "docker",
+    });
+    await page.goto(`${signedIn.base}/admin/`);
+    await expect(page.getByRole("region", { name: "Your site could be lost" })).toBeVisible();
+    await expectNoSidewaysScrolling(page, "the warning that a site could be lost");
   });
 
   /** Links inside written text are exempt in WCAG, because they sit among the words. */

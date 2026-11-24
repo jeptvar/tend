@@ -14,6 +14,12 @@ export interface Me {
   siteIsPublic: boolean;
   /** Whether the site knows its own address, rather than following the one each page is asked for. */
   addressKnown: boolean;
+  /** For Admins: why this site could be lost with its container, if it could. */
+  dataRisk: {
+    why: "unmounted" | "unnamed";
+    path: string;
+    platform: "railway" | "render" | "fly" | "docker" | "local";
+  } | null;
 }
 
 export type EntryType = "post" | "page";

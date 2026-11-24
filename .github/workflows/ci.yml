@@ -213,6 +213,47 @@ jobs:
           done
           curl --fail --silent --show-error http://127.0.0.1:3001/admin/setup | grep --quiet 'id="root"'
           sudo test -f /srv/tend-data/tend.db
+      # A container's own files go when it's replaced, and so can a volume with no name, which
+      # is what Docker makes for the image's /data when it isn't given one. Each container is
+      # stopped before its log is read, so it has nothing left to write.
+      - name: Check it says when the site could be lost
+        run: |
+          # The admin tells an Admin, so there has to be one.
+          cat > setup.json <<JSON
+          {
+            "code": "$(docker exec tend tendcms setup-code)",
+            "site": { "name": "Test", "tagline": "", "locale": "en", "timezone": "UTC" },
+            "owner": {
+              "name": "Sam Lee",
+              "email": "sam@example.com",
+              "password": "maple-river-candle-stone-orbit"
+            },
+            "starter": "blank"
+          }
+          JSON
+          curl --fail --silent --show-error --output /dev/null --cookie-jar cookies.txt \
+            --header 'Content-Type: application/json' --data @setup.json \
+            http://127.0.0.1:3000/api/auth/setup
+          curl --fail --silent --show-error --cookie cookies.txt http://127.0.0.1:3000/api/auth/me |
+            grep --quiet '"dataRisk":{"why":"unnamed","path":"/data","platform":"docker"}'
+          docker run --detach --name tend-unmounted --publish 3002:3000 \
+            --env TEND_DATA_DIR=/tmp/site tend:test
+          docker run --detach --name tend-named --publish 3003:3000 \
+            --volume tend-data:/data tend:test
+          for port in 3002 3003; do
+            curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
+              "http://127.0.0.1:$port/healthz"
+          done
+          docker stop tend tend-root tend-unmounted tend-named
+          docker logs tend 2>&1 | grep --quiet 'WARNING: /data is on a volume with no name'
+          docker logs tend-unmounted 2>&1 | grep --quiet "WARNING: /tmp/site isn't on a volume"
+          # A folder of the server's and a volume with a name are both kept.
+          for kept in tend-root tend-named; do
+            if docker logs "$kept" 2>&1 | grep WARNING; then
+              echo "$kept was warned about a data folder that's kept."
+              exit 1
+            fi
+          done
       # A scan that always passes looks the same as a clean image, so first it has to find
       # lodash 4.17.4, which has known vulnerabilities with fixes. The exit code is one Trivy
       # doesn't use for its own errors, like a database it couldn't download.
@@ -248,8 +289,9 @@ jobs:
       - name: Show what Tend printed, if that failed
         if: failure()
         run: |
-          docker logs tend || true
-          docker logs tend-root || true
+          for name in tend tend-root tend-unmounted tend-named; do
+            docker logs "$name" || true
+          done
           cat refused.log || true
 
   # main's rules require one check called docker, and this is it: it passes only if both

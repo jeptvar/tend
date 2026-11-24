@@ -40,6 +40,7 @@ import { clearSizesIfLow, isNearlyFull, MediaStore } from "./media/store.ts";
 import { openInBrowser } from "./open-browser.ts";
 import { adminDir, appVersion, defaultThemeDir, migrationsDir } from "./paths.ts";
 import { createApp } from "./server.ts";
+import { dataRiskWarning, findDataRisk } from "./volume.ts";
 
 const HELP = `Tend ${appVersion}
 
@@ -298,6 +299,7 @@ async function start(options: { open: boolean } = { open: false }): Promise<void
     console.error(`Couldn't update published pages: ${(error as Error).message}`);
   }
   const secretKey = readSecretKey(config);
+  const dataRisk = findDataRisk(config);
   const app = createApp({
     version: appVersion,
     adminDir,
@@ -316,6 +318,7 @@ async function start(options: { open: boolean } = { open: false }): Promise<void
     watchTheme: true,
     siteUrl: config.siteUrl,
     isPublic: config.isPublic,
+    dataRisk,
   });
   // The Trash and automatic history only keep things for so long. Not being able to tidy
   // up is no reason to stop serving the site.
@@ -427,6 +430,8 @@ async function start(options: { open: boolean } = { open: false }): Promise<void
     } else if (needsSetup) {
       console.log("Open /admin/setup on your site and type the setup password you chose.");
     }
+    // Last, so it isn't buried under the rest.
+    if (dataRisk) console.warn(dataRiskWarning(dataRisk, { needsSetup }));
   }
 }
 

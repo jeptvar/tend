@@ -52,6 +52,51 @@ const NAV: { href: string; id: string; roles?: string[] }[] = [
 const navLinkClass =
   "inline-flex min-h-11 items-center rounded px-2 hover:underline focus-visible:outline-3 focus-visible:outline-brand";
 
+/**
+ * Says, on every screen, that the site would be lost with its container (PLAN.md §13), and
+ * what to do, in order: the backup comes first, because a new volume starts empty.
+ */
+function DataRiskNotice({
+  risk,
+  isOwner,
+}: {
+  risk: NonNullable<Me["dataRisk"]>;
+  isOwner: boolean;
+}) {
+  const values = { path: risk.path };
+  const fix = risk.platform === "railway" || risk.platform === "docker" ? risk.platform : "other";
+  return (
+    <section
+      aria-labelledby="data-risk"
+      className="mt-4 rounded-lg border-2 border-danger p-4 [overflow-wrap:anywhere] print:hidden"
+    >
+      <h2 id="data-risk" className="text-lg font-semibold text-danger">
+        <FormattedMessage id="risk.heading" />
+      </h2>
+      <p className="mt-1">
+        <FormattedMessage id={`risk.${risk.why}`} values={values} />
+      </p>
+      <ol className="mt-2 grid list-decimal gap-1 pl-6">
+        <li>
+          {isOwner ? (
+            <Link href="/settings/backups" className={`${navLinkClass} -ml-2 text-brand underline`}>
+              <FormattedMessage id="risk.backup" />
+            </Link>
+          ) : (
+            <FormattedMessage id="risk.backupAsk" />
+          )}
+        </li>
+        <li>
+          <FormattedMessage id={`risk.fix.${fix}`} values={values} />
+        </li>
+        <li>
+          <FormattedMessage id="risk.restore" />
+        </li>
+      </ol>
+    </section>
+  );
+}
+
 export function AdminLayout({
   me,
   screen,
@@ -167,6 +212,7 @@ export function AdminLayout({
         <p role="alert" className="mt-2 font-medium text-danger empty:sr-only">
           {signOut.isError && errorText(signOut.error, intl.formatMessage({ id: "offline.body" }))}
         </p>
+        {me.dataRisk && <DataRiskNotice risk={me.dataRisk} isOwner={me.user.isOwner} />}
         {heldDrafts.length > 0 && (
           <ul className="mt-4 grid gap-2">
             {heldDrafts.map((held) => (

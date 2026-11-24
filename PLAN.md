@@ -1543,6 +1543,7 @@ Where the code differs from this plan, the code is right:
 - **Themes** show a picture with `{% image post.image, size: "card" %}`, which writes a placeholder filled in with every other picture on the page.
 - **The admin's navigation** is still a bar across the top, now with seven items. The sidebar and phone bar from §6 are still to come.
 - **Trash:** restoring always gives a draft, so going back on the site is a decision. Rows from pressing New and never typing anything are also tidied away after 30 days.
+- **The volume check** (§13) warns about a volume with no name as well as no volume at all. The image's `VOLUME /data` makes Docker mount an unnamed volume there when it isn't given one, so in the image `/data` is always a mount point, and asking only that would never warn anyone. It doesn't link to tendcms.dev yet; the steps are in the message.
 - **Browser tests** arrived early, in M1 rather than M4, because the admin's worst bugs were only reachable through its screens. They still run on Chromium only: adding WebKit is a debt from M2, because the editor is the part most likely to differ between browsers.
 
 **Rules:**
