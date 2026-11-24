@@ -70,11 +70,13 @@ export function checkMade(site) {
   return installed;
 }
 
-/** Everything npm installed, by where it is. */
+/** Everything npm installed, by where it is. Its lock also lists parts for other computers. */
 export function installedPackages(site) {
   const { packages } = JSON.parse(readFileSync(join(site, "package-lock.json"), "utf8"));
   return Object.fromEntries(
-    Object.entries(packages).filter(([path]) => path.includes("node_modules/")),
+    Object.entries(packages).filter(
+      ([path]) => path.includes("node_modules/") && existsSync(join(site, path)),
+    ),
   );
 }
 

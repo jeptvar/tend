@@ -86,7 +86,7 @@ try {
 
     // What was tested is what's installed, whatever has come out since.
     const own = Object.entries(installedPackages(site)).filter(
-      ([path, { optional }]) => path !== "node_modules/tendcms" && !optional,
+      ([path]) => path !== "node_modules/tendcms",
     );
     // npm puts what a shrinkwrap pins inside the package it came with.
     const different = own.filter(

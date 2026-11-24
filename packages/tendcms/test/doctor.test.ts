@@ -294,7 +294,7 @@ describe("tendcms doctor", () => {
         TEND_DATA_DIR: join(home, "my-site", "data"),
       });
       expect(await exitedWithin(cli)).toBe(0);
-      expect(cli.output()).toMatch(/^Tend \d+\.\d+\.\d+ on Node\.js \d+\.\d+\.\d+, /);
+      expect(cli.output()).toMatch(/^Tend \d+\.\d+\.\d+ on Node\.js \d+\.\d+\.\d+\S*, /);
       expect(cli.output()).toContain(`There's no site in ~${sep}${join("my-site", "data")} yet.`);
       expect(cli.output()).not.toContain(home);
       expect(cli.output()).toMatch(/\nNothing to fix, and \d thing/);
