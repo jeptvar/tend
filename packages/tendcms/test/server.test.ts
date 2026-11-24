@@ -190,6 +190,25 @@ describe("tendcms start", () => {
   );
 });
 
+describe("being told to stop", () => {
+  // On Windows there's no telling a process to stop that it could answer.
+  test.runIf(posixOnly)("leaves the data folder ready to be copied", async () => {
+    const dataDir = tempDir();
+    const cli = runCli(["start"], { TEND_DATA_DIR: dataDir, PORT: "0" });
+    const { origin } = await waitForRunning(cli);
+    expect((await fetch(`${origin}/healthz`)).status).toBe(200);
+    expect(existsSync(join(dataDir, "tend.db-wal"))).toBe(true);
+    const before = performance.now();
+    cli.child.kill("SIGTERM");
+    expect(await exitedWithin(cli)).toBe(0);
+    // Not for a connection that's only kept open.
+    expect(performance.now() - before).toBeLessThan(4000);
+    // Everything's in the database itself.
+    expect(existsSync(join(dataDir, "tend.db-wal"))).toBe(false);
+    expect(existsSync(join(dataDir, ".lock"))).toBe(false);
+  });
+});
+
 describe("the setup link", () => {
   test("carries the code in the fragment, which browsers never send to the server", async () => {
     const cli = runCli(["start"], { TEND_DATA_DIR: tempDir(), PORT: "0" });

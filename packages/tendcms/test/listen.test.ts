@@ -98,3 +98,60 @@ describe("listen", () => {
     );
   });
 });
+
+describe("stopping", () => {
+  /** A server whose answer to /slow comes when it's told to. */
+  async function slowServer() {
+    let answer = () => {};
+    const asked = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    let started: () => void = () => {};
+    const begun = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const listening = await listen(
+      async (request: Request) => {
+        if (!request.url.endsWith("/slow")) return new Response("tend");
+        started();
+        await asked;
+        return new Response("finished");
+      },
+      [0],
+      ["127.0.0.1"],
+    );
+    cleanups.push(() => listening.close());
+    return { listening, url: `http://127.0.0.1:${listening.port}`, answer, begun };
+  }
+
+  test("lets what's being answered finish, and takes nothing new", async () => {
+    const { listening, url, answer, begun } = await slowServer();
+    const inFlight = fetch(`${url}/slow`).then((reply) => reply.text());
+    await begun;
+    const stopped = listening.stop(5000);
+    await expect(fetch(`${url}/`)).rejects.toThrow();
+    answer();
+    expect(await inFlight).toBe("finished");
+    await stopped;
+  });
+
+  test("doesn't wait for connections that are only kept open", async () => {
+    const { listening, url } = await slowServer();
+    // Node's fetch keeps its connection for the next request.
+    expect(await (await fetch(`${url}/`)).text()).toBe("tend");
+    const before = performance.now();
+    await listening.stop(5000);
+    expect(performance.now() - before).toBeLessThan(2000);
+  });
+
+  test("ends what takes too long", async () => {
+    const { listening, url, begun } = await slowServer();
+    const inFlight = fetch(`${url}/slow`);
+    const failed = expect(inFlight).rejects.toThrow();
+    await begun;
+    const before = performance.now();
+    await listening.stop(200);
+    expect(performance.now() - before).toBeLessThan(2000);
+    await failed;
+  });
+});

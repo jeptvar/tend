@@ -213,6 +213,19 @@ export async function theme([action, from, to]: string[]): Promise<void> {
 }
 
 const HOUR_MS = 60 * 60 * 1000;
+/** How long a request being answered has to finish once Tend is told to stop. */
+const DRAIN_MS = 5000;
+
+/** Puts everything from the log into the database itself, so the data folder can be copied. */
+function closeDatabase(db: SqliteDatabase): void {
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+    db.close();
+  } catch {
+    // A copy of it may be being made. Nothing is lost: it's all in the log, for next time.
+  }
+}
+
 // How often Tend looks at whether a daily copy is due, and whether the disk is nearly full.
 const CHECK_EVERY_MS = 10 * 60 * 1000;
 
@@ -225,15 +238,22 @@ export async function start(options: { open: boolean } = { open: false }): Promi
   // Tend, and it can happen while a snapshot is being written.
   let listening: Listening | undefined;
   let db: SqliteDatabase | undefined;
+  let stopping = false;
+  // Hosting platforms stop the old Tend as they start the new one (PLAN.md §13). Whatever is
+  // being answered, a save say, gets a few seconds to finish.
+  const stop = async (number: number) => {
+    const code = listening ? 0 : 128 + number;
+    // Asked again, by someone who doesn't want to wait.
+    if (stopping) process.exit(code);
+    stopping = true;
+    await listening?.stop(DRAIN_MS);
+    if (db) closeDatabase(db);
+    lock.release();
+    process.exit(code);
+  };
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"] as const) {
     const number = constants.signals[signal];
-    if (number === undefined) continue;
-    process.once(signal, () => {
-      listening?.close();
-      db?.close();
-      lock.release();
-      process.exit(listening ? 0 : 128 + number);
-    });
+    if (number !== undefined) process.on(signal, () => void stop(number));
   }
 
   try {
