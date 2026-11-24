@@ -210,6 +210,16 @@ export function recoveryKitStatus(
   return { codesLeft: left.length, madeAt: left.at(-1)?.createdAt ?? null };
 }
 
+/** Whether they've kept a copy of the codes they have now, as far as Tend can tell. */
+export function recoveryKitSaved(
+  orm: Orm,
+  user: Pick<User, "id" | "recoverySavedAt">,
+  now: number,
+): boolean {
+  const { madeAt } = recoveryKitStatus(orm, user.id, now);
+  return madeAt !== null && user.recoverySavedAt !== null && user.recoverySavedAt >= madeAt;
+}
+
 /** Someone's usable recovery code, if this is one. */
 export function findRecoveryCode(
   orm: Orm,

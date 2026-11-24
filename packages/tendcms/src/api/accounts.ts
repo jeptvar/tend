@@ -14,6 +14,7 @@ import {
   RECOVERED_MS,
   type Role,
   recoveryCodeId,
+  recoveryKitSaved,
   recoveryKitStatus,
   replaceRecoveryKit,
   revokeResetLinks,
@@ -311,9 +312,7 @@ export function registerAccountRoutes(app: Hono, options: AccountRouteOptions): 
   app.get("/recovery-kit", async (c) => {
     const user = await options.requireUser(c);
     const status = recoveryKitStatus(orm, user.id, now());
-    const savedAt = user.recoverySavedAt;
-    const saved = status.madeAt !== null && savedAt !== null && savedAt >= status.madeAt;
-    return c.json({ ...status, saved });
+    return c.json({ ...status, saved: recoveryKitSaved(orm, user, now()) });
   });
 
   // They've kept a copy of the codes, so there's no need to keep reminding them.
