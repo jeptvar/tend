@@ -4,9 +4,9 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useId, useLayoutEffect, useState } from "react";
-import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
-import { Link, useLocation } from "wouter";
+import { useEffect, useId, useLayoutEffect, useState } from "react";
+import { FormattedDate, FormattedMessage, FormattedNumber, useIntl } from "react-intl";
+import { Link, useLocation, useSearchParams } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import {
   primaryButtonClass,
@@ -14,13 +14,16 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { Icon } from "../components/icons.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { releaseAllDrafts } from "../lib/held-drafts.ts";
 import {
+  ENTRY_VIEWS,
   type EntryPage,
   type EntrySummary,
   type EntryType,
+  type EntryView,
   entriesKey,
   entryKey,
   entryListKey,
@@ -29,6 +32,17 @@ import {
 } from "../lib/queries.ts";
 
 const TRASH_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+/** How long after the last key before the list is searched. */
+const SEARCH_AFTER_MS = 250;
+/** Fewer than this many, and a search would only be in the way. */
+const WORTH_SEARCHING = 10;
+
+const VIEW_QUERY: Record<EntryView, string> = {
+  all: "",
+  drafts: "&status=draft",
+  published: "&status=published",
+  trash: "&view=trash",
+};
 
 function focusHeading(): void {
   document.querySelector<HTMLElement>("main h1")?.focus();
@@ -60,8 +74,17 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
   const intl = useIntl();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
-  const [view, setView] = useState<"all" | "trash">("all");
+  // In the address, so a link can lead to the drafts, and coming back from one finds them.
+  const [params, setParams] = useSearchParams();
+  const view: EntryView = ENTRY_VIEWS.find((each) => each === params.get("show")) ?? "all";
   const trashed = view === "trash";
+  const [typed, setTyped] = useState("");
+  const [search, setSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(typed.trim()), SEARCH_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [typed]);
+  const searchId = useId();
   const path = listPath(type);
   const canDeleteForever = me.user.role === "admin";
   const [confirmDelete, setConfirmDelete] = useState<{
@@ -71,28 +94,31 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
   const confirmHeadingId = useId();
 
   const list = useInfiniteQuery({
-    queryKey: entryListKey(type, trashed),
+    queryKey: entryListKey(type, view, search),
     initialPageParam: "0",
     getNextPageParam: (page: EntryPage) => page.nextCursor,
     queryFn: ({ pageParam }) =>
       api<EntryPage>(
-        `/admin/entries?type=${type}${trashed ? "&view=trash" : ""}&cursor=${pageParam}`,
+        `/admin/entries?type=${type}${VIEW_QUERY[view]}${search ? `&q=${encodeURIComponent(search)}` : ""}&cursor=${pageParam}`,
       ),
   });
   const rows = list.data?.pages.flatMap((page) => page.entries);
+  // Kept while another part loads, so the tabs don't jump about.
+  const [counts, setCounts] = useState<EntryPage["counts"]>();
+  const newest = list.data?.pages.at(-1)?.counts;
+  if (newest && newest !== counts) setCounts(newest);
 
   // The row that Restore or Delete forever is taking away, and where it was.
   const [leaving, setLeaving] = useState<{ id: string; index: number } | null>(null);
 
   function removeRow(id: string): void {
-    queryClient.setQueryData<InfiniteData<EntryPage>>(entryListKey(type, trashed), (data) =>
+    queryClient.setQueryData<InfiniteData<EntryPage>>(entryListKey(type, view, search), (data) =>
       withoutEntry(data, id),
     );
   }
 
   function refreshLists() {
-    void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
-    void queryClient.invalidateQueries({ queryKey: entriesKey(type, true) });
+    void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
   }
 
   const create = useMutation({
@@ -155,16 +181,24 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
   return (
     <AdminLayout me={me} screen={type === "post" ? "posts" : "pages"}>
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="-ml-2 flex">
-          {(["all", "trash"] as const).map((option) => (
+        <div className="-ml-2 flex flex-wrap">
+          {ENTRY_VIEWS.map((option) => (
             <button
               key={option}
               type="button"
               aria-pressed={view === option}
-              onClick={() => setView(option)}
+              onClick={() => setParams(option === "all" ? {} : { show: option }, { replace: true })}
               className={`min-h-11 min-w-11 rounded px-2 text-center hover:underline focus-visible:outline-3 focus-visible:outline-brand ${view === option ? "font-semibold" : "text-muted"}`}
             >
-              <FormattedMessage id={option === "all" ? "list.all" : "list.trash"} />
+              <FormattedMessage id={`list.${option}`} />
+              {counts && (
+                <>
+                  {" "}
+                  <span className="ml-0.5 font-normal text-muted">
+                    <FormattedNumber value={counts[option]} />
+                  </span>
+                </>
+              )}
             </button>
           ))}
         </div>
@@ -177,6 +211,34 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
           <FormattedMessage id={type === "post" ? "list.newPost" : "list.newPage"} />
         </button>
       </div>
+
+      {((counts && counts.all + counts.trash >= WORTH_SEARCHING) || typed !== "") && (
+        <div className="relative mt-4">
+          <label htmlFor={searchId} className="sr-only">
+            <FormattedMessage id={`list.search.${type}`} />
+          </label>
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#5b655f]">
+            <Icon name="search" />
+          </span>
+          <input
+            id={searchId}
+            type="search"
+            value={typed}
+            maxLength={200}
+            placeholder={intl.formatMessage({ id: `list.search.${type}` })}
+            onChange={(event) => setTyped(event.target.value)}
+            className="min-h-11 w-full rounded-lg border border-muted bg-white pr-3 pl-10 text-lg text-[#1d2420] placeholder:text-[#5b655f] focus-visible:outline-3 focus-visible:outline-brand"
+          />
+        </div>
+      )}
+      <p role="status" className="sr-only">
+        {search && list.data && !list.isFetching && (
+          <FormattedMessage
+            id="list.found"
+            values={{ count: rows?.length ?? 0, more: list.hasNextPage ? "yes" : "no" }}
+          />
+        )}
+      </p>
 
       {/* Always mounted: screen readers can miss a live region added along with its text. */}
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
@@ -203,7 +265,19 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
 
       {rows?.length === 0 && (
         <p className="mt-8 text-muted">
-          <FormattedMessage id={trashed ? "list.emptyTrash" : `list.empty.${type}`} />
+          {search ? (
+            <FormattedMessage id="list.nothingFound" values={{ search }} />
+          ) : (
+            <FormattedMessage
+              id={
+                view === "trash"
+                  ? "list.emptyTrash"
+                  : view === "all"
+                    ? `list.empty.${type}`
+                    : `list.empty.${view}`
+              }
+            />
+          )}
         </p>
       )}
 
@@ -212,7 +286,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
           <li
             key={entry.id}
             data-entry-row={entry.id}
-            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3"
+            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 [contain-intrinsic-size:auto_5rem] [content-visibility:auto]"
           >
             <div className="min-w-0">
               {trashed ? (

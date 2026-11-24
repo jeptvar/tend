@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useParams } from "wouter";
+import { AddressChoice } from "../components/AddressChoice.tsx";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import {
   primaryButtonClass,
@@ -13,6 +14,9 @@ import { MediaPicker } from "../components/MediaPicker.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
+import { bytesText } from "../lib/bytes.ts";
+import { onThisComputer } from "../lib/hosts.ts";
+import { siteLanguages } from "../lib/languages.ts";
 import { useMediaItems } from "../lib/media.ts";
 import { ME_KEY, type Me } from "../lib/queries.ts";
 import { settleScreenDraft, useScreenDraft } from "../lib/screen-drafts.ts";
@@ -152,6 +156,7 @@ function GeneralForm({
   const setForm = draft.set;
   const { changed } = draft;
   const zones = Intl.supportedValuesOf?.("timeZone") ?? [form.timezone];
+  const languages = siteLanguages(intl.locale, form.locale);
   return (
     <form
       className="grid gap-6"
@@ -176,6 +181,25 @@ function GeneralForm({
         error={fieldError(error, "tagline")}
         onChange={(event) => setForm({ ...form, tagline: event.target.value })}
       />
+      <label className="grid gap-2">
+        <span className="font-medium">
+          <FormattedMessage id="settings.language" />
+        </span>
+        <span className="text-sm text-muted">
+          <FormattedMessage id="settings.languageHint" />
+        </span>
+        <select
+          value={form.locale}
+          onChange={(event) => setForm({ ...form, locale: event.target.value })}
+          className={inputClass}
+        >
+          {languages.map(({ tag, name }) => (
+            <option key={tag} value={tag}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="grid gap-2">
         <span className="font-medium">
           <FormattedMessage id="settings.timezone" />
@@ -254,6 +278,23 @@ function VisibilityForm({
   );
 }
 
+function AddressSection({ me }: { me: Me }) {
+  const id = useId();
+  return (
+    <section aria-labelledby={id} className="grid gap-3">
+      <h2 id={id} className="text-xl font-semibold">
+        <FormattedMessage id="address.heading" />
+      </h2>
+      <AddressChoice me={me} />
+      <div>
+        <Link href={onThisComputer() ? "/online" : "/domain"} className={textLinkClass}>
+          <FormattedMessage id={onThisComputer() ? "steps.online" : "steps.domain"} />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 function GeneralSection({ me }: { me: Me }) {
   const general = useSetting<General>("general");
   const visibility = useSetting<Visibility>("visibility");
@@ -269,6 +310,7 @@ function GeneralSection({ me }: { me: Me }) {
       ) : (
         <Waiting query={general.query} />
       )}
+      <AddressSection me={me} />
       {visibility.query.data ? (
         <VisibilityForm
           value={visibility.query.data.value}
@@ -787,24 +829,6 @@ function AdvancedSection() {
       error={code.save.error}
     />
   );
-}
-
-const BYTE_UNITS = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"] as const;
-
-/** A size the way phones and computers show it, in the site's language: 2.4 GB. */
-function bytesText(intl: ReturnType<typeof useIntl>, bytes: number): string {
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1000 && unit < BYTE_UNITS.length - 1) {
-    value /= 1000;
-    unit++;
-  }
-  return intl.formatNumber(value, {
-    style: "unit",
-    unit: BYTE_UNITS[unit],
-    unitDisplay: "short",
-    maximumFractionDigits: unit > 0 && value < 10 ? 1 : 0,
-  });
 }
 
 /** Space used before the disk counts as running low, then as nearly full (PLAN.md §13). */

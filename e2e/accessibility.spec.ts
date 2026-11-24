@@ -185,6 +185,10 @@ async function adminScreens(page: Page, site: Site): Promise<[string, string][]>
     ["settings: backups", "/admin/settings/backups"],
     ["people", "/admin/people"],
     ["account", "/admin/account"],
+    ["help", "/admin/help"],
+    ["put your site online", "/admin/online"],
+    ["connect your domain", "/admin/domain"],
+    ["an address that isn't anything", "/admin/nothing-here"],
   ];
 }
 
@@ -256,6 +260,48 @@ for (const colorScheme of ["light", "dark"] as const) {
         await page.waitForLoadState("networkidle");
         await expectNoViolations(page, name);
       }
+    });
+
+    test("Overview, Help and the menus have no accessibility violations, whatever's open", async ({
+      page,
+      signedIn,
+    }) => {
+      await createEntry(page, signedIn, { title: "Draft" });
+      const post = await createEntry(page, signedIn, { title: "Opening day", publish: true });
+      const { rev } = await (
+        await page.request.get(`${signedIn.base}/api/admin/entries/${post.id}`)
+      ).json();
+      await page.request.patch(`${signedIn.base}/api/admin/entries/${post.id}`, {
+        headers: { "If-Match": String(rev) },
+        data: { title: "Opening week" },
+      });
+      await page.goto(`${signedIn.base}/admin/`);
+      await expect(page.getByRole("region", { name: "Recent activity" })).toBeVisible();
+      await expectNoViolations(page, "overview, with something in every part");
+      await page.getByRole("button", { name: "Hide names" }).click();
+      await expectNoViolations(page, "the narrow menu");
+
+      await page.goto(`${signedIn.base}/admin/help`);
+      await expect(page.getByRole("heading", { name: "Help", level: 1 })).toBeVisible();
+      for (const summary of await page.locator("summary").all()) await summary.click();
+      await expect(page.getByText(/gets security fixes until/)).toBeVisible();
+      await expectNoViolations(page, "help, with everything open");
+
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.goto(`${signedIn.base}/admin/`);
+      await expect(page.getByRole("region", { name: "Recent activity" })).toBeVisible();
+      await expectNoViolations(page, "overview on a phone");
+      await page.getByRole("button", { name: "Menu", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Menu" })).toBeVisible();
+      await expectNoViolations(page, "the menu on a phone");
+
+      // Where the connection isn't private, and the address isn't known.
+      const base = signedIn.base.replace("//localhost:", "//rise.localhost:");
+      await page.goto(`${base}/admin/login`);
+      await expect(
+        page.getByRole("region", { name: "This connection isn't private" }),
+      ).toBeVisible();
+      await expectNoViolations(page, "sign in, over plain http");
     });
 
     test("account and people have no accessibility violations, whatever's open", async ({
@@ -403,7 +449,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Move to Trash" }).click();
       await expect(page.getByText("Moved to the Trash")).toBeVisible();
       await expectNoViolations(page, "a toast");
-      await page.getByRole("button", { name: "Trash", exact: true }).click();
+      await page.getByRole("button", { name: /^Trash/ }).click();
       await expect(page.getByRole("button", { name: "Delete forever" })).toBeVisible();
       await expectNoViolations(page, "the Trash");
       await page.getByRole("button", { name: "Delete forever" }).click();
@@ -536,6 +582,12 @@ test.describe("at phone widths", () => {
       "/admin/settings/general",
       "/admin/settings/business",
       "/admin/settings/search",
+      "/admin/settings/advanced",
+      "/admin/settings/backups",
+      "/admin/people",
+      "/admin/account",
+      "/admin/help",
+      "/admin/online",
       "/",
       "/blog",
       "/contact",
@@ -587,6 +639,13 @@ test.describe("at phone widths", () => {
       "/admin/settings/business",
       "/admin/settings/search",
       "/admin/settings/advanced",
+      "/admin/settings/backups",
+      "/admin/pages",
+      "/admin/people",
+      "/admin/account",
+      "/admin/help",
+      "/admin/online",
+      "/admin/domain",
     ]) {
       await page.goto(`${signedIn.base}${path}`);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

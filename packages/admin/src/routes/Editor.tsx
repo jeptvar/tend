@@ -49,7 +49,6 @@ import {
   type EntryType,
   entriesKey,
   entryKey,
-  entryListKey,
   type LinkTarget,
   ME_KEY,
   type Me,
@@ -455,7 +454,7 @@ function EditorScreen({
     setCurrent(next);
     setTrouble(null);
     setProblem(null);
-    void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
+    void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
     const latest = draftNow();
     if (sameDraft(latest, sent)) {
       s.heldUntouched = null;
@@ -976,7 +975,7 @@ function EditorScreen({
         method: "POST",
       });
       session.current.done = true;
-      void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
+      void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
       navigate(`${listPath}/${copy.id}`);
       showToast({ message: intl.formatMessage({ id: "editor.duplicated" }) });
     });
@@ -1002,12 +1001,12 @@ function EditorScreen({
       releaseDraft(entry.id, s.editSession);
       queryClient.removeQueries({ queryKey: entryKey(entry.id) });
       // Off the list straight away, rather than sitting beside "Moved to the Trash".
-      queryClient.setQueryData<InfiniteData<EntryPage>>(entryListKey(type, false), (data) =>
-        withoutEntry(data, entry.id),
+      queryClient.setQueriesData<InfiniteData<EntryPage>>(
+        { queryKey: entriesKey(type), predicate: ({ queryKey }) => !queryKey.includes("trash") },
+        (data) => withoutEntry(data, entry.id),
       );
       const refreshLists = () => {
-        void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
-        void queryClient.invalidateQueries({ queryKey: entriesKey(type, true) });
+        void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
       };
       refreshLists();
       navigate(listPath);
@@ -1055,7 +1054,7 @@ function EditorScreen({
         setCurrent(next);
         if (!s.heldUntouched) scheduleSave();
       }
-      void queryClient.invalidateQueries({ queryKey: entriesKey(type, true) });
+      void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
       statusRef.current?.focus();
     });
   }
@@ -1337,7 +1336,7 @@ function EditorScreen({
         });
         trackSave(
           entry.id,
-          save.then(() => queryClient.invalidateQueries({ queryKey: entriesKey(type, false) })),
+          save.then(() => queryClient.invalidateQueries({ queryKey: entriesKey(type) })),
         );
         save.then(
           () => {
@@ -1366,7 +1365,7 @@ function EditorScreen({
                     body: { editSession: s.editSession, editSeq: s.seq },
                   })
                     .then(() => {
-                      void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
+                      void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
                       showToast({ message: words.formatMessage({ id: "editor.publishedNow" }) });
                     })
                     .catch((error) => {
@@ -1440,6 +1439,7 @@ function EditorScreen({
       screen={type === "post" ? "editor.post" : "editor.page"}
       focusHeading={entry.title !== ""}
       currentEntryId={entry.id}
+      writing
     >
       <div className="mt-2">
         <Link href={listPath} className={textLinkClass}>

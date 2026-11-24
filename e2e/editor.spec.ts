@@ -1523,7 +1523,7 @@ test.describe("taking things down", () => {
     const post = await createEntry(page, signedIn, { title: "In the bin" });
     await page.request.post(`${signedIn.base}/api/admin/entries/${post.id}/trash`, { data: {} });
     await page.goto(`${signedIn.base}/admin/posts`);
-    await page.getByRole("button", { name: "Trash", exact: true }).click();
+    await page.getByRole("button", { name: /^Trash/ }).click();
     await expect(page.getByText(/Deleted for good on/)).toBeVisible();
     await page.getByRole("button", { name: "Restore" }).click();
     await expect(page.getByText("It's back as a draft.", { exact: true })).toBeVisible();
@@ -1533,7 +1533,7 @@ test.describe("taking things down", () => {
     const post = await createEntry(page, signedIn, { title: "Really gone" });
     await page.request.post(`${signedIn.base}/api/admin/entries/${post.id}/trash`, { data: {} });
     await page.goto(`${signedIn.base}/admin/posts`);
-    await page.getByRole("button", { name: "Trash", exact: true }).click();
+    await page.getByRole("button", { name: /^Trash/ }).click();
     await page.getByRole("button", { name: "Delete forever" }).click();
 
     const dialog = page.getByRole("dialog", { name: 'Delete "Really gone" forever?' });

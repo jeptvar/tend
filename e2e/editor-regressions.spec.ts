@@ -1266,7 +1266,7 @@ test.describe("keyboard focus", () => {
       await page.request.post(`${signedIn.base}/api/admin/entries/${post.id}/trash`, { data: {} });
     }
     await page.goto(`${signedIn.base}/admin/posts`);
-    await page.getByRole("button", { name: "Trash", exact: true }).click();
+    await page.getByRole("button", { name: /^Trash/ }).click();
     await page.getByRole("button", { name: "Restore" }).first().focus();
     await page.keyboard.press("Enter");
     // On to the row that took its place, so a long list isn't started again from the top.
