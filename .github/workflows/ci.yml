@@ -64,6 +64,26 @@ jobs:
       - run: pnpm build
       - run: pnpm shrinkwrap
       - run: pnpm smoke:create
+      # The release's last check before publishing, so that it's known to work by then.
+      - name: Check npm create tend with a release that's an hour old
+        shell: bash
+        run: |
+          mkdir packed
+          npm pack ./packages/tendcms ./packages/create-tend --pack-destination packed
+          node scripts/smoke-registry.mjs --packages packed
+      # The installer has to run on a Node.js that's too old for Tend, to say so.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 18
+      - name: Check an old Node.js is told what to install
+        shell: bash
+        run: |
+          if node packages/create-tend/dist/index.mjs too-old > old.log 2>&1; then
+            echo "create-tend went on with Node.js $(node --version)."
+            exit 1
+          fi
+          grep --quiet 'Tend needs Node.js 24 or newer' old.log
+          test ! -e too-old
 
   # One job per browser, side by side: the tests take most of a quarter of an hour in each.
   browser:

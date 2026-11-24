@@ -3,10 +3,14 @@
 // with its shrinkwrap and no install scripts, and the site boots to its setup screen.
 // Run after pnpm build, and after scripts/shrinkwrap.mjs as the release does. It needs the
 // npm registry. Zero dependencies, so it runs the same on every OS.
-import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+//
+// After a release, `node scripts/smoke-create.mjs --published 0.1.0` does the same with what's
+// on npm by then, and needs no build.
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
+import { check, checkMade, checkStarts, installedPackages, npm, pack } from "./installing.mjs";
 
 const root = join(import.meta.dirname, "..");
 const work = mkdtempSync(join(tmpdir(), "tend-create-"));
@@ -15,107 +19,75 @@ const work = mkdtempSync(join(tmpdir(), "tend-create-"));
 const TARBALL_BYTES = 5 * 1024 * 1024;
 const MOST_PACKAGES = 15;
 const CREATE_SECONDS = process.platform === "win32" ? 180 : 60;
+/** A version just published isn't everywhere on npm at once. */
+const PUBLISH_TRIES = 10;
+const PUBLISH_WAIT_MS = 30_000;
 
-function check(condition, message) {
-  if (!condition) throw new Error(message);
-  console.log(`ok - ${message}`);
-}
+const { published } = parseArgs({ options: { published: { type: "string" } } }).values;
 
-/** Runs npm and returns what it printed. Windows can only run npm.cmd through a shell. */
-function npm(args, options = {}) {
-  const windows = process.platform === "win32";
-  const quoted = args.map((arg) => (/[\s"]/.test(arg) ? `"${arg.replaceAll('"', '\\"')}"` : arg));
-  const result = windows
-    ? spawnSync(`npm ${quoted.join(" ")}`, { ...options, encoding: "utf8", shell: true })
-    : spawnSync("npm", args, { ...options, encoding: "utf8" });
-  if (result.status !== 0) {
-    throw new Error(`npm ${args.join(" ")} failed:\n${result.stdout ?? ""}${result.stderr ?? ""}`);
-  }
-  return result.stdout;
-}
-
-/** Packs a workspace package as npm would publish it, and returns the tarball's path. */
-function pack(name) {
-  const [packed] = JSON.parse(
-    npm(["pack", "--json", "--pack-destination", work], { cwd: join(root, "packages", name) }),
-  );
-  return join(work, packed.filename);
-}
-
-let tend;
-try {
-  for (const name of ["tendcms", "create-tend"]) {
-    if (!existsSync(join(root, "packages", name, "dist"))) {
-      throw new Error(`packages/${name}/dist doesn't exist. Run pnpm build first.`);
+async function untilPublished(version) {
+  for (let tries = 1; ; tries++) {
+    try {
+      for (const name of ["tendcms", "create-tend"]) {
+        npm(["view", `${name}@${version}`, "version", "--prefer-online"], { cwd: work });
+      }
+      return;
+    } catch (error) {
+      if (tries === PUBLISH_TRIES) throw error;
+      await new Promise((resolve) => setTimeout(resolve, PUBLISH_WAIT_MS));
     }
   }
-  const tendcms = pack("tendcms");
-  const createTend = pack("create-tend");
-  check(true, "tendcms and create-tend pack");
-  const size = statSync(tendcms).size;
-  check(
-    size <= TARBALL_BYTES,
-    `tendcms is at most 5 MB to download (${(size / 1e6).toFixed(2)} MB)`,
-  );
+}
 
-  const creating = Date.now();
-  // As `npm create tend@latest my-site` does, from the packed create-tend. It's told to
-  // install the packed tendcms in place of the published one.
-  npm(["exec", "--yes", `--package=${createTend}`, "--", "create-tend", "my-site", "--no-start"], {
-    cwd: work,
-    env: { ...process.env, CREATE_TEND_TENDCMS: `file:${tendcms.replaceAll("\\", "/")}` },
-    stdio: ["ignore", "inherit", "inherit"],
-  });
-  const site = join(work, "my-site");
-  for (const file of [".gitignore", ".npmrc", "README.md", "package.json", "themes/README.md"]) {
-    check(existsSync(join(site, file)), `create-tend wrote ${file}`);
+try {
+  let creating;
+  if (published) {
+    await untilPublished(published);
+    creating = Date.now();
+    npm(["create", "--yes", `tend@${published}`, "my-site", "--", "--no-start"], {
+      cwd: work,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+  } else {
+    const tendcms = pack(root, "tendcms", work);
+    const createTend = pack(root, "create-tend", work);
+    check(true, "tendcms and create-tend pack");
+    const size = statSync(tendcms).size;
+    check(
+      size <= TARBALL_BYTES,
+      `tendcms is at most 5 MB to download (${(size / 1e6).toFixed(2)} MB)`,
+    );
+    creating = Date.now();
+    // As `npm create tend@latest my-site` does, from the packed create-tend. It's told to
+    // install the packed tendcms in place of the published one.
+    npm(
+      ["exec", "--yes", `--package=${createTend}`, "--", "create-tend", "my-site", "--no-start"],
+      {
+        cwd: work,
+        env: { ...process.env, CREATE_TEND_TENDCMS: `file:${tendcms.replaceAll("\\", "/")}` },
+        stdio: ["ignore", "inherit", "inherit"],
+      },
+    );
   }
-  const installed = join(site, "node_modules", "tendcms");
-  check(
-    existsSync(join(installed, "dist", "cli.mjs")),
-    "npm installed tendcms, with no install scripts",
-  );
-  if (existsSync(join(root, "packages", "tendcms", "npm-shrinkwrap.json"))) {
+  const seconds = Math.round((Date.now() - creating) / 1000);
+  const site = join(work, "my-site");
+  const installed = checkMade(site);
+  if (published || existsSync(join(root, "packages", "tendcms", "npm-shrinkwrap.json"))) {
     check(existsSync(join(installed, "npm-shrinkwrap.json")), "the shrinkwrap came with it");
   }
-  const lock = JSON.parse(readFileSync(join(site, "package-lock.json"), "utf8"));
-  const count = Object.keys(lock.packages).filter((path) => path.includes("node_modules/")).length;
-  const seconds = Math.round((Date.now() - creating) / 1000);
+  const packages = installedPackages(site);
+  const count = Object.keys(packages).length;
   // Three it chose, what those need, and their parts for this kind of computer.
   check(count <= MOST_PACKAGES, `it installed at most ${MOST_PACKAGES} packages (${count})`);
   check(seconds <= CREATE_SECONDS, `it took at most ${CREATE_SECONDS} s (${seconds} s)`);
-
-  // npm start, then the setup screen.
-  tend = spawn(process.execPath, [join(installed, "dist", "cli.mjs"), "start"], {
-    cwd: site,
-    env: { ...process.env, PORT: "0", TEND_ADMIN_DEV_URL: "" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  tend.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  tend.stderr.on("data", (chunk) => {
-    output += chunk;
-  });
-  let link;
-  for (let waited = 0; waited < 600 && !link; waited++) {
-    link = output.match(/is running: (http:\/\/\S+)/)?.[1];
-    if (tend.exitCode !== null) break;
-    if (!link) await new Promise((resolve) => setTimeout(resolve, 50));
+  if (published) {
+    const { version } = packages["node_modules/tendcms"];
+    check(version === published, `npm create tend@${published} installed that version`);
   }
-  check(link !== undefined, `the site starts${link ? "" : `. It printed:\n${output}`}`);
-  const setup = await fetch(new URL("/admin/setup", link));
-  check(setup.status === 200, "/admin/setup answers");
-  check(existsSync(join(site, "data", "tend.db")), "the site's data is in my-site/data");
+  await checkStarts(site, installed);
 } catch (error) {
   console.error(`not ok - ${error.message}`);
   process.exitCode = 1;
 } finally {
-  if (tend && tend.exitCode === null) {
-    const exited = new Promise((resolve) => tend.once("exit", resolve));
-    tend.kill();
-    await exited;
-  }
   rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

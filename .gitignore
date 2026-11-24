@@ -15,3 +15,6 @@ playwright-report/
 !.env.example
 # Made by scripts/shrinkwrap.mjs before packing, never committed.
 packages/tendcms/npm-shrinkwrap.json
+# Packages as they'd be published, for the release's checks and the image.
+/pack/
+/packed/
