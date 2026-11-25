@@ -799,10 +799,11 @@ export function BodyEditor({
         "aria-labelledby": labelledBy,
         class: "tend-prose outline-none",
       },
-      // The bars at the top, or a phone's at the bottom, shouldn't cover the line being typed. At
-      // least as much as page.css asks for (scroll-padding), or Safari moves the page again.
-      scrollMargin: { top: 160, bottom: 96, left: 0, right: 0 },
-      scrollThreshold: { top: 160, bottom: 96, left: 0, right: 0 },
+      // The bars at the top, or a phone's at the bottom, shouldn't cover the line being typed.
+      // More than page.css asks for (scroll-padding), or Safari moves the page again: to it, a
+      // cursor reaches up to the line above, so the space between two lines counts as well.
+      scrollMargin: { top: 176, bottom: 96, left: 0, right: 0 },
+      scrollThreshold: { top: 176, bottom: 96, left: 0, right: 0 },
       transformPastedHTML: (html) => {
         const tidied = tidyPasted(html);
         if (tidied.notices.length > 0) notifyMessages(tidied.notices);

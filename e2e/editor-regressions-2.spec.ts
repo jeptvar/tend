@@ -682,7 +682,8 @@ test.describe("the editor itself", () => {
     await patch(page, signedIn, created.id, created.rev, {
       title: "T",
       doc: doc(
-        ...Array.from({ length: 30 }, (_, index) => paragraph(`Paragraph ${index} `.repeat(6))),
+        // More than one line each, in any font.
+        ...Array.from({ length: 30 }, (_, index) => paragraph(`Paragraph ${index} `.repeat(14))),
       ),
     });
     await openPost(page, signedIn, created.id);
@@ -707,13 +708,21 @@ test.describe("the editor itself", () => {
     await page.keyboard.type("more");
     await expect(body(page).locator("p").last()).toContainText("more");
 
-    // And right under the bars, where pasting brings back a cursor that was out of sight.
-    await body(page).locator("p").nth(9).click();
-    await expect.poll(paragraphWithCursor).toBe(9);
-    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
-    await dismissed();
-    await page.keyboard.type("again");
-    await expect(body(page).locator("p").nth(9)).toContainText("again");
+    // And right under the bars, where pasting brings back a cursor that was out of sight: on the
+    // first line of a paragraph, and on its last, where WebKit's cursor reaches up to the one above.
+    for (const [index, line] of [
+      [9, "first"],
+      [10, "last"],
+    ] as const) {
+      const target = body(page).locator("p").nth(index);
+      const height = (await target.boundingBox())?.height ?? 0;
+      await target.click({ position: { x: 40, y: line === "first" ? 10 : height - 10 } });
+      await expect.poll(paragraphWithCursor).toBe(index);
+      await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+      await dismissed();
+      await page.keyboard.type("again");
+      await expect(target).toContainText("again");
+    }
   });
 
   test("closing a button's dialog hands focus back to its Edit button, in place", async ({
