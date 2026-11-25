@@ -382,10 +382,20 @@ test.describe("its fonts", () => {
     }
   });
 
-  test("hardly move anything when they arrive late", async ({ page, signedIn, browserName }) => {
+  test("hardly move anything when they arrive late", async ({
+    page,
+    signedIn,
+    browserName,
+    playwright,
+  }) => {
     test.skip(browserName !== "chromium", "only Chromium measures this");
+    test.setTimeout(90_000);
+    // On Linux, Chromium without a window rounds each letter to whole pixels, which few people's
+    // devices do, so a font and the one standing in for it would never quite fit there.
+    const browser = await playwright.chromium.launch({ args: ["--font-render-hinting=none"] });
+    const visitor = await browser.newPage();
     const { id } = await upload(page, signedIn, await photo(page, 1600, 1000), "loaves.jpg");
-    const url = await publishPage(page, signedIn, "Fresh bread, every day of the week", [
+    const home = await publishPage(page, signedIn, "Fresh bread, every day of the week", [
       section("intro", [picture(id), heading("Bread that takes its time"), button("Find us")], {
         preset: "2",
         tone: "accent",
@@ -396,7 +406,26 @@ test.describe("its fonts", () => {
         paragraph(text("We shape every bun and loaf ourselves, starting at two in the morning.")),
       ]),
     ]);
-    await page.addInitScript(() => {
+    const story = await publishPage(page, signedIn, "Our story so far, and what comes after it", [
+      paragraph(
+        text(
+          "Our bakery opened in the spring of 1998 with one oven, three tables and a borrowed mixer. Today there are eleven of us, and the starter is older than the youngest.",
+        ),
+      ),
+      heading("How it began, one wet Tuesday in March"),
+      paragraph(
+        text(
+          "Nous cuisons chaque matin, sauf le lundi, et tout est fait à la main. Réservez votre table pour le dîner du samedi soir.",
+        ),
+      ),
+      heading("What our neighbours say about the cinnamon knots"),
+      paragraph(
+        text(
+          "Come early on Saturdays: the knots are gone by nine, and the rye by ten. We take cards, cash and the occasional jar of good jam.",
+        ),
+      ),
+    ]);
+    await visitor.addInitScript(() => {
       const found = window as unknown as { moved: number };
       found.moved = 0;
       new PerformanceObserver((list) => {
@@ -405,25 +434,52 @@ test.describe("its fonts", () => {
         }
       }).observe({ type: "layout-shift", buffered: true });
     });
-    await page.route("**/*.woff2", async (route) => {
+    await visitor.route("**/*.woff2", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 700));
       await route.continue();
     });
-    for (const fonts of ["classic", "friendly"]) {
+    for (const [fonts, family] of [
+      ["classic", "Fraunces"],
+      ["friendly", "Nunito"],
+    ] as const) {
       await setDesign(page, signedIn, { fonts });
-      for (const size of [
-        { width: 390, height: 844 },
-        { width: 1280, height: 800 },
-      ]) {
-        await page.setViewportSize(size);
-        await page.goto(`${signedIn.base}${url}`);
-        await page.waitForLoadState("networkidle");
-        await page.evaluate(() => document.fonts.ready);
-        await page.waitForTimeout(300);
-        const moved = await page.evaluate(() => (window as unknown as { moved: number }).moved);
-        // The plan's limit, for the whole page (PLAN.md §11).
-        expect(moved, `${fonts} at ${size.width} px`).toBeLessThanOrEqual(0.05);
+      await visitor.goto(`${signedIn.base}${home}`);
+      // What takes its place: regular, and bold. Linux has nothing like Georgia, for Classic.
+      const standIns = await visitor.evaluate(async (name) => {
+        const faces = await Promise.all(
+          [400, 800].map((weight) =>
+            document.fonts.load(`${weight} 20px "${name}"`).catch(() => []),
+          ),
+        );
+        return faces.every((found) => found.length > 0);
+      }, `${family} until it's here`);
+      if (fonts === "classic" && !standIns && process.platform === "linux") continue;
+      expect(standIns, `${fonts}: this device has a font to stand in`).toBe(true);
+      for (const url of [home, story]) {
+        for (const size of [
+          { width: 360, height: 780 },
+          { width: 412, height: 844 },
+          { width: 768, height: 1024 },
+          { width: 1280, height: 800 },
+        ]) {
+          await visitor.setViewportSize(size);
+          await visitor.goto(`${signedIn.base}${url}`);
+          await visitor.waitForLoadState("networkidle");
+          await visitor.evaluate(() => document.fonts.ready);
+          await visitor.waitForTimeout(200);
+          const { moved, arrived } = await visitor.evaluate(
+            (name) => ({
+              moved: (window as unknown as { moved: number }).moved,
+              arrived: document.fonts.check(`20px ${name}`),
+            }),
+            family,
+          );
+          expect(arrived, `${fonts} at ${size.width} px, ${url}`).toBe(true);
+          // The plan's limit, for the whole page (PLAN.md §11).
+          expect(moved, `${fonts} at ${size.width} px, ${url}`).toBeLessThanOrEqual(0.05);
+        }
       }
     }
+    await browser.close();
   });
 });

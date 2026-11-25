@@ -381,6 +381,7 @@ describe("its fonts", () => {
       // A device's own font stands in until they're here, so the page never waits for them.
       expect(page.match(/font-display: swap/g)).toHaveLength(addresses.length);
       expect(page).toContain(`font-family: "${family} until it's here"`);
+      expect(page).toContain(`font-family: "${family} until it's here, on Android"`);
     }
     // Nothing Tend comes with is left over.
     expect([...used].sort()).toEqual(
