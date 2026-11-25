@@ -359,30 +359,22 @@ test.describe("design (J3)", () => {
 
     // The site is beside the form, with what isn't saved yet: its styles load there too.
     const beside = page.getByRole("region", { name: "Preview" });
-    const chosen = () =>
-      beside
-        .frameLocator("iframe")
-        .last()
-        .locator("html")
-        .evaluate((element) => [
-          getComputedStyle(element).getPropertyValue("--tend-accent").trim(),
-          element.getAttribute("data-fonts"),
-        ]);
-    await expect.poll(chosen).toEqual(["#806600", "classic"]);
+    const site = beside.frameLocator("iframe").last().locator("html");
+    const expectChosen = async () => {
+      await expect(site).toHaveAttribute("data-fonts", "classic");
+      await expect(site).toHaveCSS("--tend-accent", "#806600");
+    };
+    await expectChosen();
     // Its fonts as well, though the frame counts as another site's.
     const fonts = () =>
-      beside
-        .frameLocator("iframe")
-        .last()
-        .locator("html")
-        .evaluate(() =>
-          [...document.fonts].some(
-            ({ family, status }) => /^"?Fraunces"?$/.test(family) && status === "loaded",
-          ),
-        );
+      site.evaluate(() =>
+        [...document.fonts].some(
+          ({ family, status }) => /^"?Fraunces"?$/.test(family) && status === "loaded",
+        ),
+      );
     await expect.poll(fonts).toBe(true);
     await beside.getByRole("button", { name: "Phone" }).click();
-    await expect.poll(chosen).toEqual(["#806600", "classic"]);
+    await expectChosen();
 
     // Where there's no room beside it, it's behind a button.
     await page.setViewportSize({ width: 1000, height: 800 });

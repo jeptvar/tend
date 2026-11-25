@@ -13,6 +13,7 @@ import { BrowserFrame } from "../components/BrowserFrame.tsx";
 import { EntryPicture } from "../components/EntryRow.tsx";
 import { Icon } from "../components/icons.tsx";
 import { OutLink } from "../components/OutLink.tsx";
+import { PageFrame } from "../components/PageFrame.tsx";
 import { PicturesNotice } from "../components/PicturesNotice.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { Waiting } from "../components/Waiting.tsx";
@@ -239,10 +240,9 @@ function SitePicture({ name }: { name: string }) {
       <BrowserFrame name={name}>
         <div className="relative h-80 overflow-hidden">
           {page.data && (
-            <iframe
+            <PageFrame
+              html={page.data.html}
               title={intl.formatMessage({ id: "overview.picture" })}
-              srcDoc={page.data.html}
-              sandbox=""
               tabIndex={-1}
               inert
               className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50"

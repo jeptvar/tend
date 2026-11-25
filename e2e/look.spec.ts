@@ -323,7 +323,10 @@ test.describe("the rest of the admin", () => {
     }
   });
 
-  test("a Private site's own pictures are in what shows the site", async ({ page, signedIn }) => {
+  test("a Private site's own pictures are in what shows the site, and sharp", async ({
+    page,
+    signedIn,
+  }) => {
     await page.request.put(`${signedIn.base}/api/admin/settings/visibility`, {
       data: { mode: "private" },
     });
@@ -335,8 +338,21 @@ test.describe("the rest of the admin", () => {
       await page.goto(`${signedIn.base}${path}`);
       if (path.includes("pages")) await page.getByRole("button", { name: "Preview" }).click();
       const picture = page.frameLocator("iframe").last().locator("img").first();
-      const width = () => picture.evaluate((image) => (image as HTMLImageElement).naturalWidth);
-      await expect.poll(width, { message: path }).toBeGreaterThan(0);
+      // Each size is only made now, and a page that's changed takes the place of the one before.
+      await expect(async () => {
+        const { natural, file, shown } = await picture.evaluate((element) => {
+          const image = element as HTMLImageElement;
+          return {
+            natural: image.naturalWidth,
+            file: Number(image.currentSrc.match(/(\d+)\.webp/)?.[1]),
+            shown: image.getBoundingClientRect().width,
+          };
+        });
+        expect(natural, path).toBeGreaterThan(0);
+        expect(shown, path).toBeGreaterThan(900);
+        // Safari picks one as it starts on the page, so the frame has to have its size by then.
+        expect(file, path).toBeGreaterThanOrEqual(shown);
+      }).toPass({ timeout: 15_000 });
     }
   });
 

@@ -5,6 +5,7 @@ import { DeviceChoice } from "../editor/PreviewDialog.tsx";
 import { api } from "../lib/api.ts";
 import type { Design } from "../lib/site.ts";
 import { BrowserFrame } from "./BrowserFrame.tsx";
+import { PageFrame } from "./PageFrame.tsx";
 import { Problem } from "./Problem.tsx";
 
 /** How long a change has to rest, so a colour being chosen isn't drawn at every step. */
@@ -39,8 +40,7 @@ function useRoom() {
 
 /**
  * The page, as a picture that can be scrolled. When it changes, the new one takes the old one's
- * place once it's ready, so it never goes blank. Like a preview, it's allowed nothing: no
- * scripts, no forms, and no way to the admin it's in.
+ * place once it's ready, so it never goes blank.
  */
 function Page({
   html,
@@ -64,12 +64,11 @@ function Page({
     setPages((shown) => [...shown.slice(0, 1), page]);
   }, [html]);
   return pages.map(({ id, html: own }, index) => (
-    <iframe
+    <PageFrame
       key={id}
-      sandbox=""
-      srcDoc={own}
+      html={own}
       title={title}
-      onLoad={() => setPages((shown) => shown.filter((other) => other.id >= id))}
+      onReady={() => setPages((shown) => shown.filter((other) => other.id >= id))}
       style={{ width, height, transform: `scale(${scale})` }}
       className={`absolute top-0 left-0 origin-top-left bg-white ${index === 0 ? "" : "invisible"}`}
     />

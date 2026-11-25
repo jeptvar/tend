@@ -3,12 +3,10 @@ import { FormattedMessage, useIntl } from "react-intl";
 import { iconButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
 import { Icon } from "../components/icons.tsx";
+import { PageFrame } from "../components/PageFrame.tsx";
 import { Tabs } from "../components/Tabs.tsx";
 
-/**
- * Sandboxed with no permissions at all: no scripts, no forms, no opening anything, and no
- * access to the admin it's sitting in. What people write can't reach out of this frame.
- */
+/** What people write, as it'll be. It can't reach out of its frame. */
 export function PreviewFrame({
   html,
   title,
@@ -19,9 +17,8 @@ export function PreviewFrame({
   device: "desktop" | "phone";
 }) {
   return (
-    <iframe
-      sandbox=""
-      srcDoc={html}
+    <PageFrame
+      html={html}
       title={title}
       className={`h-full w-full border border-line bg-white shadow-raised ${
         device === "phone" ? "max-w-[390px] rounded-4xl" : "rounded-2xl"
