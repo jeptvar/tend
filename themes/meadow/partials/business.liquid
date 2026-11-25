@@ -8,29 +8,32 @@
 <div class="t-business">
   {% if business.address_lines.size > 0 %}
   <div class="t-business-part">
+    {% render "icon", name: "pin" %}
     <h{{ level }}>{{ "address" | t }}</h{{ level }}>
     <p>{% for line in business.address_lines %}{{ line }}{% unless forloop.last %}<br>{% endunless %}{% endfor %}</p>
-    {% if business.map_url %}<p><a href="{{ business.map_url }}">{{ "directions" | t }}</a></p>{% endif %}
-  </div>
-  {% endif %}
-  {% if business.phone or business.email %}
-  <div class="t-business-part">
-    <h{{ level }}>{{ "contact" | t }}</h{{ level }}>
-    {% if business.phone %}<p><a class="t-button" href="{{ business.phone_href }}">{{ "call" | t: phone: business.phone }}</a></p>{% endif %}
-    {% if business.email %}<p><a href="{{ business.email_href }}">{{ business.email }}</a></p>{% endif %}
+    {% if business.map_url %}<p class="t-last"><a class="t-button t-button-quiet" href="{{ business.map_url }}">{{ "directions" | t }}</a></p>{% endif %}
   </div>
   {% endif %}
   {% if business.hours or business.hours_note %}
-  <div class="t-business-part">
+  <div class="t-business-part t-business-hours">
+    {% render "icon", name: "clock" %}
     <h{{ level }}>{{ "hours" | t }}</h{{ level }}>
     {% if business.hours %}
     <table class="t-hours">
       {% for day in business.hours %}
-      <tr><th scope="row">{{ day.day_name }}</th><td>{% if day.closed %}{{ "closed" | t }}{% else %}<time datetime="{{ day.opens_24 }}">{{ day.opens }}</time>–<time datetime="{{ day.closes_24 }}">{{ day.closes }}</time>{% endif %}</td></tr>
+      <tr><th scope="row">{{ day.day_name }}</th><td{% if day.closed %} class="t-closed"{% endif %}>{% if day.closed %}{{ "closed" | t }}{% else %}<time datetime="{{ day.opens_24 }}">{{ day.opens }}</time>–<time datetime="{{ day.closes_24 }}">{{ day.closes }}</time>{% endif %}</td></tr>
       {% endfor %}
     </table>
     {% endif %}
-    {% if business.hours_note %}<p>{{ business.hours_note }}</p>{% endif %}
+    {% if business.hours_note %}<p class="t-hours-note">{{ business.hours_note }}</p>{% endif %}
+  </div>
+  {% endif %}
+  {% if business.phone or business.email %}
+  <div class="t-business-part">
+    {% if business.phone %}{% render "icon", name: "phone" %}{% else %}{% render "icon", name: "mail" %}{% endif %}
+    <h{{ level }}>{{ "contact" | t }}</h{{ level }}>
+    {% if business.email %}<p><a href="{{ business.email_href }}">{{ business.email }}</a></p>{% endif %}
+    {% if business.phone %}<p class="t-last"><a class="t-button" href="{{ business.phone_href }}">{{ "call" | t: phone: business.phone }}</a></p>{% endif %}
   </div>
   {% endif %}
 </div>

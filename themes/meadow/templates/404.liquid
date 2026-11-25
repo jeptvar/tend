@@ -1,8 +1,8 @@
 {% layout "layout" %}
 {% block content %}
-<div class="t-wrap">
+<div class="t-page-head">
   <h1>{{ "not_found" | t }}</h1>
-  <p>{{ "not_found_body" | t }}</p>
-  <p><a href="/">{{ "go_home" | t }}</a></p>
+  <p class="t-lead">{{ "not_found_body" | t }}</p>
+  <p class="t-button-row"><a class="t-button" href="/">{{ "go_home" | t }}</a></p>
 </div>
 {% endblock %}

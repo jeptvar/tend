@@ -8,5 +8,6 @@
       {%- endif -%}
     </a>
     {% menu "main" %}
+    {% if site.business.phone %}<a class="t-button t-button-quiet t-header-call" href="{{ site.business.phone_href }}">{% render "icon", name: "phone" %}<span>{{ site.business.phone }}</span></a>{% endif %}
   </div>
 </header>

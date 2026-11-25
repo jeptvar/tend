@@ -256,7 +256,7 @@ describe("business details", () => {
     expect(html).toContain('href="mailto:hello@rise.example"');
     expect(html).toContain("Get directions");
     expect(html).toContain("Monday");
-    expect(html).toMatch(/Sunday<\/th><td>Closed/);
+    expect(html).toMatch(/Sunday<\/th><td class="t-closed">Closed/);
     expect(html).toContain("Closed on holidays");
     expect(html).not.toContain("tend-business");
     expect(html).toContain('"@type":"LocalBusiness"');

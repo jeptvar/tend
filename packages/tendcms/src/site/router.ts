@@ -153,10 +153,11 @@ const ICON_FILE = /^icon-(\d{2,3})\.png$/;
 /** The size shared pictures are, when there's one that big: what sharing sites ask for. */
 const SHARE_WIDTH = 1600;
 /**
- * Meadow's dark backgrounds that links sit on, which an accent has to be readable on too: the
- * page itself, and Muted sections, which lay 6% of the light text colour over it.
+ * Meadow's dark backgrounds are made from the accent, so no two sites have quite the same. An
+ * accent that can be read on both of these can be read on every one made from it: the page,
+ * Muted sections, and the cards the business details are on (test/meadow.test.ts).
  */
-const DARK_BACKGROUNDS = ["#141a17", "#212724"];
+const DARK_BACKGROUNDS = ["#161312", "#241f1e"];
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 /** Networks named by Tend. Any other link is named after its site. */
 const SOCIAL_NAMES: Record<string, string> = {
@@ -202,8 +203,7 @@ function trimSlashes(path: string): string {
 
 /**
  * A changed accent's dark-mode version: readable wherever Meadow shows links in dark mode.
- * Readable on the page alone isn't enough, because links in a Muted section sit on a
- * lighter background.
+ * Readable on the page alone isn't enough, because links on a card sit on a lighter one.
  */
 export function darkAccent(accent: string): string {
   return readableOn(accent, DARK_BACKGROUNDS);

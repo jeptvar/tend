@@ -1,0 +1,9 @@
+{%- comment -%}
+  The chosen fonts, in the head. The one nearly every page needs is fetched straight away.
+{%- endcomment -%}
+{%- case design.fonts -%}
+{%- when "classic" -%}<link rel="preload" href="{{ 'fonts/fraunces-latin.woff2' | asset_url }}" as="font" type="font/woff2" crossorigin>
+{%- when "friendly" -%}<link rel="preload" href="{{ 'fonts/nunito-latin.woff2' | asset_url }}" as="font" type="font/woff2" crossorigin>
+{%- endcase -%}
+{%- capture css -%}{%- render "fonts" -%}{%- endcapture -%}
+{%- if css != blank -%}<style>{{ css | raw }}</style>{%- endif -%}

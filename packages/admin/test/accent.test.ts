@@ -4,8 +4,7 @@ import { describe, expect, test } from "vitest";
 import { contrast, hardToReadOn, readableOn } from "../src/lib/site.ts";
 
 // The Design screen checks a colour against the backgrounds the theme says it goes on
-// (contrastAgainst). For Meadow's accent that's every light one it puts links on, so the colour
-// it suggests is readable wherever a link is, not only on white.
+// (contrastAgainst), so the colour it suggests is readable wherever a link is, not only on white.
 
 const MEADOW = join(import.meta.dirname, "..", "..", "..", "themes", "meadow");
 
@@ -15,53 +14,15 @@ function saidBackgrounds(): string[] {
   return settings.find((setting: { id: string }) => setting.id === "accent").contrastAgainst;
 }
 
-/** A colour as six hex digits: #fff is #ffffff. */
-function sixDigits(hex: string | undefined): string {
-  expect(hex).toMatch(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  const digits = (hex as string).slice(1).toLowerCase();
-  return `#${digits.length === 3 ? [...digits].map((digit) => digit + digit).join("") : digits}`;
-}
-
-/** Two colours mixed the way the browser does, from 0 (all of b) to 1 (all of a). */
-function mix(a: string, b: string, share: number): string {
-  const channels = (hex: string) =>
-    [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
-  const [first, second] = [channels(a), channels(b)];
-  return `#${first
-    .map((value, index) =>
-      Math.round(value * share + (second[index] as number) * (1 - share))
-        .toString(16)
-        .padStart(2, "0"),
-    )
-    .join("")}`;
-}
-
-/**
- * The light backgrounds links sit on, read from Meadow's own stylesheet: the page, and every
- * tone that lays a little of the text colour over it.
- */
-function lightBackgrounds(): string[] {
-  const css = readFileSync(join(MEADOW, "assets", "theme.css"), "utf8");
-  // The first :root, before the dark-mode one, which is indented inside its @media.
-  const light = css.match(/^:root\s*\{([^}]*)\}/m)?.[1] ?? "";
-  const paper = sixDigits(light.match(/--tend-paper:\s*(#[0-9a-f]+)/i)?.[1]);
-  const ink = sixDigits(light.match(/--tend-ink:\s*(#[0-9a-f]+)/i)?.[1]);
-  const tones = [
-    ...css.matchAll(
-      /\.t-tone-[a-z-]+\s*\{\s*background:\s*color-mix\(in srgb, var\(--tend-ink\) (\d+)%, transparent\)/g,
-    ),
-  ].map((match) => mix(ink, paper, Number(match[1]) / 100));
-  return [paper, ...tones];
-}
-
 describe("the accent colour on the Design screen", () => {
-  test("is checked against the light backgrounds Meadow's stylesheet has", () => {
-    // The page and Soft sections. If theme.css changes them, theme.json has to as well.
-    expect(saidBackgrounds()).toEqual(lightBackgrounds());
+  test("is checked against white and a soft background", () => {
+    // Meadow's own are made from the accent. A colour readable on these two makes a link that's
+    // readable on all of them, which packages/tendcms/test/meadow.test.ts checks.
+    expect(saidBackgrounds()).toEqual(["#ffffff", "#f1f2f2"]);
   });
 
-  test("is suggested readable on every one of them, whatever the colour", () => {
-    const backgrounds = lightBackgrounds();
+  test("is suggested readable on both of them, whatever the colour", () => {
+    const backgrounds = saidBackgrounds();
     const levels = Array.from({ length: 18 }, (_, index) => index * 15);
     const failing: string[] = [];
     for (const r of levels) {

@@ -1,28 +1,32 @@
 <footer class="t-footer">
   <div class="t-wrap t-footer-inner">
     {% assign business = site.business %}
-    {% if business.has_any %}
-    <div class="t-footer-business">
+    <div class="t-footer-brand">
       <p class="t-footer-name">{{ site.name }}</p>
+      {% if site.tagline != blank %}<p class="t-footer-tagline">{{ site.tagline }}</p>{% endif %}
+      {% if site.social.size > 0 %}
+      <ul class="t-social" aria-label="{{ 'elsewhere' | t }}">
+        {% for link in site.social %}<li><a href="{{ link.url }}" rel="me noopener">{% render "social", link: link %}</a></li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% if business.address_lines.size > 0 or business.phone or business.email %}
+    <div class="t-footer-business">
+      <p class="t-footer-title">{{ "contact" | t }}</p>
       {% if business.address_lines.size > 0 %}<p>{% for line in business.address_lines %}{{ line }}{% unless forloop.last %}<br>{% endunless %}{% endfor %}</p>{% endif %}
       {% if business.map_url %}<p><a href="{{ business.map_url }}">{{ "directions" | t }}</a></p>{% endif %}
       {% if business.phone %}<p><a href="{{ business.phone_href }}">{{ business.phone }}</a></p>{% endif %}
       {% if business.email %}<p><a href="{{ business.email_href }}">{{ business.email }}</a></p>{% endif %}
     </div>
+    {% endif %}
     {% if business.hours or business.hours_note %}
     <div class="t-footer-hours">
-      <p class="t-footer-name">{{ "hours" | t }}</p>
+      <p class="t-footer-title">{{ "hours" | t }}</p>
       {% for line in business.hours_summary %}<p>{{ line.days }}: {% if line.closed %}{{ "closed" | t }}{% else %}{{ line.opens }}–{{ line.closes }}{% endif %}</p>{% endfor %}
       {% if business.hours_note %}<p>{{ business.hours_note }}</p>{% endif %}
     </div>
     {% endif %}
-    {% endif %}
     {% menu "footer" %}
-    {% if site.social.size > 0 %}
-    <ul class="t-social" aria-label="{{ 'elsewhere' | t }}">
-      {% for link in site.social %}<li><a href="{{ link.url }}" rel="me noopener">{{ link.name }}</a></li>{% endfor %}
-    </ul>
-    {% endif %}
     <p class="t-footer-text">{% if site.footer_text %}{{ site.footer_text }}{% else %}© {{ site.name }}{% endif %}</p>
   </div>
 </footer>

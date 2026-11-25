@@ -6,22 +6,6 @@ import { expect, type Site, test } from "./fixtures.ts";
 
 test.use({ colorScheme: "light" });
 
-/** Red, green, blue and how opaque, from a computed colour, as rgb() or color(srgb ...) gives it. */
-function rgba(color: string): [number, number, number, number] {
-  const [r = 0, g = 0, b = 0, alpha = 1] = (color.match(/[\d.]+/g) ?? []).map(Number);
-  const scale = color.startsWith("color(") ? 255 : 1;
-  return [r * scale, g * scale, b * scale, alpha];
-}
-
-/** A see-through colour laid over an opaque one, as it shows on screen. */
-function over(top: string, below: string): [number, number, number] {
-  const [r, g, b, alpha] = rgba(top);
-  const under = rgba(below);
-  return [r, g, b].map(
-    (value, index) => value * alpha + (under[index] as number) * (1 - alpha),
-  ) as [number, number, number];
-}
-
 /** WCAG 2.2's contrast ratio between two opaque colours. */
 function contrast(first: [number, number, number], second: [number, number, number]): number {
   const luminance = (channels: [number, number, number]) => {
@@ -85,14 +69,29 @@ test.describe("the accent colour on the Design screen", () => {
     const visitor = await page.context().newPage();
     await visitor.goto(`${signedIn.base}/contact`);
     const email = visitor.locator(".t-tone-muted").getByRole("link", { name: "hello@example.com" });
-    const colours = await email.evaluate((link) => ({
-      link: getComputedStyle(link).color,
-      section: getComputedStyle(link.closest(".t-tone-muted") as HTMLElement).backgroundColor,
-      page: getComputedStyle(document.body).backgroundColor,
-    }));
-    expect(colours.link).toBe("rgb(214, 28, 68)");
-    const behind = over(colours.section, colours.page);
-    expect(contrast(over(colours.link, colours.page), behind)).toBeGreaterThanOrEqual(4.5);
+    const colours = await email.evaluate((link) => {
+      // Meadow mixes its colours, so the browser is asked for each as red, green and blue.
+      const context = document.createElement("canvas").getContext("2d", {
+        willReadFrequently: true,
+      }) as CanvasRenderingContext2D;
+      const channels = (color: string) => {
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3) as [number, number, number];
+      };
+      const behind = (element: Element) => channels(getComputedStyle(element).backgroundColor);
+      return {
+        accent: getComputedStyle(document.documentElement).getPropertyValue("--tend-accent").trim(),
+        link: channels(getComputedStyle(link).color),
+        card: behind(link.closest(".t-business-part") as Element),
+        section: behind(link.closest(".t-tone-muted") as Element),
+        page: behind(document.body),
+      };
+    });
+    expect(colours.accent).toBe("#d61c44");
+    for (const background of [colours.card, colours.section, colours.page]) {
+      expect(contrast(colours.link, background)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   test("a colour hard to read on white is fixed for Soft sections too", async ({

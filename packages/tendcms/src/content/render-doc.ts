@@ -87,17 +87,38 @@ const SECTION_CLASSES: Record<string, string> = {
 
 const IMAGE_SIZES = new Set(["normal", "wide", "full"]);
 
+/** The section being drawn, for what its pictures are for. */
+interface Within {
+  kind: string;
+  preset: string | undefined;
+  /** How many pictures it has had so far. */
+  pictures: number;
+}
+
+/**
+ * Inside a Picture and text section, a picture takes half the width, whatever it was set to.
+ * A Big intro's first picture is the photo it opens with: behind its words, right across the
+ * page, or beside them.
+ */
+function pictureSize(chosen: string, within: Within | undefined): string {
+  if (within?.kind === "pictureText") return "half";
+  if (within?.kind === "intro") {
+    within.pictures++;
+    if (within.pictures > 1) return "normal";
+    return within.preset === "2" ? "full" : "half";
+  }
+  return IMAGE_SIZES.has(chosen) ? chosen : "normal";
+}
+
 /**
  * A picture is stored as a placeholder naming it, and becomes a real one when a page is
  * shown, so replacing it or changing its description in Media changes every page at once.
- * Inside a Picture and text section it takes half the width, whatever it was set to.
  */
 function imagePlaceholder(
   attrs: Extract<BlockNode, { type: "image" }>["attrs"],
-  section: string | undefined,
+  within: Within | undefined,
 ): string {
-  const size =
-    section === "pictureText" ? "half" : IMAGE_SIZES.has(attrs.size) ? attrs.size : "normal";
+  const size = pictureSize(attrs.size, within);
   const parts = [`data-id="${attrs.mediaId}"`, `data-size="${size}"`];
   if (attrs.alt) parts.push(`data-alt="${escapeHtml(attrs.alt)}"`);
   if (attrs.decorative === true) parts.push('data-decorative=""');
@@ -113,7 +134,7 @@ function imagePlaceholder(
 function renderBlocks(
   blocks: readonly BlockNode[] | undefined,
   out: RenderedDoc,
-  section?: string,
+  section?: Within,
 ): void {
   const html: string[] = [];
   const text: string[] = [];
@@ -202,7 +223,7 @@ function renderBlocks(
           `t-tone-${escapeHtml(tone ?? "none")}`,
           `t-align-${escapeHtml(align ?? "left")}`,
         ];
-        let inner = child(block.content, kind);
+        let inner = child(block.content, { kind, preset, pictures: 0 });
         // Contact & hours shows the business details from Settings, filled in when the page
         // is shown, so they're typed once and are the same everywhere.
         if (kind === "contact") inner += "<tend-business></tend-business>";
@@ -225,7 +246,7 @@ function renderBlocks(
  * reaches pages that are already on the site. A test in content.test.ts fails until it's
  * raised.
  */
-export const RENDER_VERSION = 1;
+export const RENDER_VERSION = 2;
 
 export function renderDoc(doc: Doc): RenderedDoc {
   const out: RenderedDoc = { html: "", text: "" };
