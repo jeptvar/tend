@@ -1,10 +1,9 @@
 name: ci
 
 on:
+  # A branch gets its run from its pull request, which tries it together with main.
   push:
-    # Dependabot's branches get their run from the pull request it opens for each one.
-    branches-ignore:
-      - "dependabot/**"
+    branches: [main]
   pull_request:
 
 permissions: {}
