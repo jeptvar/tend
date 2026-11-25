@@ -160,7 +160,7 @@
   "overview.disk": "{used} of {total} used on this server.",
   "overview.diskLow": "Space is running low: {used} of {total} used on this server.",
   "overview.lastCopy": "Tend last saved a copy of your site on {date}.",
-  "overview.noCopy": "Tend hasn't saved a copy of your site yet. The first is saved at 3 in the morning.",
+  "overview.noCopy": "Tend hasn't saved a copy of your site yet. It saves the first within a day.",
   "steps.heading": "Get your site ready",
   "steps.headingInvited": "Get started",
   "steps.count": "{done} of {total} done",
