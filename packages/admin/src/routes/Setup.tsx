@@ -13,12 +13,14 @@ import { Link, Redirect, useLocation } from "wouter";
 import {
   AuthLayout,
   CannotReachTend,
+  Leaf,
   Loading,
   primaryButtonClass,
   secondaryButtonClass,
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Field, PasswordField } from "../components/fields.tsx";
+import { Icon } from "../components/icons.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
 import { looksLikeABackup, restoreBackup, sendBackup } from "../lib/backup-upload.ts";
@@ -31,6 +33,8 @@ import {
 } from "../lib/queries.ts";
 import { holdFreshKit } from "../lib/recovery-kit.ts";
 import { type Starter, useSetup } from "../lib/setup-state.tsx";
+import coffee from "./setup/coffee.webp";
+import table from "./setup/table.webp";
 
 const MIN_PASSWORD_LENGTH = 12;
 
@@ -76,7 +80,7 @@ function SetupGate({
 }
 
 const choiceClass =
-  "block rounded-xl border border-ink/15 bg-white/60 p-5 transition hover:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand dark:bg-white/5";
+  "card flex items-center gap-4 p-5 hover:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand sm:p-6";
 
 export function SetupWelcome() {
   return (
@@ -88,22 +92,34 @@ export function SetupWelcome() {
         <ul className="mt-8 grid gap-4">
           <li>
             <Link href="/setup/name" className={choiceClass}>
-              <span className="block text-lg font-medium">
-                <FormattedMessage id="setup.welcome.new" />
+              <span className="grid size-13 shrink-0 place-items-center rounded-2xl bg-mint">
+                <Leaf className="size-7 fill-brand" />
               </span>
-              <span className="mt-1 block text-muted">
-                <FormattedMessage id="setup.welcome.newHint" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-lg font-semibold">
+                  <FormattedMessage id="setup.welcome.new" />
+                </span>
+                <span className="mt-0.5 block text-muted">
+                  <FormattedMessage id="setup.welcome.newHint" />
+                </span>
               </span>
+              <Icon name="right" className="size-5 text-muted" />
             </Link>
           </li>
           <li>
             <Link href="/setup/backup" className={choiceClass}>
-              <span className="block text-lg font-medium">
-                <FormattedMessage id="setup.welcome.backup" />
+              <span className="grid size-13 shrink-0 place-items-center rounded-2xl bg-sunken text-muted">
+                <Icon name="upload" className="size-6" />
               </span>
-              <span className="mt-1 block text-muted">
-                <FormattedMessage id="setup.welcome.backupHint" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-lg font-semibold">
+                  <FormattedMessage id="setup.welcome.backup" />
+                </span>
+                <span className="mt-0.5 block text-muted">
+                  <FormattedMessage id="setup.welcome.backupHint" />
+                </span>
               </span>
+              <Icon name="right" className="size-5 text-muted" />
             </Link>
           </li>
         </ul>
@@ -431,34 +447,60 @@ export function SetupAccount() {
 
 const STARTERS: Starter[] = ["blog", "business", "blank"];
 
-/** A small sketch of the starting point, with the person's own site name on it. */
+/**
+ * A small picture of the starting point, with the person's own site name on it, and the photo it
+ * comes with (scripts/pictures). Sizes are shares of the picture's width, so it's the same at any.
+ */
 function StarterPreview({ starter, siteName }: { starter: Starter; siteName: string }) {
-  const line = "h-1.5 rounded-full bg-[#1d2420]/15";
+  const line = "h-[2cqw] rounded-full bg-[#2b2117]/15";
   return (
-    <div
-      aria-hidden="true"
-      className="mt-auto grid h-28 content-start gap-2 overflow-hidden rounded-lg border border-[#1d2420]/10 bg-white p-3 text-left text-[#1d2420]"
-    >
-      <p className="truncate text-sm font-semibold">{siteName}</p>
-      {starter === "blog" && (
-        <>
-          <div className={`${line} w-3/4`} />
-          <div className={`${line} w-full`} />
-          <div className={`${line} mt-1 w-2/3`} />
-          <div className={`${line} w-full`} />
-        </>
-      )}
-      {starter === "business" && (
-        <>
-          <div className="h-8 rounded bg-[#1f6f4a]/20" />
-          <div className="grid grid-cols-2 gap-2">
-            <div className={line} />
-            <div className={line} />
-            <div className={line} />
-            <div className={line} />
+    <div aria-hidden="true" className="@container">
+      <div className="flex aspect-[4/3] flex-col overflow-hidden rounded-xl border border-[#2b2117]/12 bg-[#fffefc] text-left text-[#221a12]">
+        <div className="flex items-center justify-between gap-[4cqw] px-[6cqw] py-[3.5cqw]">
+          <span className="truncate text-[5.5cqw] font-bold">{siteName}</span>
+          <span className="flex shrink-0 gap-[2.5cqw]">
+            <span className={`${line} w-[8cqw]`} />
+            <span className={`${line} w-[8cqw]`} />
+          </span>
+        </div>
+        {starter === "business" && (
+          <>
+            <div
+              className="flex min-h-0 flex-1 flex-col justify-center gap-[3cqw] bg-cover bg-center px-[6cqw]"
+              style={{
+                backgroundImage: `linear-gradient(90deg, #fffefcee 10%, #fffefc99 50%, #fffefc00 85%), url("${table}")`,
+              }}
+            >
+              <span className="line-clamp-2 max-w-[62%] text-[8cqw] leading-[1.08] font-bold">
+                {siteName}
+              </span>
+              <span className={`${line} w-[42cqw]`} />
+              <span className="h-[7cqw] w-[24cqw] rounded-full bg-[#1f6f4a]" />
+            </div>
+            <div className="grid grid-cols-3 gap-[4cqw] px-[6cqw] py-[4cqw]">
+              <span className={line} />
+              <span className={line} />
+              <span className={line} />
+            </div>
+          </>
+        )}
+        {starter === "blog" && (
+          <div className="flex min-h-0 flex-1 flex-col gap-[3cqw] px-[6cqw] pb-[5cqw]">
+            <div
+              className="min-h-0 flex-1 rounded-[3cqw] bg-cover bg-center"
+              style={{ backgroundImage: `url("${coffee}")` }}
+            />
+            <span className="h-[4cqw] w-[58cqw] rounded-full bg-[#2b2117]/70" />
+            <span className={`${line} w-[78cqw]`} />
+            <span className={`${line} w-[64cqw]`} />
           </div>
-        </>
-      )}
+        )}
+        {starter === "blank" && (
+          <div className="grid min-h-0 flex-1 place-items-center">
+            <Leaf className="size-[22cqw] fill-[#1f6f4a]/20" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -522,38 +564,40 @@ export function SetupStart() {
 
   return (
     <SetupGate needsSite needsOwner>
-      <AuthLayout screen="setup.start" step={3}>
+      <AuthLayout screen="setup.start" step={3} wide>
         <p className="mt-3 text-lg text-muted">
           <FormattedMessage id="setup.start.intro" />
         </p>
         <form onSubmit={onSubmit} className="mt-8 grid gap-6">
-          <fieldset className="grid gap-4 sm:grid-cols-3">
+          <fieldset className="grid gap-4 sm:grid-cols-3 lg:gap-5">
             <legend className="sr-only">
               <FormattedMessage id="setup.start.title" />
             </legend>
             {STARTERS.map((option) => (
               <label
                 key={option}
-                className="flex cursor-pointer flex-col gap-4 rounded-xl border border-muted/50 bg-white/60 p-4 transition hover:border-brand has-checked:border-brand has-checked:ring-1 has-checked:ring-brand has-focus-visible:outline-3 has-focus-visible:outline-offset-2 has-focus-visible:outline-brand dark:bg-white/5"
+                className="card relative flex cursor-pointer flex-col gap-4 p-4 hover:border-brand has-checked:border-brand has-checked:ring-2 has-checked:ring-brand has-focus-visible:outline-3 has-focus-visible:outline-offset-4 has-focus-visible:outline-brand"
               >
-                <span className="flex items-center gap-2 font-medium">
-                  <input
-                    type="radio"
-                    name="starter"
-                    value={option}
-                    checked={starter === option}
-                    onChange={() => {
-                      setStarter(option);
-                      finish.reset();
-                    }}
-                    className="size-4 accent-brand"
-                  />
-                  <FormattedMessage id={`setup.start.${option}`} />
-                </span>
-                <span className="mt-1 block text-sm text-muted">
-                  <FormattedMessage id={`setup.start.${option}Hint`} />
-                </span>
                 <StarterPreview starter={option} siteName={setup.site.name} />
+                <span>
+                  <span className="flex items-center gap-2.5 text-lg font-semibold">
+                    <input
+                      type="radio"
+                      name="starter"
+                      value={option}
+                      checked={starter === option}
+                      onChange={() => {
+                        setStarter(option);
+                        finish.reset();
+                      }}
+                      className="size-5 accent-brand outline-none"
+                    />
+                    <FormattedMessage id={`setup.start.${option}`} />
+                  </span>
+                  <span className="mt-1 block text-sm text-muted">
+                    <FormattedMessage id={`setup.start.${option}Hint`} />
+                  </span>
+                </span>
               </label>
             ))}
           </fieldset>
@@ -670,7 +714,7 @@ export function SetupBackup() {
                 setFileError(undefined);
                 restore.reset();
               }}
-              className="w-full text-lg file:mr-4 file:min-h-11 file:cursor-pointer file:rounded-lg file:border file:border-muted file:bg-transparent file:px-4 file:font-medium file:text-ink hover:file:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
+              className="dashed w-full p-4 file:mr-4 file:min-h-11 file:cursor-pointer file:rounded-xl file:border file:border-line file:bg-surface file:px-4 file:font-semibold file:text-ink hover:file:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand disabled:opacity-60"
             />
             <p id={hintId} className="text-sm text-muted">
               <FormattedMessage id="setup.backup.fileHint" />

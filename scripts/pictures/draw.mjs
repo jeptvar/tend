@@ -14,6 +14,9 @@ import { chromium } from "@playwright/test";
 const root = join(import.meta.dirname, "..", "..");
 const sharp = createRequire(join(root, "packages", "tendcms", "package.json"))("sharp");
 const out = join(root, "themes", "meadow", "starters", "pictures");
+/** Small ones for choosing a starting point in Setup. */
+const small = join(root, "packages", "admin", "src", "routes", "setup");
+const SMALL = { table: [560, 315], coffee: [560, 300] };
 const scene = readFileSync(join(import.meta.dirname, "scene.glsl"), "utf8");
 
 const vec = (x, y, z) => `vec3(${[x, y, z].map((value) => value.toFixed(3)).join(", ")})`;
@@ -95,6 +98,12 @@ try {
     const png = await page.evaluate(drawing, { source, width, height, times: Number(times) });
     const path = join(out, `${name}.jpg`);
     await sharp(Buffer.from(png, "base64")).jpeg({ quality: 82, mozjpeg: true }).toFile(path);
+    if (SMALL[name]) {
+      await sharp(path)
+        .resize(...SMALL[name])
+        .webp({ quality: 72 })
+        .toFile(join(small, `${name}.webp`));
+    }
     const seconds = ((performance.now() - started) / 1000).toFixed(0);
     console.log(`${path}: ${width} × ${height}, ${seconds} s`);
   }

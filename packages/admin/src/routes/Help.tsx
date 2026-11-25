@@ -4,6 +4,7 @@ import { FormattedMessage, type IntlShape, useIntl } from "react-intl";
 import { Link } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import { secondaryButtonClass, textLinkClass } from "../components/AuthLayout.tsx";
+import { Disclosure } from "../components/Disclosure.tsx";
 import { OutLink } from "../components/OutLink.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { api } from "../lib/api.ts";
@@ -45,12 +46,9 @@ const TOPICS: Topic[] = [
 
 function Answer({ summary, children }: { summary: ReactNode; children: ReactNode }) {
   return (
-    <details className="rounded-lg border border-muted">
-      <summary className="flex min-h-11 cursor-pointer items-center px-3 font-medium focus-visible:outline-3 focus-visible:outline-brand">
-        {summary}
-      </summary>
-      <div className="grid justify-items-start gap-2 border-t border-muted p-3">{children}</div>
-    </details>
+    <Disclosure summary={summary}>
+      <div className="grid justify-items-start gap-2">{children}</div>
+    </Disclosure>
   );
 }
 
@@ -97,7 +95,7 @@ function AboutTend() {
           </li>
         ))}
       </ul>
-      <pre className="w-full rounded-lg border border-muted/50 bg-white/60 p-3 text-sm break-words whitespace-pre-wrap dark:bg-white/5">
+      <pre className="w-full rounded-xl bg-sunken p-3 text-sm break-words whitespace-pre-wrap">
         {text.split("\n").slice(0, 3).join("\n")}
       </pre>
       <div className="flex flex-wrap items-center gap-3">
@@ -133,10 +131,7 @@ function HelpScreen({ me }: { me: Me }) {
   const [about, setAbout] = useState(false);
   const isAdmin = me.user.role === "admin";
   return (
-    <AdminLayout me={me} screen="help">
-      <p className="mt-2 text-muted">
-        <FormattedMessage id="help.intro" />
-      </p>
+    <AdminLayout me={me} screen="help" intro={<FormattedMessage id="help.intro" />}>
       <div className="mt-6 grid gap-3">
         {TOPICS.filter((topic) => !topic.roles || topic.roles.includes(me.user.role)).map(
           (topic) => (
@@ -167,17 +162,13 @@ function HelpScreen({ me }: { me: Me }) {
         </p>
       )}
       {isAdmin && (
-        <details
-          className="mt-8 rounded-lg border border-muted"
-          onToggle={(event) => setAbout(event.currentTarget.open)}
+        <Disclosure
+          className="card mt-6"
+          onToggle={setAbout}
+          summary={<FormattedMessage id="help.about" />}
         >
-          <summary className="flex min-h-11 cursor-pointer items-center px-3 font-medium focus-visible:outline-3 focus-visible:outline-brand">
-            <FormattedMessage id="help.about" />
-          </summary>
-          <div className="grid justify-items-start gap-4 border-t border-muted p-3">
-            {about && <AboutTend />}
-          </div>
-        </details>
+          <div className="grid grid-cols-1 justify-items-start gap-4">{about && <AboutTend />}</div>
+        </Disclosure>
       )}
     </AdminLayout>
   );

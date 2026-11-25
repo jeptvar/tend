@@ -14,16 +14,18 @@ import { BACKUP_DOWNLOAD_URL } from "../lib/site.ts";
 // what they'll be asked on the way.
 
 function Steps({ children }: { children: ReactNode }) {
-  return <ol className="mt-6 grid list-decimal gap-6 pl-6">{children}</ol>;
+  return <ol className="mt-6 grid grid-cols-1 gap-4 [counter-reset:step]">{children}</ol>;
 }
 
 function Step({ heading, children }: { heading: string; children: ReactNode }) {
   return (
-    <li className="pl-1">
-      <h2 className="text-lg font-semibold">
-        <FormattedMessage id={heading} />
-      </h2>
-      <div className="mt-1 grid justify-items-start gap-2">{children}</div>
+    <li className="card flex gap-4 p-5 [counter-increment:step] before:grid before:size-10 before:shrink-0 before:place-items-center before:rounded-full before:bg-mint before:font-bold before:text-brand-strong before:content-[counter(step)] sm:p-6">
+      <div className="min-w-0 flex-1">
+        <h2 className="pt-1.5 text-lg font-semibold">
+          <FormattedMessage id={heading} />
+        </h2>
+        <div className="mt-1.5 grid grid-cols-1 justify-items-start gap-2">{children}</div>
+      </div>
     </li>
   );
 }
@@ -38,19 +40,16 @@ function Para({ id, values }: { id: string; values?: Record<string, ReactNode> }
 
 function OnlineScreen({ me }: { me: Me }) {
   return (
-    <AdminLayout me={me} screen="online">
-      <p className="mt-2 text-lg">
-        <FormattedMessage id={onThisComputer() ? "online.intro" : "online.introElsewhere"} />
-      </p>
+    <AdminLayout
+      me={me}
+      screen="online"
+      intro={<FormattedMessage id={onThisComputer() ? "online.intro" : "online.introElsewhere"} />}
+    >
       <Steps>
         <Step heading="online.backup">
           <Para id="online.backupBody" />
           {me.user.isOwner ? (
-            <a
-              href={BACKUP_DOWNLOAD_URL}
-              download
-              className={`${primaryButtonClass} inline-flex items-center`}
-            >
+            <a href={BACKUP_DOWNLOAD_URL} download className={primaryButtonClass}>
               <FormattedMessage id="backups.download.button" />
             </a>
           ) : (
@@ -117,10 +116,7 @@ function DomainScreen({ me }: { me: Me }) {
     );
   }
   return (
-    <AdminLayout me={me} screen="domain">
-      <p className="mt-2 text-lg">
-        <FormattedMessage id="domain.intro" />
-      </p>
+    <AdminLayout me={me} screen="domain" intro={<FormattedMessage id="domain.intro" />}>
       <Steps>
         <Step heading={onRailway ? "domain.host.railway" : "domain.host.other"}>
           <Para id={onRailway ? "domain.hostBody.railway" : "domain.hostBody.other"} />
@@ -137,7 +133,7 @@ function DomainScreen({ me }: { me: Me }) {
           <AddressChoice me={me} />
         </Step>
       </Steps>
-      <p className="mt-8 rounded-lg border border-danger p-3">
+      <p className="mt-6 rounded-2xl border border-wait-line bg-wait-soft p-4">
         <FormattedMessage id="domain.email" />
       </p>
       <p className="mt-4">

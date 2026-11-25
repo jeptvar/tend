@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useLayoutEffect, useRef, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
-import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
+import { AdminLayout, initials, SignedIn } from "../components/AdminLayout.tsx";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
-import { Field, PasswordField } from "../components/fields.tsx";
+import { Field, optionClass, PasswordField, radioClass } from "../components/fields.tsx";
+import { Icon } from "../components/icons.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
@@ -73,7 +74,7 @@ function OneTimeLink({ link, label, children }: { link: string; label: string; c
   }
 
   return (
-    <div className="grid gap-2 rounded-lg border border-brand p-3">
+    <div className="grid grid-cols-1 gap-3 rounded-2xl bg-mint p-4">
       <p ref={introRef} tabIndex={-1} className="outline-none">
         {children}
       </p>
@@ -86,7 +87,7 @@ function OneTimeLink({ link, label, children }: { link: string; label: string; c
           readOnly
           value={link}
           onFocus={(event) => event.target.select()}
-          className="min-h-11 min-w-0 flex-1 rounded-lg border border-muted bg-white px-3 font-mono text-sm text-[#1d2420]"
+          className="min-h-11 min-w-0 flex-1 rounded-xl border border-edge bg-field px-3 font-mono text-sm"
         />
         <button type="button" onClick={copy} className={secondaryButtonClass}>
           <FormattedMessage id="people.copy" />
@@ -143,11 +144,11 @@ function InviteForm({ me }: { me: Me }) {
       : undefined;
 
   return (
-    <section aria-labelledby="people-invite" className="mt-8">
-      <h2 id="people-invite" className="text-xl font-semibold">
+    <section aria-labelledby="people-invite" className="card p-5 sm:p-6">
+      <h2 id="people-invite" className="text-xl font-bold">
         <FormattedMessage id="people.invite" />
       </h2>
-      <form onSubmit={onSubmit} noValidate className="mt-3 grid gap-5">
+      <form onSubmit={onSubmit} noValidate className="mt-4 grid grid-cols-1 gap-5">
         <Field
           ref={emailRef}
           label={intl.formatMessage({ id: "people.email" })}
@@ -169,20 +170,17 @@ function InviteForm({ me }: { me: Me }) {
             <FormattedMessage id="people.roleLegend" />
           </legend>
           {roles.map((option) => (
-            <label
-              key={option}
-              className="flex cursor-pointer gap-3 rounded-lg border border-muted/50 p-3 has-checked:border-brand has-focus-visible:outline-3 has-focus-visible:outline-brand"
-            >
+            <label key={option} className={optionClass}>
               <input
                 type="radio"
                 name="role"
                 value={option}
                 checked={role === option}
                 onChange={() => setRole(option)}
-                className="mt-1 size-4 accent-brand"
+                className={radioClass}
               />
               <span>
-                <span className="block font-medium">
+                <span className="block font-semibold">
                   <FormattedMessage id={`people.role.${option}`} />
                 </span>
                 <span className="block text-sm text-muted">
@@ -280,36 +278,46 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
   const isMe = person.id === me.user.id;
 
   return (
-    <li className="grid gap-3 border-b border-ink/10 py-4">
-      <div>
-        <p className="font-medium break-words">
-          {person.name}
-          {isMe && (
-            <span className="text-muted">
-              {" "}
-              <FormattedMessage id="people.you" />
-            </span>
-          )}
-        </p>
-        <p className="text-muted [overflow-wrap:anywhere]">{person.email}</p>
-        <p className="text-sm text-muted">
-          <FormattedMessage id={person.isOwner ? "people.owner" : `people.role.${person.role}`} />
-          {" · "}
-          {person.disabled && (
-            <strong className="font-medium text-danger">
-              <FormattedMessage id="people.keptOut" />
-              {" · "}
-            </strong>
-          )}
-          {person.lastSeenAt === null ? (
-            <FormattedMessage id="people.neverSeen" />
-          ) : (
-            <FormattedMessage
-              id="people.lastSeen"
-              values={{ date: <FormattedDate value={person.lastSeenAt} dateStyle="medium" /> }}
-            />
-          )}
-        </p>
+    <li className="grid grid-cols-1 gap-4 py-5">
+      <div className="flex items-start gap-4">
+        <span
+          aria-hidden="true"
+          className={`grid size-12 shrink-0 place-items-center rounded-full font-bold ${
+            person.disabled ? "bg-sunken text-muted" : "bg-mint text-brand-strong"
+          }`}
+        >
+          {initials(person.name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-lg leading-snug font-semibold break-words">
+            {person.name}
+            {isMe && (
+              <span className="font-normal text-muted">
+                {" "}
+                <FormattedMessage id="people.you" />
+              </span>
+            )}
+          </p>
+          <p className="text-muted [overflow-wrap:anywhere]">{person.email}</p>
+          <p className="mt-0.5 text-sm text-muted">
+            <FormattedMessage id={person.isOwner ? "people.owner" : `people.role.${person.role}`} />
+            {" · "}
+            {person.disabled && (
+              <strong className="font-medium text-danger">
+                <FormattedMessage id="people.keptOut" />
+                {" · "}
+              </strong>
+            )}
+            {person.lastSeenAt === null ? (
+              <FormattedMessage id="people.neverSeen" />
+            ) : (
+              <FormattedMessage
+                id="people.lastSeen"
+                values={{ date: <FormattedDate value={person.lastSeenAt} dateStyle="medium" /> }}
+              />
+            )}
+          </p>
+        </div>
       </div>
       {person.canManage && (
         <div className="flex flex-wrap items-end gap-3">
@@ -329,7 +337,7 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
                   id={selectId}
                   value={role}
                   onChange={(event) => setRole(event.target.value as Role)}
-                  className="min-h-11 rounded-lg border border-muted bg-white px-3 text-[#1d2420]"
+                  className="min-h-11 rounded-xl border border-edge bg-field px-3"
                 >
                   {options.map((option) => (
                     <option key={option} value={option}>
@@ -397,7 +405,7 @@ function PersonRow({ me, person }: { me: Me; person: Person }) {
       {confirming === "remove" && (
         <Dialog labelledBy={headingId} onClose={() => setConfirming(null)}>
           <div className="grid gap-4">
-            <h2 id={headingId} className="text-xl font-semibold">
+            <h2 id={headingId} className="text-xl font-bold">
               <FormattedMessage id="people.confirmRemove" values={{ name: person.name }} />
             </h2>
             <p>
@@ -471,7 +479,7 @@ function HandOver({ person, onClose }: { person: Person; onClose: () => void }) 
           else handOver.mutate();
         }}
       >
-        <h2 id={headingId} className="text-xl font-semibold">
+        <h2 id={headingId} className="text-xl font-bold">
           <FormattedMessage id="people.handOverHeading" values={{ name: person.name }} />
         </h2>
         <p>
@@ -513,9 +521,15 @@ function InviteRow({ invite }: { invite: Invite }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: PEOPLE_KEY }),
   });
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 py-3">
-      <div>
-        <p className="font-medium [overflow-wrap:anywhere]">{invite.email}</p>
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-3 py-4">
+      <span
+        aria-hidden="true"
+        className="grid size-12 shrink-0 place-items-center rounded-full bg-sunken text-muted"
+      >
+        <Icon name="clock" />
+      </span>
+      <div className="min-w-0 flex-1 basis-48">
+        <p className="font-semibold [overflow-wrap:anywhere]">{invite.email}</p>
         <p className="text-sm text-muted">
           <FormattedMessage id={`people.role.${invite.role}`} />
           {" · "}
@@ -549,34 +563,40 @@ function PeopleScreen({ me }: { me: Me }) {
     queryFn: () => api<PeopleList>("/admin/people"),
   });
   return (
-    <AdminLayout me={me} screen="people">
-      <p className="mt-2 text-lg text-muted">
-        <FormattedMessage id="people.intro" />
-      </p>
-      {list.data ? (
-        <>
-          <ul className="mt-6">
-            {list.data.people.map((person) => (
-              <PersonRow key={person.id} me={me} person={person} />
-            ))}
-          </ul>
-          {list.data.invites.length > 0 && (
-            <section aria-labelledby="people-waiting" className="mt-8">
-              <h2 id="people-waiting" className="text-xl font-semibold">
-                <FormattedMessage id="people.waiting" />
-              </h2>
-              <ul className="mt-2">
-                {list.data.invites.map((invite) => (
-                  <InviteRow key={invite.id} invite={invite} />
+    <AdminLayout
+      me={me}
+      screen="people"
+      width="wide"
+      intro={<FormattedMessage id="people.intro" />}
+    >
+      <div className="mt-6 grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
+        <div className="grid grid-cols-1 gap-5">
+          {list.data ? (
+            <>
+              <ul className="card divide-y divide-line px-5 sm:px-6">
+                {list.data.people.map((person) => (
+                  <PersonRow key={person.id} me={me} person={person} />
                 ))}
               </ul>
-            </section>
+              {list.data.invites.length > 0 && (
+                <section aria-labelledby="people-waiting" className="card px-5 pt-5 sm:px-6">
+                  <h2 id="people-waiting" className="text-xl font-bold">
+                    <FormattedMessage id="people.waiting" />
+                  </h2>
+                  <ul className="mt-1 divide-y divide-line">
+                    {list.data.invites.map((invite) => (
+                      <InviteRow key={invite.id} invite={invite} />
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
+          ) : (
+            <Waiting query={list} />
           )}
-        </>
-      ) : (
-        <Waiting query={list} />
-      )}
-      <InviteForm me={me} />
+        </div>
+        <InviteForm me={me} />
+      </div>
     </AdminLayout>
   );
 }
