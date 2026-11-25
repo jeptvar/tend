@@ -16,7 +16,7 @@ import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { toHref } from "../lib/href.ts";
 import { linkTargets } from "../lib/link-targets.ts";
-import type { Me } from "../lib/queries.ts";
+import type { LinkTarget, Me } from "../lib/queries.ts";
 import { type ScreenDraft, settleScreenDraft, useScreenDraft } from "../lib/screen-drafts.ts";
 import {
   MENUS_KEY,
@@ -66,6 +66,14 @@ function targetFromHref(href: string): MenuTarget {
   return { type: "url", url: href };
 }
 
+interface LinkOption {
+  key: string;
+  label: string;
+  detail: string;
+  target: MenuTarget;
+  known: Known;
+}
+
 function AddLinkDialog({
   onAdd,
   onClose,
@@ -74,10 +82,21 @@ function AddLinkDialog({
   onClose: () => void;
 }) {
   const intl = useIntl();
+  const queryClient = useQueryClient();
   const headingId = useId();
   const searchId = useId();
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState("");
+  /** Enter was pressed, and what it's for is being looked up. */
+  const choosing = useRef(false);
+  const open = useRef(true);
+
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery(typed.trim()), SEARCH_DELAY_MS);
@@ -91,69 +110,73 @@ function AddLinkDialog({
     staleTime: 60_000,
   });
 
-  const words = query.toLowerCase();
-  const matches = (name: string) => !words || name.toLowerCase().includes(words);
-  const typedHref = toHref(typed);
-  const looksLikeAddress = typedHref !== null && /^(https?:|mailto:|tel:|\/)/.test(typedHref);
+  function optionsFor(words: string, targets: LinkTarget[]): LinkOption[] {
+    const options: LinkOption[] = [];
+    const matches = (name: string) => name.toLowerCase().includes(words.toLowerCase());
+    const typedHref = toHref(typed);
+    if (typedHref !== null && /^(https?:|mailto:|tel:|\/)/.test(typedHref)) {
+      options.push({
+        key: "typed",
+        label: intl.formatMessage({ id: "menu.linkTo" }, { address: typedHref }),
+        detail: "",
+        target: targetFromHref(typedHref),
+        known: { title: null, url: typedHref },
+      });
+    }
+    const homepage = intl.formatMessage({ id: "menu.homepage" });
+    if (matches(homepage)) {
+      options.push({
+        key: "home",
+        label: homepage,
+        detail: "/",
+        target: { type: "home" },
+        known: { title: homepage, url: "/" },
+      });
+    }
+    if (matches("Blog")) {
+      options.push({
+        key: "blog",
+        label: "Blog",
+        detail: "/blog",
+        target: { type: "blog" },
+        known: { title: "Blog", url: "/blog" },
+      });
+    }
+    for (const target of targets) {
+      options.push({
+        key: target.id,
+        label: target.title || intl.formatMessage({ id: "list.untitled" }),
+        detail: target.url ?? intl.formatMessage({ id: "link.notOnSite" }),
+        target: { type: "entry", id: target.id },
+        known: { title: target.title, url: target.url },
+      });
+    }
+    for (const tag of (tags.data?.tags ?? []).filter((tag) => matches(tag.name)).slice(0, 5)) {
+      options.push({
+        key: `tag-${tag.id}`,
+        label: intl.formatMessage({ id: "menu.tag" }, { name: tag.name }),
+        detail: `/tag/${tag.slug}`,
+        target: { type: "tag", id: tag.id },
+        known: { title: tag.name, url: `/tag/${tag.slug}` },
+      });
+    }
+    return options;
+  }
+  const options = optionsFor(query, found.data ?? []);
 
-  const options: {
-    key: string;
-    label: string;
-    detail: string;
-    target: MenuTarget;
-    known: Known;
-  }[] = [];
-  if (looksLikeAddress && typedHref) {
-    options.push({
-      key: "typed",
-      label: intl.formatMessage({ id: "menu.linkTo" }, { address: typedHref }),
-      detail: "",
-      target: targetFromHref(typedHref),
-      known: { title: null, url: typedHref },
-    });
-  }
-  const homepage = intl.formatMessage({ id: "menu.homepage" });
-  if (matches(homepage)) {
-    options.push({
-      key: "home",
-      label: homepage,
-      detail: "/",
-      target: { type: "home" },
-      known: { title: homepage, url: "/" },
-    });
-  }
-  if (matches("Blog")) {
-    options.push({
-      key: "blog",
-      label: "Blog",
-      detail: "/blog",
-      target: { type: "blog" },
-      known: { title: "Blog", url: "/blog" },
-    });
-  }
-  for (const target of found.data ?? []) {
-    options.push({
-      key: target.id,
-      label: target.title || intl.formatMessage({ id: "list.untitled" }),
-      detail: target.url ?? intl.formatMessage({ id: "link.notOnSite" }),
-      target: { type: "entry", id: target.id },
-      known: { title: target.title, url: target.url },
-    });
-  }
-  for (const tag of (tags.data?.tags ?? []).filter((tag) => matches(tag.name)).slice(0, 5)) {
-    options.push({
-      key: `tag-${tag.id}`,
-      label: intl.formatMessage({ id: "menu.tag" }, { name: tag.name }),
-      detail: `/tag/${tag.slug}`,
-      target: { type: "tag", id: tag.id },
-      known: { title: tag.name, url: `/tag/${tag.slug}` },
-    });
-  }
-
-  function onSubmit(event: FormEvent) {
+  /** Enter chooses the first that fits exactly what's typed, whatever the list is still showing. */
+  async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    const first = options[0];
-    if (first) onAdd(first.target, first.known);
+    if (choosing.current) return;
+    choosing.current = true;
+    const words = typed.trim();
+    let [first] = optionsFor(words, []);
+    if (first?.key !== "typed") {
+      const targets = await queryClient.fetchQuery(linkTargets(words)).catch(() => []);
+      [first] = optionsFor(words, targets);
+    }
+    choosing.current = false;
+    if (first && open.current) onAdd(first.target, first.known);
   }
 
   return (

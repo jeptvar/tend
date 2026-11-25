@@ -265,6 +265,43 @@ test.describe("the site menu (J4)", () => {
     await expect(menu.getByRole("link")).toHaveText(["About", "Contact"]);
   });
 
+  test("Enter adds what was typed, however soon it's pressed", async ({ page, signedIn }) => {
+    await createEntry(page, signedIn, { type: "page", title: "Our story", publish: true });
+    await page.request.put(`${signedIn.base}/api/admin/menus/main`, { data: { items: [] } });
+    await page.goto(`${signedIn.base}/admin/menu`);
+    const links = page.getByRole("main").getByRole("listitem");
+    const add = page.getByRole("dialog", { name: "Add a link" });
+    await page.getByRole("button", { name: "Add link" }).click();
+    await expect(add.getByRole("button", { name: /Our story/ })).toBeVisible();
+    const answer = await holdRequests(page, "**/api/admin/link-targets?q=story");
+    // Before the list has followed what's typed, when Homepage is still the first in it.
+    await add.getByLabel(/Search your pages/).fill("story");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    // What was found before stays until the answer comes: nothing goes from under a finger.
+    await expect(add.getByRole("button", { name: /Homepage/ })).toHaveCount(0);
+    await expect(add.getByRole("button", { name: /Our story/ })).toBeVisible();
+    answer();
+    await expect(add).toBeHidden();
+    await expect(links).toHaveCount(1);
+    await expect(links).toContainText("Our story");
+
+    // Closed before the answer came, it adds nothing.
+    await page.getByRole("button", { name: "Add link" }).click();
+    const late = await holdRequests(page, "**/api/admin/link-targets?q=contact");
+    const asked = page.waitForRequest("**/api/admin/link-targets?q=contact");
+    await add.getByLabel(/Search your pages/).fill("contact");
+    await page.keyboard.press("Enter");
+    await asked;
+    await page.keyboard.press("Escape");
+    await expect(add).toBeHidden();
+    const answered = page.waitForResponse("**/api/admin/link-targets?q=contact");
+    late();
+    await (await answered).finished();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    await expect(links).toHaveCount(1);
+  });
+
   test("looking for a page to link to works here, then in the editor, then here again", async ({
     page,
     signedIn,
