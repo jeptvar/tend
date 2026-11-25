@@ -1,8 +1,13 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
-import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
+import {
+  iconButtonClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+} from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { Icon } from "../components/icons.tsx";
 import { api, errorText } from "../lib/api.ts";
 import type { RevisionDetail, RevisionSummary } from "../lib/queries.ts";
 import { DeviceChoice, PreviewFrame } from "./PreviewDialog.tsx";
@@ -89,11 +94,16 @@ export function HistoryDialog({
     <Dialog labelledBy={headingId} onClose={onClose} size="full">
       <div className="flex h-full flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <h2 id={headingId} className="me-auto text-xl font-semibold">
+          <h2 id={headingId} className="me-auto text-xl font-bold">
             <FormattedMessage id="history.heading" />
           </h2>
-          <button type="button" className={secondaryButtonClass} onClick={onClose}>
-            <FormattedMessage id="common.close" />
+          <button
+            type="button"
+            aria-label={intl.formatMessage({ id: "common.close" })}
+            className={iconButtonClass}
+            onClick={onClose}
+          >
+            <Icon name="close" />
           </button>
         </div>
         {/* What's showing on the right, which a screen reader can't otherwise tell has changed. */}
@@ -137,10 +147,10 @@ export function HistoryDialog({
                       setFocusable(revision.id);
                       setSelected(revision.id);
                     }}
-                    className="min-h-11 w-full rounded-lg px-3 py-2 text-start hover:bg-ink/5 focus-visible:outline-3 focus-visible:outline-brand aria-pressed:bg-ink aria-pressed:text-paper"
+                    className="min-h-11 w-full rounded-xl px-4 py-2.5 text-start hover:bg-ink/5 focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-brand aria-pressed:bg-brand aria-pressed:text-on-brand aria-pressed:focus-visible:outline-on-brand"
                   >
-                    <span className="block font-medium">{when(revision.createdAt)}</span>
-                    {/* The selected row is dark, and its words have to be light to match. */}
+                    <span className="block font-semibold">{when(revision.createdAt)}</span>
+                    {/* The chosen row is green, and all its words have to be read on that. */}
                     <span
                       className={`block text-sm ${selected === revision.id ? "" : "text-muted"}`}
                     >

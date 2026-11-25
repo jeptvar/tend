@@ -39,7 +39,7 @@ export function AltDialog({ item, onClose }: { item: MediaItem; onClose: () => v
   return (
     <Dialog labelledBy={headingId} onClose={onClose}>
       <form onSubmit={onSubmit} className="grid gap-4">
-        <h2 id={headingId} className="text-xl font-semibold">
+        <h2 id={headingId} className="text-xl font-bold">
           <FormattedMessage id="alt.heading" />
         </h2>
         {item.previewUrl && (
@@ -47,7 +47,7 @@ export function AltDialog({ item, onClose }: { item: MediaItem; onClose: () => v
             src={item.previewUrl}
             alt=""
             style={{ backgroundColor: item.dominantColor ?? undefined }}
-            className="max-h-48 w-full rounded-lg object-contain"
+            className="max-h-56 w-full rounded-xl bg-sunken object-contain"
           />
         )}
         <div className="grid gap-2">
@@ -62,7 +62,7 @@ export function AltDialog({ item, onClose }: { item: MediaItem; onClose: () => v
             disabled={decorative}
             aria-describedby={hintId}
             onChange={(event) => setAlt(event.target.value)}
-            className="w-full rounded-lg border border-muted bg-white px-3 py-2 text-lg text-[#1d2420] focus-visible:outline-3 focus-visible:outline-brand disabled:opacity-60"
+            className="w-full rounded-xl border border-edge bg-field px-3 py-2 text-lg focus-visible:outline-3 focus-visible:outline-brand disabled:opacity-60"
           />
           <p id={hintId} className="text-sm text-muted">
             <FormattedMessage id="alt.hint" />

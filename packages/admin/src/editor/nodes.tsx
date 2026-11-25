@@ -9,9 +9,12 @@ import {
   useEditorState,
 } from "@tiptap/react";
 import { FormattedMessage, useIntl } from "react-intl";
+import { Icon, type IconName } from "../components/icons.tsx";
 
-const controlClass =
-  "min-h-11 min-w-11 rounded border border-muted bg-paper px-2 text-sm focus-visible:outline-3 focus-visible:outline-brand";
+const choiceClass =
+  "min-h-11 min-w-11 rounded-xl border border-edge bg-field px-2 text-sm focus-visible:outline-3 focus-visible:outline-brand";
+const sectionButtonClass =
+  "inline-flex min-h-11 min-w-11 items-center gap-2 rounded-xl px-3 text-sm font-medium hover:bg-ink/6 focus-visible:outline-3 focus-visible:outline-brand";
 
 export interface ButtonOptions {
   /** Asks for the words and address of a button, through the link dialog. */
@@ -23,22 +26,16 @@ function useIsEditable(editor: NodeViewProps["editor"]): boolean {
 }
 
 function ButtonView({ node, getPos, extension, editor }: NodeViewProps) {
+  const intl = useIntl();
   const { href, label } = node.attrs as { href: string; label: string };
   const editable = useIsEditable(editor);
   return (
-    <NodeViewWrapper data-button-view="" className="my-4 flex flex-wrap items-center gap-3">
-      <span className="inline-flex min-h-11 max-w-full min-w-0 items-center rounded-lg bg-brand px-4 font-medium [overflow-wrap:anywhere] text-paper">
-        {label}
-      </span>
-      {!href && (
-        <span className="text-sm text-danger">
-          <FormattedMessage id="editor.buttonNoAddress" />
-        </span>
-      )}
-      {editable && (
+    <NodeViewWrapper data-button-view="">
+      {editable ? (
         <button
           type="button"
-          className={controlClass}
+          className="tend-button"
+          aria-label={intl.formatMessage({ id: "editor.buttonEdit" }, { label })}
           onClick={() => {
             const position = getPos();
             if (typeof position === "number") {
@@ -46,8 +43,16 @@ function ButtonView({ node, getPos, extension, editor }: NodeViewProps) {
             }
           }}
         >
-          <FormattedMessage id="editor.buttonEdit" values={{ label }} />
+          {label}
+          <Icon name="pencil" className="size-4 opacity-80" />
         </button>
+      ) : (
+        <span className="tend-button">{label}</span>
+      )}
+      {!href && (
+        <span className="mt-2 block w-fit rounded-full bg-danger-soft px-3 py-1 font-sans text-sm text-danger">
+          <FormattedMessage id="editor.buttonNoAddress" />
+        </span>
       )}
     </NodeViewWrapper>
   );
@@ -104,30 +109,83 @@ export interface RemovedSection {
 export interface SectionOptions {
   /** Says it's gone and offers Undo, since this can take a lot of words with it. */
   onRemoved: (removed: RemovedSection) => void;
+  /** Asks for a picture, and hands it over. */
+  onPickImage: (use: (mediaId: string) => void) => void;
   /** Whether this person can change the business details a Contact & hours section shows. */
   canEditBusiness: boolean;
 }
 
-/** The two ways each section can be laid out (PLAN.md §5). */
-const PRESETS = {
-  intro: {
-    label: "editor.sectionLayout",
-    first: "editor.introFitted",
-    second: "editor.introWide",
-  },
-  pictureText: {
-    label: "editor.sectionPicture",
-    first: "editor.pictureLeft",
-    second: "editor.pictureRight",
-  },
-  contact: {
-    label: "editor.sectionLayout",
-    first: "editor.contactBelow",
-    second: "editor.contactBeside",
-  },
-} as Record<string, { label: string; first: string; second: string }> & {
-  intro: { label: string; first: string; second: string };
+interface Layouts {
+  label: string;
+  first: string;
+  second: string;
+}
+
+/** The two ways each section can be laid out (PLAN.md §5), a Big intro's going by its photo. */
+function layoutsOf(kind: string, hasPhoto: boolean): Layouts {
+  switch (kind) {
+    case "pictureText":
+      return {
+        label: "editor.sectionPicture",
+        first: "editor.pictureLeft",
+        second: "editor.pictureRight",
+      };
+    case "contact":
+      return {
+        label: "editor.sectionLayout",
+        first: "editor.contactBelow",
+        second: "editor.contactBeside",
+      };
+    default:
+      return hasPhoto
+        ? {
+            label: "editor.sectionLayout",
+            first: "editor.introBeside",
+            second: "editor.introBehind",
+          }
+        : {
+            label: "editor.sectionLayout",
+            first: "editor.introStandard",
+            second: "editor.introTall",
+          };
+  }
+}
+
+const SECTION_NAMES: Record<string, { name: string; icon: IconName }> = {
+  pictureText: { name: "editor.sectionPictureText", icon: "pictureText" },
+  contact: { name: "editor.sectionContact", icon: "contact" },
 };
+const INTRO = { name: "editor.sectionIntro", icon: "intro" } as const;
+
+function Choice({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: [value: string, name: string][];
+}) {
+  const intl = useIntl();
+  return (
+    <label className="flex items-center gap-2 text-sm text-muted">
+      <FormattedMessage id={label} />
+      <select
+        className={`${choiceClass} text-ink`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map(([option, name]) => (
+          <option key={option} value={option}>
+            {intl.formatMessage({ id: name })}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 function SectionView({
   node,
@@ -137,7 +195,6 @@ function SectionView({
   extension,
   getPos,
 }: NodeViewProps) {
-  const intl = useIntl();
   const { kind, tone, align, preset } = node.attrs as {
     kind: string;
     tone: string;
@@ -146,64 +203,78 @@ function SectionView({
   };
   const editable = useIsEditable(editor);
   const options = extension.options as SectionOptions;
-  const presets = PRESETS[kind] ?? PRESETS.intro;
+  const { name, icon } = SECTION_NAMES[kind] ?? INTRO;
+  const hasPhoto = node.children.some((child) => child.type.name === "image");
+  const layouts = layoutsOf(kind, hasPhoto);
+  const layout = preset === "2" ? "2" : "1";
   return (
     <NodeViewWrapper
-      className={`my-4 rounded-lg border border-dashed border-muted p-4 ${
-        tone === "muted" ? "bg-ink/5" : tone === "accent" ? "bg-brand/15" : ""
-      }`}
+      className="tend-section"
+      data-kind={kind}
+      data-tone={tone}
+      data-align={align}
+      data-layout={layout}
     >
-      <div contentEditable={false} className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="me-auto text-sm font-medium text-muted">
-          <FormattedMessage
-            id={
-              kind === "pictureText"
-                ? "editor.sectionPictureText"
-                : kind === "contact"
-                  ? "editor.sectionContact"
-                  : "editor.sectionIntro"
-            }
-          />
+      <div contentEditable={false} className="tend-section-bar">
+        <span className="me-auto inline-flex min-h-11 items-center gap-2 text-sm font-semibold">
+          <Icon name={icon} className="size-4.5 text-brand" />
+          <FormattedMessage id={name} />
         </span>
         {editable && (
           <>
-            <label className="flex items-center gap-1 text-sm">
-              <FormattedMessage id={presets.label} />
-              <select
-                className={controlClass}
-                value={preset === "2" ? "2" : "1"}
-                onChange={(event) => updateAttributes({ preset: event.target.value })}
+            {kind !== "contact" && !hasPhoto && (
+              <button
+                type="button"
+                className={sectionButtonClass}
+                onClick={() =>
+                  options.onPickImage((mediaId) => {
+                    const position = getPos();
+                    if (typeof position !== "number") return;
+                    // This button goes once there's a photo, so the keyboard goes to the writing.
+                    editor
+                      .chain()
+                      .insertContentAt(position + 1, { type: "image", attrs: { mediaId } })
+                      .setTextSelection(position + 4)
+                      .focus()
+                      .run();
+                  })
+                }
               >
-                <option value="1">{intl.formatMessage({ id: presets.first })}</option>
-                <option value="2">{intl.formatMessage({ id: presets.second })}</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-1 text-sm">
-              <FormattedMessage id="editor.sectionTone" />
-              <select
-                className={controlClass}
-                value={tone}
-                onChange={(event) => updateAttributes({ tone: event.target.value })}
-              >
-                <option value="none">{intl.formatMessage({ id: "editor.toneNone" })}</option>
-                <option value="muted">{intl.formatMessage({ id: "editor.toneMuted" })}</option>
-                <option value="accent">{intl.formatMessage({ id: "editor.toneAccent" })}</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-1 text-sm">
-              <FormattedMessage id="editor.sectionAlign" />
-              <select
-                className={controlClass}
-                value={align}
-                onChange={(event) => updateAttributes({ align: event.target.value })}
-              >
-                <option value="left">{intl.formatMessage({ id: "editor.alignLeft" })}</option>
-                <option value="center">{intl.formatMessage({ id: "editor.alignCenter" })}</option>
-              </select>
-            </label>
+                <Icon name="media" className="size-4.5" />
+                <FormattedMessage id="editor.sectionAddPhoto" />
+              </button>
+            )}
+            <Choice
+              label={layouts.label}
+              value={layout}
+              onChange={(value) => updateAttributes({ preset: value })}
+              options={[
+                ["1", layouts.first],
+                ["2", layouts.second],
+              ]}
+            />
+            <Choice
+              label="editor.sectionTone"
+              value={tone}
+              onChange={(value) => updateAttributes({ tone: value })}
+              options={[
+                ["none", "editor.toneNone"],
+                ["muted", "editor.toneMuted"],
+                ["accent", "editor.toneAccent"],
+              ]}
+            />
+            <Choice
+              label="editor.sectionAlign"
+              value={align}
+              onChange={(value) => updateAttributes({ align: value })}
+              options={[
+                ["left", "editor.alignLeft"],
+                ["center", "editor.alignCenter"],
+              ]}
+            />
             <button
               type="button"
-              className={controlClass}
+              className={sectionButtonClass}
               onClick={() => {
                 const position = getPos();
                 const removed = node.toJSON() as Record<string, unknown>;
@@ -212,7 +283,7 @@ function SectionView({
                 deleteNode();
                 // This button has just gone, so focus goes back to the writing.
                 editor.commands.focus();
-                (extension.options as SectionOptions).onRemoved({
+                options.onRemoved({
                   node: removed,
                   position: typeof position === "number" ? position : 0,
                 });
@@ -223,25 +294,27 @@ function SectionView({
           </>
         )}
       </div>
-      <NodeViewContent className={align === "center" ? "text-center" : ""} />
+      <NodeViewContent className="tend-section-words" />
       {kind === "contact" && (
-        <div
-          contentEditable={false}
-          className="mt-3 rounded border border-ink/15 bg-paper p-3 text-sm"
-        >
-          <p>
-            <FormattedMessage id="editor.contactDetails" />
-          </p>
-          {options.canEditBusiness && (
-            <a
-              href="/admin/settings/business"
-              target="_blank"
-              rel="noopener"
-              className="text-brand underline"
-            >
-              <FormattedMessage id="editor.contactEdit" />
-            </a>
-          )}
+        <div contentEditable={false} className="tend-section-details">
+          <div className="dashed flex gap-4 bg-surface p-5 text-left text-base text-ink">
+            <Icon name="contact" className="size-6 text-brand" />
+            <div className="min-w-0">
+              <p>
+                <FormattedMessage id="editor.contactDetails" />
+              </p>
+              {options.canEditBusiness && (
+                <a
+                  href="/admin/settings/business"
+                  target="_blank"
+                  rel="noopener"
+                  className="mt-1 inline-flex min-h-11 items-center font-medium text-brand underline underline-offset-4"
+                >
+                  <FormattedMessage id="editor.contactEdit" />
+                </a>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </NodeViewWrapper>
@@ -262,7 +335,7 @@ export const SectionNode = Node.create<SectionOptions>({
   selectable: false,
 
   addOptions() {
-    return { onRemoved: () => {}, canEditBusiness: false };
+    return { onRemoved: () => {}, onPickImage: () => {}, canEditBusiness: false };
   },
 
   // A section is a box of its own, so Backspace and Delete at its edge don't pull the words on

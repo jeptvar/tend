@@ -41,7 +41,7 @@
   },
   "overrides": [
     {
-      "includes": ["themes/**/*.css"],
+      "includes": ["themes/**/*.css", "packages/admin/src/editor/page.css"],
       "linter": {
         "rules": {
           "style": {

@@ -138,7 +138,7 @@ export function LinkDialog({
   return (
     <Dialog labelledBy={headingId} onClose={onClose}>
       <form onSubmit={submit} noValidate className="grid gap-4">
-        <h2 id={headingId} className="text-xl font-semibold">
+        <h2 id={headingId} className="text-xl font-bold">
           {heading}
         </h2>
         {withLabel && (
@@ -155,7 +155,7 @@ export function LinkDialog({
           />
         )}
         {chosen ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-muted p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-sunken p-4">
             <span role="status">
               <FormattedMessage
                 id="link.goesTo"
@@ -210,7 +210,7 @@ export function LinkDialog({
                       setPicked(target);
                       setProblem(null);
                     }}
-                    className="flex min-h-11 w-full flex-wrap items-center justify-between gap-x-3 rounded-lg px-3 py-1 text-start hover:bg-ink/5 focus-visible:outline-3 focus-visible:outline-brand"
+                    className="flex min-h-11 w-full flex-wrap items-center justify-between gap-x-3 rounded-xl px-3 py-1 text-start hover:bg-ink/5 focus-visible:outline-3 focus-visible:outline-brand"
                   >
                     <span className="font-medium">
                       {target.title || intl.formatMessage({ id: "list.untitled" })}

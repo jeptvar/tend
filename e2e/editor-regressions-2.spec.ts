@@ -5,6 +5,8 @@ import {
   createEntry,
   expect,
   holdRequests,
+  openHistory,
+  openSettings,
   readEntry,
   type Site,
   test,
@@ -353,7 +355,7 @@ test.describe("Undo after leaving", () => {
     const post = await createEntry(page, signedIn, { title: "T", body: "Live", publish: true });
     await openPost(page, signedIn, post.id);
     const answer = await holdRequests(page, "**/unpublish");
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     await page.getByRole("button", { name: "Unpublish" }).click();
     await postsLink(page).click();
     // The answer comes once the list is showing. An Undo already showing when the editor
@@ -486,7 +488,7 @@ test.describe("reviewing and restoring", () => {
     });
     await patch(page, signedIn, post.id, post.rev, { doc: doc(paragraph("Newer edit")) });
     await openPost(page, signedIn, post.id);
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     await history.getByRole("button", { name: /On your site/ }).click();
     await history.getByRole("button", { name: "Restore this version" }).click();
@@ -504,7 +506,7 @@ test.describe("reviewing and restoring", () => {
     await openPost(page, signedIn, post.id);
     await retype(page, "Newest edit");
     await expect(saveStatus(page)).toContainText("not on your site yet", { timeout: 6000 });
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     await history
       .getByRole("button", { name: /Saved automatically/ })
@@ -531,7 +533,7 @@ test.describe("reviewing and restoring", () => {
       rev = (await act(page, signedIn, post.id, "publish", saved.rev)).rev;
     }
     await openPost(page, signedIn, post.id);
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     await expect(history.getByRole("button", { name: /Published/ })).toHaveCount(100);
     await history.getByRole("button", { name: "Show older versions" }).click();
@@ -843,7 +845,7 @@ test.describe("the editor itself", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "blog/Second" });
     await openPost(page, signedIn, post.id);
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     const real = (await readEntry(page, signedIn, post.id)).address.path;
     await expect(page.getByText(`This will be ${real}.`)).toBeVisible();
   });

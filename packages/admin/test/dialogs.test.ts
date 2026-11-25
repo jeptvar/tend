@@ -21,6 +21,7 @@ const DIALOGS: Record<string, { is: string; asks?: string }[]> = {
   "editor/LinkDialog.tsx": [{ is: "a link or a button" }],
   "editor/PreviewDialog.tsx": [{ is: "the preview" }],
   "editor/PublishDialog.tsx": [{ is: "it's published" }, { is: "the review before publishing" }],
+  "routes/Editor.tsx": [{ is: "a post's or page's settings, where there's no room beside it" }],
   "routes/Entries.tsx": [{ is: "a post or page, forever", asks: "Delete forever" }],
   "routes/Media.tsx": [
     { is: "a picture's or file's details" },

@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type KeyboardEvent, useId, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { secondaryButtonClass } from "../components/AuthLayout.tsx";
-import { Field } from "../components/fields.tsx";
+import { Field, SentenceField } from "../components/fields.tsx";
+import { Icon } from "../components/icons.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { api } from "../lib/api.ts";
@@ -13,45 +14,45 @@ const smallButtonClass = `${secondaryButtonClass} aria-disabled:opacity-60`;
 /** The picture for cards, sharing and the top of a post. Automatic until one is chosen. */
 export function FeaturedImageField({
   value,
+  automatic,
   onChange,
   readOnly,
 }: {
   value: string | null;
+  /** The one that's used until one is chosen. */
+  automatic: string | null;
   onChange: (id: string | null) => void;
   readOnly: boolean;
 }) {
   const intl = useIntl();
   const [picking, setPicking] = useState(false);
-  const { found, isPending, isError } = useMediaItems(value ? [value] : []);
-  const item = value ? found.get(value) : undefined;
+  const shown = value ?? automatic;
+  const { found, isPending, isError } = useMediaItems(shown ? [shown] : []);
+  const item = shown ? found.get(shown) : undefined;
 
   return (
-    <fieldset className="grid gap-2">
+    <fieldset className="grid grid-cols-1 gap-2">
       <legend className="mb-2 font-medium">
         <FormattedMessage id="featured.label" />
       </legend>
+      {item && item.trashedAt === null && (
+        <img
+          src={item.thumbUrl ?? undefined}
+          alt={item.alt ?? ""}
+          style={{ backgroundColor: item.dominantColor ?? undefined }}
+          className="aspect-[16/9] w-full rounded-xl object-cover"
+        />
+      )}
       {value === null ? (
         <p className="text-sm text-muted">
           <FormattedMessage id="featured.automatic" />
         </p>
       ) : item ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <img
-            src={item.thumbUrl ?? undefined}
-            alt={item.alt ?? ""}
-            style={{ backgroundColor: item.dominantColor ?? undefined }}
-            className="h-20 w-28 rounded object-cover"
-          />
-          <span className="min-w-0 text-sm [overflow-wrap:anywhere]">
-            {item.trashedAt !== null ? (
-              <span className="text-danger">
-                <FormattedMessage id="featured.inTrash" />
-              </span>
-            ) : (
-              item.alt || item.name
-            )}
-          </span>
-        </div>
+        item.trashedAt !== null && (
+          <p className="text-sm text-danger">
+            <FormattedMessage id="featured.inTrash" />
+          </p>
+        )
       ) : (
         <p className="text-sm text-muted">
           <FormattedMessage
@@ -158,7 +159,7 @@ export function TagsField({
           {value.map((id) => (
             <li
               key={id}
-              className="inline-flex items-center gap-1 rounded-full border border-muted ps-3"
+              className="inline-flex items-center gap-1 rounded-full bg-mint ps-4 font-medium text-brand-strong"
             >
               <span>{byId.get(id)?.name ?? intl.formatMessage({ id: "common.loading" })}</span>
               {!readOnly && (
@@ -169,9 +170,9 @@ export function TagsField({
                     { id: "tags.remove" },
                     { name: byId.get(id)?.name ?? "" },
                   )}
-                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full hover:bg-ink/10 focus-visible:outline-3 focus-visible:outline-brand"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full hover:bg-ink/8 focus-visible:outline-3 focus-visible:outline-brand"
                 >
-                  ×
+                  <Icon name="close" className="size-4" />
                 </button>
               )}
             </li>
@@ -188,7 +189,7 @@ export function TagsField({
             onChange={(event) => setTyped(event.target.value)}
             onKeyDown={onKeyDown}
             maxLength={60}
-            className="min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-lg text-[#1d2420] focus-visible:outline-3 focus-visible:outline-brand"
+            className="min-h-11 w-full rounded-xl border border-edge bg-field px-3 text-lg focus-visible:outline-3 focus-visible:outline-brand"
           />
           <datalist id={listId}>
             {(tags.data?.tags ?? [])
@@ -241,40 +242,42 @@ export function SearchFields({
   readOnly: boolean;
 }) {
   const intl = useIntl();
-  const headingId = useId();
   return (
-    <fieldset className="grid gap-4" aria-labelledby={headingId}>
-      <legend id={headingId} className="font-medium">
+    <details className="group border-y border-line">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 font-medium focus-visible:outline-3 focus-visible:outline-brand [&::-webkit-details-marker]:hidden">
         <FormattedMessage id="search.legend" />
-      </legend>
-      <Field
-        label={intl.formatMessage({ id: "search.title" })}
-        hint={intl.formatMessage({ id: "search.titleHint" })}
-        value={title}
-        placeholder={automaticTitle}
-        maxLength={200}
-        readOnly={readOnly}
-        onChange={(event) => onChange({ seoTitle: event.target.value })}
-      />
-      <Field
-        label={intl.formatMessage({ id: "search.description" })}
-        hint={intl.formatMessage({ id: "search.descriptionHint" })}
-        value={description}
-        placeholder={automaticDescription}
-        maxLength={400}
-        readOnly={readOnly}
-        onChange={(event) => onChange({ seoDescription: event.target.value })}
-      />
-      <label className="flex min-h-11 items-center gap-3">
-        <input
-          type="checkbox"
-          checked={noindex}
-          disabled={readOnly}
-          onChange={(event) => onChange({ noindex: event.target.checked })}
-          className="h-5 w-5 accent-brand"
+        <Icon name="right" className="size-5 text-muted group-open:rotate-90" />
+      </summary>
+      <div className="grid gap-5 pb-5">
+        <Field
+          label={intl.formatMessage({ id: "search.title" })}
+          hint={intl.formatMessage({ id: "search.titleHint" })}
+          value={title}
+          placeholder={automaticTitle}
+          maxLength={200}
+          readOnly={readOnly}
+          onChange={(event) => onChange({ seoTitle: event.target.value })}
         />
-        <FormattedMessage id="search.noindex" />
-      </label>
-    </fieldset>
+        <SentenceField
+          label={intl.formatMessage({ id: "search.description" })}
+          hint={intl.formatMessage({ id: "search.descriptionHint" })}
+          value={description}
+          placeholder={automaticDescription}
+          maxLength={400}
+          readOnly={readOnly}
+          onChange={(value) => onChange({ seoDescription: value })}
+        />
+        <label className="flex min-h-11 items-center gap-3">
+          <input
+            type="checkbox"
+            checked={noindex}
+            disabled={readOnly}
+            onChange={(event) => onChange({ noindex: event.target.checked })}
+            className="h-5 w-5 shrink-0 accent-brand"
+          />
+          <FormattedMessage id="search.noindex" />
+        </label>
+      </div>
+    </details>
   );
 }

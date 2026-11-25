@@ -16,6 +16,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { FormattedMessage, useIntl } from "react-intl";
+import { Icon, type IconName } from "../components/icons.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
 import { showToast } from "../components/Toast.tsx";
 import type { Doc } from "../lib/doc.ts";
@@ -29,6 +30,7 @@ import { UPLOAD_META } from "./ImageNode.tsx";
 import { LinkDialog } from "./LinkDialog.tsx";
 import type { RemovedSection } from "./nodes.tsx";
 import { tidyPasted } from "./paste.ts";
+import "./page.css";
 import type { SlashState } from "./slash.ts";
 import { forgetUpload, getUpload, isUploading, startUpload } from "./uploads.ts";
 
@@ -40,8 +42,6 @@ export interface BodyHandle {
   goTo(target: CheckTarget): boolean;
 }
 
-// A pressed button shows it with the whole background, because a faint tint can't be told
-// apart at the 3:1 that WCAG asks of something that shows state.
 /**
  * Closes a dialog and puts the keyboard back in the text, at once, before the text changes.
  * Otherwise focus comes back a moment after the dialog closes, with the cursor where it was
@@ -55,26 +55,32 @@ function backToText(editor: Editor, close: () => void): void {
   editor.view.focus();
 }
 
+// A pressed button shows it with the whole background, because a faint tint can't be told
+// apart at the 3:1 that WCAG asks of something that shows state.
 const toolClass =
-  "inline-flex min-h-11 min-w-11 items-center justify-center rounded px-2 hover:bg-ink/10 focus-visible:outline-3 focus-visible:outline-brand aria-disabled:opacity-40 aria-pressed:bg-ink aria-pressed:text-paper";
+  "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl hover:bg-ink/6 focus-visible:outline-3 focus-visible:outline-brand aria-disabled:opacity-40 aria-pressed:bg-brand aria-pressed:text-on-brand";
 
 function Tool({
   label,
   pressed,
   disabled,
   onClick,
+  className = "",
   children,
 }: {
-  label?: string;
+  /** Said, and shown when it's pointed at. What's on it is a drawing, or a letter. */
+  label: string;
   pressed?: boolean;
   disabled?: boolean;
   onClick: () => void;
+  className?: string;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
       aria-label={label}
+      title={label}
       aria-pressed={pressed}
       // aria-disabled, so a button that's just been used keeps keyboard focus.
       aria-disabled={disabled}
@@ -83,11 +89,15 @@ function Tool({
       onClick={() => {
         if (!disabled) onClick();
       }}
-      className={toolClass}
+      className={`${toolClass} ${className}`}
     >
       {children}
     </button>
   );
+}
+
+function Gap({ className = "" }: { className?: string }) {
+  return <span aria-hidden="true" className={`mx-1 h-6 w-px shrink-0 bg-line ${className}`} />;
 }
 
 /** Links are for words: not code, where nothing's formatted, and not a whole button. */
@@ -99,17 +109,33 @@ function canLink(editor: Editor): boolean {
   );
 }
 
-/** The same list as the "/" menu, for phones and anyone who hasn't discovered the slash. */
-function InsertMenu({
-  items,
-  nameOf,
+interface Choice {
+  id: string;
+  name: string;
+  icon: IconName;
+  /** For a menu that says which one it is now. */
+  chosen?: boolean;
+}
+
+/** A button that shows what there is to choose from. */
+function ToolMenu({
+  label,
+  choices,
   onChoose,
   disabled,
+  className,
+  atEnd = false,
+  children,
 }: {
-  items: InsertItem[];
-  nameOf: (id: string) => string;
-  onChoose: (item: InsertItem) => void;
+  /** If it says more than what's on the button. */
+  label?: string;
+  choices: Choice[];
+  onChoose: (id: string) => void;
   disabled: boolean;
+  className: string;
+  /** Lined up with the button's end, for one at the end of a row. */
+  atEnd?: boolean;
+  children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -117,7 +143,10 @@ function InsertMenu({
 
   useEffect(() => {
     if (!open) return;
-    menuRef.current?.querySelector("button")?.focus();
+    const menu = menuRef.current;
+    (menu?.querySelector<HTMLElement>('[aria-checked="true"]') ?? menu?.querySelector("button"))
+      // Where it already shows is where it's meant to be read.
+      ?.focus({ preventScroll: true });
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as globalThis.Node;
       if (!menuRef.current?.contains(target) && !buttonRef.current?.contains(target)) {
@@ -149,40 +178,49 @@ function InsertMenu({
   }
 
   return (
-    <div className="relative">
+    <div className={`relative shrink-0 ${className}`}>
       <button
         ref={buttonRef}
         type="button"
+        aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-disabled={disabled}
         onClick={() => {
           if (!disabled) setOpen(!open);
         }}
-        className={toolClass}
+        className="inline-flex min-h-11 w-full min-w-11 items-center justify-center gap-2 rounded-xl px-3 font-semibold hover:bg-ink/6 focus-visible:outline-3 focus-visible:outline-brand aria-disabled:opacity-40"
       >
-        <FormattedMessage id="editor.insert" />
+        {children}
       </button>
       {open && (
         <div
           ref={menuRef}
           role="menu"
           onKeyDown={move}
-          className="absolute start-0 top-full z-20 mt-1 max-h-80 w-56 overflow-y-auto rounded-lg border border-ink/20 bg-paper p-1 shadow-lg"
+          className={`absolute top-full z-30 mt-2 max-h-[min(38rem,66dvh)] w-64 overflow-y-auto rounded-2xl border border-line bg-surface p-1.5 text-ink shadow-raised max-md:top-auto max-md:bottom-full max-md:mb-2 max-md:max-h-[50dvh] ${
+            atEnd ? "end-0" : "start-0"
+          }`}
         >
-          {items.map((item) => (
+          {choices.map((choice) => (
             <button
-              key={item.id}
+              key={choice.id}
               type="button"
-              role="menuitem"
               tabIndex={-1}
+              {...(choice.chosen === undefined
+                ? { role: "menuitem" }
+                : { role: "menuitemradio", "aria-checked": choice.chosen })}
               onClick={() => {
                 setOpen(false);
-                onChoose(item);
+                onChoose(choice.id);
               }}
-              className="flex min-h-11 w-full items-center rounded px-3 text-start hover:bg-ink/10 focus-visible:outline-3 focus-visible:outline-brand"
+              className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2.5 text-start hover:bg-ink/6 focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-brand"
             >
-              {nameOf(item.id)}
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-mint text-brand">
+                <Icon name={choice.icon} className="size-4.5" />
+              </span>
+              <span className="min-w-0 flex-1">{choice.name}</span>
+              {choice.chosen && <Icon name="done" className="size-4.5 text-brand" />}
             </button>
           ))}
         </div>
@@ -191,18 +229,24 @@ function InsertMenu({
   );
 }
 
+/** How a line of words looks, biggest first but for the usual one. */
+const STYLES = ["text", "heading2", "heading3", "heading4"] as const;
+
 function Toolbar({
   editor,
   items,
   nameOf,
   onInsert,
   onLink,
+  onNotHere,
 }: {
   editor: Editor;
   items: InsertItem[];
   nameOf: (id: string) => string;
   onInsert: (item: InsertItem) => void;
   onLink: () => void;
+  /** Says that something can't go where the cursor is. */
+  onNotHere: () => void;
 }) {
   const intl = useIntl();
   const state = useEditorState({
@@ -217,40 +261,129 @@ function Toolbar({
       bold: current.isActive("bold"),
       italic: current.isActive("italic"),
       link: current.isActive("link"),
+      list: current.isActive("bulletList"),
+      quote: current.isActive("blockquote"),
+      code: current.isActive("codeBlock"),
+      style: ([2, 3, 4] as const).find((level) => current.isActive("heading", { level })),
     }),
   });
   const locked = !state.editable;
+  const style = state.style ? `heading${state.style}` : "text";
+  const styleName = (id: string) =>
+    id === "text" ? intl.formatMessage({ id: "editor.styleText" }) : nameOf(id);
+  const styleNow = state.code ? nameOf("code") : styleName(style);
+  const insert = (id: string) => {
+    const item = items.find((other) => other.id === id);
+    if (item) onInsert(item);
+  };
   return (
-    <fieldset className="flex min-w-0 flex-wrap items-center gap-1 border-b border-muted p-1">
-      <legend className="sr-only">{intl.formatMessage({ id: "editor.formatting" })}</legend>
-      <Tool disabled={locked || !state.canUndo} onClick={() => editor.chain().focus().undo().run()}>
-        <FormattedMessage id="editor.undo" />
-      </Tool>
-      <Tool disabled={locked || !state.canRedo} onClick={() => editor.chain().focus().redo().run()}>
-        <FormattedMessage id="editor.redo" />
-      </Tool>
-      <span aria-hidden="true" className="mx-1 h-6 w-px bg-ink/20" />
-      <Tool
-        label={intl.formatMessage({ id: "editor.bold" })}
-        pressed={state.bold}
-        disabled={locked || !state.canBold}
-        onClick={() => editor.chain().focus().toggleBold().run()}
-      >
-        <strong>B</strong>
-      </Tool>
-      <Tool
-        label={intl.formatMessage({ id: "editor.italic" })}
-        pressed={state.italic}
-        disabled={locked || !state.canItalic}
-        onClick={() => editor.chain().focus().toggleItalic().run()}
-      >
-        <em>I</em>
-      </Tool>
-      <Tool pressed={state.link} disabled={!state.canLink} onClick={onLink}>
-        <FormattedMessage id="editor.link" />
-      </Tool>
-      <InsertMenu items={items} nameOf={nameOf} onChoose={onInsert} disabled={locked} />
-    </fieldset>
+    <div className="tend-tools tend-sticky">
+      <fieldset className="pointer-events-auto flex w-full min-w-0 items-center justify-between md:w-auto md:rounded-2xl md:border md:border-line md:bg-surface md:p-1 md:shadow-raised">
+        <legend className="sr-only">{intl.formatMessage({ id: "editor.formatting" })}</legend>
+        <Tool
+          label={intl.formatMessage({ id: "editor.undo" })}
+          disabled={locked || !state.canUndo}
+          onClick={() => editor.chain().focus().undo().run()}
+        >
+          <Icon name="undo" />
+        </Tool>
+        <Tool
+          label={intl.formatMessage({ id: "editor.redo" })}
+          disabled={locked || !state.canRedo}
+          onClick={() => editor.chain().focus().redo().run()}
+        >
+          <Icon name="redo" />
+        </Tool>
+        <Gap className="max-md:hidden" />
+        <ToolMenu
+          label={intl.formatMessage({ id: "editor.textStyle" }, { style: styleNow })}
+          choices={STYLES.map((id) => ({
+            id,
+            name: styleName(id),
+            icon: id,
+            chosen: !state.code && id === style,
+          }))}
+          onChoose={(id) => {
+            const level = STYLES.indexOf(id as (typeof STYLES)[number]) + 1;
+            const chain = editor.chain().focus();
+            const worked =
+              id === "text"
+                ? chain.setParagraph().run()
+                : chain.setHeading({ level: level as 2 | 3 | 4 }).run();
+            if (!worked) onNotHere();
+          }}
+          disabled={locked}
+          className="max-md:hidden"
+        >
+          <span className="max-w-32 truncate font-medium">{styleNow}</span>
+          <Icon name="down" className="size-4" />
+        </ToolMenu>
+        <Gap className="max-md:hidden" />
+        <Tool
+          label={intl.formatMessage({ id: "editor.bold" })}
+          pressed={state.bold}
+          disabled={locked || !state.canBold}
+          onClick={() => editor.chain().focus().toggleBold().run()}
+        >
+          <Icon name="bold" />
+        </Tool>
+        <Tool
+          label={intl.formatMessage({ id: "editor.italic" })}
+          pressed={state.italic}
+          disabled={locked || !state.canItalic}
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+        >
+          <Icon name="italic" />
+        </Tool>
+        <Tool
+          label={intl.formatMessage({ id: "editor.link" })}
+          pressed={state.link}
+          disabled={!state.canLink}
+          onClick={onLink}
+        >
+          <Icon name="link" />
+        </Tool>
+        <Gap className="max-md:hidden" />
+        <Tool
+          label={nameOf("bulletList")}
+          pressed={state.list}
+          disabled={locked}
+          onClick={() => insert("bulletList")}
+        >
+          <Icon name="bulletList" />
+        </Tool>
+        <Tool
+          label={nameOf("quote")}
+          pressed={state.quote}
+          disabled={locked}
+          onClick={() => insert("quote")}
+          className="max-md:hidden"
+        >
+          <Icon name="quote" />
+        </Tool>
+        <Tool
+          label={nameOf("image")}
+          disabled={locked}
+          onClick={() => insert("image")}
+          className="max-md:hidden"
+        >
+          <Icon name="media" />
+        </Tool>
+        <Gap className="max-md:hidden" />
+        <ToolMenu
+          choices={items.map(({ id, icon }) => ({ id, icon, name: nameOf(id) }))}
+          onChoose={insert}
+          disabled={locked}
+          atEnd
+          className="rounded-xl bg-mint text-brand-strong"
+        >
+          <Icon name="add" className="size-4.5" />
+          <span className="max-[23rem]:sr-only">
+            <FormattedMessage id="editor.insert" />
+          </span>
+        </ToolMenu>
+      </fieldset>
+    </div>
   );
 }
 
@@ -308,21 +441,21 @@ function SelectionToolbar({ editor, onLink }: { editor: Editor; onLink: () => vo
         !(pm.selection instanceof NodeSelection) &&
         !current.isActive("codeBlock")
       }
-      className="z-20 flex flex-wrap items-center gap-1 rounded-lg border border-ink/20 bg-paper p-1 shadow-lg"
+      className="z-20 flex flex-wrap items-center rounded-2xl border border-line bg-surface p-1 text-base shadow-raised"
     >
       <Tool
         label={intl.formatMessage({ id: "editor.bold" })}
         pressed={state.bold}
         onClick={() => editor.chain().focus().toggleBold().run()}
       >
-        <strong>B</strong>
+        <Icon name="bold" />
       </Tool>
       <Tool
         label={intl.formatMessage({ id: "editor.italic" })}
         pressed={state.italic}
         onClick={() => editor.chain().focus().toggleItalic().run()}
       >
-        <em>I</em>
+        <Icon name="italic" />
       </Tool>
       <Tool
         label={intl.formatMessage({ id: "editor.underline" })}
@@ -343,10 +476,10 @@ function SelectionToolbar({ editor, onLink }: { editor: Editor; onLink: () => vo
         pressed={state.code}
         onClick={() => editor.chain().focus().toggleCode().run()}
       >
-        <code>{"</>"}</code>
+        <Icon name="code" />
       </Tool>
-      <Tool pressed={state.link} onClick={onLink}>
-        <FormattedMessage id="editor.link" />
+      <Tool label={intl.formatMessage({ id: "editor.link" })} pressed={state.link} onClick={onLink}>
+        <Icon name="link" />
       </Tool>
       <Tool
         // Starts with what's on the button, for anyone using voice control.
@@ -370,8 +503,8 @@ function SelectionToolbar({ editor, onLink }: { editor: Editor; onLink: () => vo
 
 const bubbleKey = new PluginKey("tendSelectionToolbar");
 
-const SLASH_WIDTH_PX = 256;
-const SLASH_ROOM_PX = 280;
+const SLASH_WIDTH_PX = 272;
+const SLASH_ROOM_PX = 336;
 
 function SlashList({
   state,
@@ -417,7 +550,7 @@ function SlashList({
         width: Math.min(SLASH_WIDTH_PX, window.innerWidth - 16),
         ...(above ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
       }}
-      className="z-30 max-h-64 overflow-y-auto rounded-lg border border-ink/20 bg-paper p-1 shadow-lg"
+      className="z-40 max-h-80 overflow-y-auto rounded-2xl border border-line bg-surface p-1.5 shadow-raised"
     >
       {state.items.length === 0 && (
         <p className="px-3 py-2 text-muted">
@@ -435,8 +568,11 @@ function SlashList({
           // Keeps the cursor in the text, where the menu is working from.
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => state.choose(item)}
-          className="flex min-h-11 cursor-pointer items-center rounded px-3 hover:bg-ink/10 aria-selected:bg-ink aria-selected:text-paper"
+          className="group flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-2.5 hover:bg-ink/6 aria-selected:bg-brand aria-selected:text-on-brand"
         >
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-mint text-brand">
+            <Icon name={item.icon} className="size-4.5" />
+          </span>
           {nameOf(item.id)}
         </div>
       ))}
@@ -541,6 +677,31 @@ function htmlHasWords(html: string): boolean {
   return Boolean(new DOMParser().parseFromString(html, "text/html").body.textContent?.trim());
 }
 
+/**
+ * Keeps how much of the window a phone's keyboard covers in `--tend-keyboard`, so the toolbar at
+ * the bottom can stay above it. The window itself doesn't get smaller when the keyboard opens.
+ */
+function useKeyboardRoom(): void {
+  useEffect(() => {
+    const view = window.visualViewport;
+    if (!view) return;
+    const root = document.documentElement;
+    const measure = () => {
+      // Zoomed in, less of the page shows for another reason.
+      const covered = view.scale > 1.01 ? 0 : window.innerHeight - view.height - view.offsetTop;
+      root.style.setProperty("--tend-keyboard", `${Math.max(0, Math.round(covered))}px`);
+    };
+    measure();
+    view.addEventListener("resize", measure);
+    view.addEventListener("scroll", measure);
+    return () => {
+      view.removeEventListener("resize", measure);
+      view.removeEventListener("scroll", measure);
+      root.style.removeProperty("--tend-keyboard");
+    };
+  }, []);
+}
+
 /** The description dialog, once the picture it's about is known. */
 function DescribeImage({ mediaId, onClose }: { mediaId: string; onClose: () => void }) {
   const { found, isPending } = useMediaItems([mediaId]);
@@ -558,6 +719,7 @@ export function BodyEditor({
   editable,
   canEditBusiness = false,
   labelledBy,
+  title,
   onDocChange,
   onReady,
 }: {
@@ -568,6 +730,8 @@ export function BodyEditor({
   /** Whether this person can change the business details, for Contact & hours. */
   canEditBusiness?: boolean;
   labelledBy: string;
+  /** What's above the words, under the toolbar. */
+  title: ReactNode;
   /** With an immutable snapshot, which is safe to read after this screen has gone. */
   onDocChange: (doc: PmNode) => void;
   onReady: (doc: PmNode) => void;
@@ -606,6 +770,7 @@ export function BodyEditor({
         placeholder: callbacks.current.intl.formatMessage({ id: "editor.placeholder" }),
         onEditButton: (position, attrs) => setAsk({ kind: "editButton", position, ...attrs }),
         onDescribeImage: (mediaId) => setDescribing(mediaId),
+        onPickImage: (use) => setPicking({ use }),
         onUploaded: (item, startedAt) => uploadedRef.current(item, startedAt),
         onSectionRemoved: (removed) => sectionRemovedRef.current(removed),
         canEditBusiness,
@@ -632,11 +797,11 @@ export function BodyEditor({
         role: "textbox",
         "aria-multiline": "true",
         "aria-labelledby": labelledBy,
-        class: "tend-prose min-h-80 p-3 outline-none",
+        class: "tend-prose outline-none",
       },
-      // The sticky bar shouldn't cover the line being typed.
-      scrollMargin: { top: 120, bottom: 24, left: 0, right: 0 },
-      scrollThreshold: { top: 120, bottom: 24, left: 0, right: 0 },
+      // The bars at the top, or a phone's at the bottom, shouldn't cover the line being typed.
+      scrollMargin: { top: 152, bottom: 96, left: 0, right: 0 },
+      scrollThreshold: { top: 152, bottom: 96, left: 0, right: 0 },
       transformPastedHTML: (html) => {
         const tidied = tidyPasted(html);
         if (tidied.notices.length > 0) notifyMessages(tidied.notices);
@@ -863,9 +1028,19 @@ export function BodyEditor({
     setAsk(null);
   }
 
+  useKeyboardRoom();
+
   return (
-    <div className="min-w-0 rounded-lg border border-muted bg-surface focus-within:outline-3 focus-within:outline-brand">
-      <Toolbar editor={editor} items={items} nameOf={nameOf} onInsert={runItem} onLink={openLink} />
+    <div className="min-w-0">
+      <Toolbar
+        editor={editor}
+        items={items}
+        nameOf={nameOf}
+        onInsert={runItem}
+        onLink={openLink}
+        onNotHere={() => notifyMessages(["editor.cantGoHere"])}
+      />
+      {title}
       <EditorContent editor={editor} />
       {wideScreen && <SelectionToolbar editor={editor} onLink={openLink} />}
       {slash && <SlashList state={slash} listId={slashListId} nameOf={nameOf} />}

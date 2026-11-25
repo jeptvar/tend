@@ -2,7 +2,10 @@ import type { Browser, Page } from "@playwright/test";
 import {
   createEntry,
   expect,
+  GREETING,
   OWNER,
+  openHistory,
+  openSettings,
   photo,
   type Site,
   signIn,
@@ -130,7 +133,7 @@ for (const size of SIZES) {
       await page.keyboard.type("Out of the oven at seven, every day but Monday.");
       await page.keyboard.press("Enter");
 
-      await page.getByRole("button", { name: "Insert +" }).click();
+      await page.getByRole("button", { name: "Insert", exact: true }).click();
       await page.getByRole("menuitem", { name: "Image" }).click();
       await page
         .getByRole("dialog", { name: "Add an image" })
@@ -212,7 +215,7 @@ for (const size of SIZES) {
       await invitee.getByRole("button", { name: "Suggest a passphrase" }).click();
       await invitee.getByRole("button", { name: "Create my account" }).click();
       await invitee.getByRole("button", { name: "Continue" }).click();
-      await expect(invitee.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+      await expect(invitee.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
       expect(theirs()).toBeLessThanOrEqual(4);
 
       await goTo(invitee, "Pages");
@@ -258,7 +261,7 @@ for (const size of SIZES) {
       await goTo(page, "Pages");
       await page.getByRole("link", { name: "About" }).click();
       await expect(body(page)).toHaveText("Half");
-      await page.getByRole("button", { name: "History" }).click();
+      await openHistory(page);
       const history = page.getByRole("dialog", { name: "History" });
       await history
         .getByRole("button", { name: /Published/ })
@@ -278,7 +281,7 @@ for (const size of SIZES) {
       await page.goto(`${signedIn.base}/admin/`);
       await goTo(page, "Posts");
       await page.getByRole("link", { name: "Opening day" }).click();
-      await page.getByText("Address, summary and more").click();
+      await openSettings(page);
       await page.getByRole("button", { name: "Move to Trash" }).click();
       await expect(page.getByRole("heading", { name: "Posts", level: 1 })).toBeVisible();
       expect((await page.request.get(`${signedIn.base}${post.url}`)).status()).toBe(404);
@@ -307,7 +310,7 @@ for (const size of SIZES) {
       await owner.getByRole("button", { name: "Continue" }).click();
       await owner.getByLabel("New password", { exact: true }).fill(NEW_PASSWORD);
       await owner.getByRole("button", { name: "Save new password" }).click();
-      await expect(owner.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+      await expect(owner.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
       expect(presses()).toBeLessThanOrEqual(4);
     });
 
@@ -372,7 +375,7 @@ async function signInByKeyboard(page: Page, site: Site): Promise<void> {
   await tabTo(page, page.getByLabel("Password", { exact: true }));
   await page.keyboard.type(OWNER.password);
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
 }
 
 /** Opens a screen from the menu with the keyboard. */
@@ -483,7 +486,7 @@ test.describe("with a keyboard alone", () => {
     await expect(invitee.getByRole("heading", { name: "Save your recovery kit" })).toBeVisible();
     await tabTo(invitee, invitee.getByRole("button", { name: "Continue" }));
     await invitee.keyboard.press("Enter");
-    await expect(invitee.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+    await expect(invitee.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
   });
 });
 
@@ -535,7 +538,7 @@ test("nothing is asked of anyone else's server, by the admin or the site (P7)", 
   await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
   await body(page).click();
   await page.keyboard.press("ControlOrMeta+End");
-  await page.getByRole("button", { name: "Insert +" }).click();
+  await page.getByRole("button", { name: "Insert", exact: true }).click();
   await page.getByRole("menuitem", { name: "Image" }).click();
   await page
     .getByRole("dialog", { name: "Add an image" })

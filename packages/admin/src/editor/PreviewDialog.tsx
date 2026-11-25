@@ -1,7 +1,9 @@
 import { useId, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
-import { secondaryButtonClass } from "../components/AuthLayout.tsx";
+import { iconButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { Icon } from "../components/icons.tsx";
+import { Tabs } from "../components/Tabs.tsx";
 
 /**
  * Sandboxed with no permissions at all: no scripts, no forms, no opening anything, and no
@@ -21,8 +23,8 @@ export function PreviewFrame({
       sandbox=""
       srcDoc={html}
       title={title}
-      className={`h-full w-full rounded border border-muted bg-white ${
-        device === "phone" ? "max-w-[375px]" : ""
+      className={`h-full w-full border border-line bg-white shadow-raised ${
+        device === "phone" ? "max-w-[390px] rounded-4xl" : "rounded-2xl"
       }`}
     />
   );
@@ -37,19 +39,18 @@ export function DeviceChoice({
 }) {
   const intl = useIntl();
   return (
-    <fieldset className="flex items-center gap-1">
+    <fieldset>
       <legend className="sr-only">{intl.formatMessage({ id: "preview.device" })}</legend>
-      {(["desktop", "phone"] as const).map((option) => (
-        <button
-          key={option}
-          type="button"
-          aria-pressed={device === option}
-          onClick={() => onChange(option)}
-          className="min-h-11 min-w-11 rounded px-3 hover:underline focus-visible:outline-3 focus-visible:outline-brand aria-pressed:bg-ink aria-pressed:text-paper"
-        >
-          <FormattedMessage id={`preview.${option}`} />
-        </button>
-      ))}
+      <Tabs>
+        {(["desktop", "phone"] as const).map((option) => (
+          <Tabs.Tab key={option} chosen={device === option} onChoose={() => onChange(option)}>
+            <span className="inline-flex items-center gap-2">
+              <Icon name={option === "phone" ? "phone" : "computer"} className="size-4.5" />
+              <FormattedMessage id={`preview.${option}`} />
+            </span>
+          </Tabs.Tab>
+        ))}
+      </Tabs>
     </fieldset>
   );
 }
@@ -62,12 +63,17 @@ export function PreviewDialog({ html, onClose }: { html: string; onClose: () => 
     <Dialog labelledBy={headingId} onClose={onClose} size="full">
       <div className="flex h-full flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <h2 id={headingId} className="me-auto text-xl font-semibold">
+          <h2 id={headingId} className="me-auto text-xl font-bold">
             <FormattedMessage id="preview.heading" />
           </h2>
           <DeviceChoice device={device} onChange={setDevice} />
-          <button type="button" className={secondaryButtonClass} onClick={onClose}>
-            <FormattedMessage id="common.close" />
+          <button
+            type="button"
+            aria-label={intl.formatMessage({ id: "common.close" })}
+            className={iconButtonClass}
+            onClick={onClose}
+          >
+            <Icon name="close" />
           </button>
         </div>
         <div className="flex min-h-0 flex-1 justify-center">

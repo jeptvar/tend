@@ -1,0 +1,837 @@
+@reference "../index.css";
+
+/*
+ * The page being written, close to how it'll look: in the site's own fonts and colour once they
+ * arrive (lib/site-style.tsx), which are named as in Meadow.
+ */
+.tend-page {
+  /* From the edge of the page to the words, and how wide they are at most. */
+  --tend-pad: 1rem;
+  --tend-words: 43rem;
+  --tend-accent: var(--tend-site-accent, var(--color-brand));
+  --tend-on-accent: #ffffff;
+  --tend-tint: color-mix(in oklab, var(--tend-accent) 8%, #fdfaf5);
+  --tend-band: var(--tend-accent);
+  --tend-on-band: #fffdf9;
+  --tend-band-button: color-mix(in oklab, var(--tend-accent) 80%, #17130f);
+  --tend-paper: var(--color-surface);
+
+  @variant dark {
+    --tend-accent: var(--tend-site-accent-dark, var(--color-brand));
+    --tend-on-accent: #15110e;
+    --tend-tint: color-mix(in oklab, var(--tend-accent) 6%, #181514);
+    --tend-band: color-mix(in oklab, var(--tend-accent) 30%, #171210);
+    --tend-on-band: #fbf6f0;
+    --tend-band-button: #1b1512;
+  }
+}
+
+@media (width >= 48rem) {
+  .tend-page {
+    --tend-pad: 2.5rem;
+  }
+}
+
+@media (width >= 64rem) {
+  .tend-page {
+    --tend-pad: 4.75rem;
+  }
+}
+
+.tend-title {
+  width: min(var(--tend-words), 100% - 2 * var(--tend-pad));
+  margin-inline: auto;
+  padding-block: 1.25rem 0.75rem;
+  font-family: var(--tend-font-display, var(--tend-font-heading, var(--font-sans)));
+  font-size: clamp(2rem, 1.45rem + 1.9vw, 2.875rem);
+  font-weight: var(--tend-heading-weight, 700);
+  line-height: 1.14;
+  letter-spacing: var(--tend-heading-tracking, -0.02em);
+}
+
+/* Room for the tails of its letters, which reach below its lines. */
+.tend-title .tend-grow::after,
+.tend-title textarea {
+  padding-block-end: 0.12em;
+}
+
+/* The tools: over the top of the page, or above the keyboard at the bottom of a phone. */
+.tend-tools {
+  position: fixed;
+  inset-inline: 0;
+  bottom: var(--tend-keyboard, 0px);
+  z-index: 30;
+  border-top: 1px solid var(--color-line);
+  background: var(--color-surface);
+  padding: 0.25rem 0.375rem calc(0.25rem + env(safe-area-inset-bottom));
+}
+
+@media (max-height: 20rem) {
+  .tend-tools {
+    position: static;
+  }
+}
+
+@media (width < 48rem) {
+  html:has(.tend-tools) {
+    --tend-bar: calc(3.5rem + var(--tend-keyboard, 0px));
+    /* Something focused shouldn't end up hidden behind the bars at the top and the bottom. */
+    scroll-padding-block: 6rem calc(var(--tend-bar) + 1rem);
+  }
+}
+
+@media (width >= 48rem) {
+  .tend-tools {
+    display: flex;
+    justify-content: center;
+    position: sticky;
+    top: 4.75rem;
+    bottom: auto;
+    z-index: 20;
+    border: 0;
+    background: none;
+    padding: 1rem 1rem 0.25rem;
+    pointer-events: none;
+  }
+
+  html:has(.tend-sticky) {
+    scroll-padding-block: 10rem 5rem;
+  }
+}
+
+@media (width >= 48rem) and (max-height: 30rem) {
+  .tend-tools {
+    position: static;
+  }
+
+  html:has(.tend-sticky) {
+    scroll-padding-block: 1rem;
+  }
+}
+
+.tend-prose {
+  min-height: max(20rem, 100dvh - 17.5rem);
+  padding-block: 0.25rem 5rem;
+  font-family: var(--tend-font-body, var(--font-sans));
+  font-size: 1.1875rem;
+  line-height: 1.62;
+  /* A pasted address has to wrap here too, whatever the editor's own styles ask for. */
+  overflow-wrap: anywhere;
+}
+
+.tend-prose > * {
+  width: min(var(--tend-words), 100% - 2 * var(--tend-pad));
+  margin-inline: auto;
+}
+
+.tend-prose > * + * {
+  margin-top: 0.75em;
+}
+
+.tend-prose > * + .node-section,
+.tend-prose > .node-section + * {
+  margin-top: 1.75rem;
+}
+
+.tend-prose > .node-section + .node-section {
+  margin-top: 0;
+}
+
+.tend-prose [data-node-view-content] > div > * + * {
+  margin-top: 0.75em;
+}
+
+.tend-prose :is(h2, h3, h4) {
+  font-family: var(--tend-font-heading, var(--font-sans));
+  font-weight: var(--tend-heading-weight, 700);
+  line-height: 1.16;
+  letter-spacing: var(--tend-heading-tracking, -0.02em);
+  text-wrap: balance;
+}
+
+.tend-prose > :is(h2, h3, h4) {
+  margin-top: 1.4em;
+}
+
+.tend-prose > :is(h2, h3, h4):first-child {
+  margin-top: 0;
+}
+
+.tend-prose h2 {
+  font-size: 1.9375rem;
+}
+
+.tend-prose h3 {
+  font-size: 1.5rem;
+}
+
+.tend-prose h4 {
+  font-size: 1.25rem;
+}
+
+.tend-prose ul {
+  list-style: disc;
+  padding-inline-start: 1.5em;
+}
+
+.tend-prose ol {
+  list-style: decimal;
+  padding-inline-start: 1.5em;
+}
+
+.tend-prose li::marker {
+  color: var(--tend-accent);
+}
+
+.tend-prose blockquote {
+  border-inline-start: 3px solid var(--tend-accent);
+  padding-inline-start: 1em;
+  font-family: var(--tend-font-heading, var(--font-sans));
+  font-size: 1.375rem;
+  line-height: 1.35;
+}
+
+.tend-prose pre {
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, currentcolor 8%, transparent);
+  padding: 1rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.95rem;
+}
+
+.tend-prose code {
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, currentcolor 8%, transparent);
+  padding: 0.1em 0.25em;
+  font-family: ui-monospace, monospace;
+  font-size: 0.92em;
+}
+
+.tend-prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.tend-prose a {
+  color: var(--tend-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.tend-prose hr {
+  width: 6rem;
+  margin-block: 2em;
+  border-top: 2px solid var(--tend-accent);
+}
+
+/* Shows where the cursor is when it's on a whole button or divider, not in any words. */
+.ProseMirror-focused .ProseMirror-selectednode:not(.node-image) {
+  border-radius: 0.5rem;
+  outline: 3px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* The hint in an empty editor. */
+.tend-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: inline-start;
+  height: 0;
+  color: var(--color-muted);
+  pointer-events: none;
+}
+
+/* Buttons, which open what they say and where they go when they're pressed here. */
+
+.tend-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  max-width: 100%;
+  min-height: 3.125rem;
+  padding: 0.5rem 1.5rem;
+  border: 2px solid transparent;
+  border-radius: var(--tend-radius-button, 0.75rem);
+  background: var(--tend-accent);
+  color: var(--tend-on-accent);
+  font-family: var(--tend-font-body, var(--font-sans));
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+
+.tend-button:focus-visible {
+  outline: 3px solid var(--color-brand);
+  outline-offset: 3px;
+}
+
+/* Pictures */
+
+.tend-picture {
+  border-radius: var(--tend-radius, 1rem);
+}
+
+.tend-image-frame {
+  position: relative;
+}
+
+.tend-prose > .node-image:has([data-size="wide"]) {
+  width: min(52rem, 100% - 1.5 * var(--tend-pad));
+}
+
+.tend-prose > .node-image:has([data-size="full"]) {
+  width: 100%;
+}
+
+[data-size="full"] .tend-picture {
+  border-radius: 0;
+}
+
+/* Chosen, and not just the first thing there when the page was opened. */
+.ProseMirror-focused .tend-image[data-chosen] .tend-image-frame {
+  border-radius: var(--tend-radius, 1rem);
+  outline: 3px solid var(--color-brand);
+  outline-offset: 4px;
+}
+
+.ProseMirror-focused .tend-image[data-size="full"][data-chosen] .tend-image-frame {
+  border-radius: 0;
+  outline-offset: -3px;
+}
+
+.tend-over {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  position: absolute;
+  inset-block-start: 0.75rem;
+  inset-inline-start: 50%;
+  z-index: 2;
+  width: max-content;
+  max-width: calc(100% - 1rem);
+  padding: 0.25rem;
+  border-radius: 0.75rem;
+  background: #14201b;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  opacity: 0;
+  transform: translateX(-50%);
+}
+
+.tend-image:is(:hover, :focus-within) .tend-over,
+.ProseMirror-focused .tend-image[data-chosen] .tend-over,
+.tend-over[data-always] {
+  opacity: 1;
+}
+
+/* With no pointer to show it, a tap meant for the picture mustn't land on something unseen. */
+@media (hover: none) {
+  .tend-image:not(:focus-within, .ProseMirror-focused [data-chosen]) .tend-over:not([data-always]) {
+    visibility: hidden;
+  }
+}
+
+.tend-undescribed {
+  position: absolute;
+  inset-block-end: 0.75rem;
+  inset-inline-start: 0.75rem;
+  z-index: 2;
+  padding: 0.25rem 0.75rem;
+  border-radius: 99rem;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.tend-caption {
+  width: 100%;
+  min-height: 2.75rem;
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 1rem;
+  text-align: center;
+}
+
+.tend-caption::placeholder {
+  color: inherit;
+}
+
+input.tend-caption:is(:hover, :focus-visible) {
+  border-color: var(--color-edge);
+}
+
+input.tend-caption:focus-visible {
+  outline: 3px solid var(--color-brand);
+}
+
+/* Sections, right across the page as on the site, each with a bar of its own above it. */
+
+.tend-prose > .node-section {
+  width: 100%;
+}
+
+.tend-section {
+  container-type: inline-size;
+}
+
+.tend-section-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding: 0.375rem max(1rem, var(--tend-pad) / 2);
+  border-block: 1px solid var(--color-line);
+  background: color-mix(in srgb, var(--color-sunken) 55%, var(--color-surface));
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+.tend-section-words > div {
+  position: relative;
+  isolation: isolate;
+  padding: 2.5rem var(--tend-pad);
+}
+
+/* On a phone: what it is and Remove, and the choices under them, side by side. */
+@container (width < 40rem) {
+  .tend-section-bar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.25rem 0.5rem;
+    padding: 0.125rem 1rem 0.75rem;
+  }
+
+  .tend-section-bar > :first-child {
+    grid-column: 1 / 3;
+    margin: 0;
+  }
+
+  .tend-section-bar > button:last-child {
+    grid-area: 1 / 3;
+    justify-self: end;
+  }
+
+  .tend-section-bar > button:not(:last-child) {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .tend-section-bar > label {
+    display: grid;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+
+  .tend-section-bar select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.tend-section-details a {
+  color: var(--color-brand);
+}
+
+.tend-section-details {
+  padding: 0 var(--tend-pad) 2.5rem;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+.tend-section[data-align="center"] .tend-section-words {
+  text-align: center;
+}
+
+.tend-section[data-tone="muted"] :is(.tend-section-words, .tend-section-details) {
+  background: var(--tend-tint);
+}
+
+.tend-section[data-tone="accent"] :is(.tend-section-words, .tend-section-details) {
+  background: var(--tend-band);
+  color: var(--tend-on-band);
+}
+
+.tend-section[data-tone="accent"] .tend-section-words :is(a, li::marker, .tend-caption) {
+  color: inherit;
+}
+
+.tend-section[data-tone="accent"] .tend-section-words blockquote {
+  border-color: currentcolor;
+}
+
+.tend-section[data-tone="accent"] .tend-button {
+  background: var(--tend-on-band);
+  color: var(--tend-band-button);
+}
+
+/* The ring is green, which might be what it's on. */
+.tend-section[data-tone="accent"] .tend-section-words :is(.tend-button, input):focus-visible,
+.tend-section[data-tone="accent"] .tend-section-words .ProseMirror-selectednode:not(.node-image) {
+  outline-color: currentcolor;
+}
+
+.tend-section[data-tone="accent"] .tend-section-words .tend-button:focus-visible {
+  outline-color: var(--tend-on-band);
+}
+
+/* Buttons one after another are side by side, and the second is quieter, as on the site. */
+.tend-section-words > div > .node-button {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 1.5rem;
+  margin-inline-end: 0.75rem;
+}
+
+.tend-section-words > div > .node-button + .node-button .tend-button {
+  border-color: color-mix(in oklab, currentcolor 30%, transparent);
+  background: transparent;
+  color: inherit;
+}
+
+/* Big intro */
+
+.tend-section[data-kind="intro"] .tend-section-words h2 {
+  font-family: var(--tend-font-display, var(--tend-font-heading, var(--font-sans)));
+  font-size: clamp(2.25rem, 1.4rem + 4.2cqi, 3.75rem);
+  line-height: 1.06;
+}
+
+.tend-section[data-kind="intro"] .tend-section-words > div > p {
+  max-width: 34rem;
+  font-size: clamp(1.1875rem, 1.05rem + 0.6cqi, 1.375rem);
+  line-height: 1.5;
+}
+
+.tend-section[data-kind="intro"][data-align="center"] .tend-section-words > div > p {
+  margin-inline: auto;
+}
+
+.tend-section[data-kind="intro"] .tend-section-words > div:not(:has(> .node-image)) {
+  padding-block: 4rem;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div:not(:has(> .node-image)) {
+  padding-block: 7rem;
+}
+
+.tend-section[data-kind="intro"]:not([data-tone="accent"])
+  .tend-section-words
+  > div:not(:has(> .node-image)) {
+  background:
+    radial-gradient(
+      40rem 24rem at 92% -8%,
+      color-mix(in oklab, var(--tend-accent) 18%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      36rem 22rem at -6% 108%,
+      color-mix(in oklab, var(--tend-accent) 12%, transparent),
+      transparent 70%
+    ),
+    var(--tend-tint);
+}
+
+/* With its photo beside the words, or the picture of Picture and text. */
+
+.tend-section[data-kind="pictureText"] .tend-picture,
+.tend-section[data-kind="intro"][data-layout="1"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  .tend-picture {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+@container (width >= 40rem) {
+  .tend-section:is([data-kind="pictureText"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div:has(> .node-image) {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    /* Rows for the words, and what's left shared above and below them. */
+    grid-template-rows: 1fr repeat(18, auto) 1fr;
+    grid-auto-flow: row;
+    column-gap: 3rem;
+    padding-block: 3rem;
+  }
+
+  .tend-section:is([data-kind="pictureText"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div:has(> .node-image)::before {
+    content: "";
+    grid-area: 1 / 2;
+  }
+
+  .tend-section:is([data-kind="pictureText"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div:has(> .node-image)
+    > * {
+    grid-column: 2;
+    margin-top: 0.5em;
+  }
+
+  .tend-section:is([data-kind="pictureText"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div
+    > .node-image:nth-child(1 of .node-image) {
+    grid-area: 1 / 1 / -1 / 2;
+    align-self: center;
+    margin: 0;
+  }
+
+  /* The other way round: a Big intro's photo is after its words. */
+  .tend-section:is([data-kind="pictureText"][data-layout="2"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div:has(> .node-image) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  }
+
+  .tend-section:is([data-kind="pictureText"][data-layout="2"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div:has(> .node-image)::before {
+    grid-area: 1 / 1;
+  }
+
+  .tend-section:is([data-kind="pictureText"][data-layout="2"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div:has(> .node-image)
+    > * {
+    grid-column: 1;
+  }
+
+  .tend-section:is([data-kind="pictureText"][data-layout="2"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div
+    > .node-image:nth-child(1 of .node-image) {
+    grid-area: 1 / 2 / -1 / 3;
+  }
+
+  /* Side by side would be more than its column can hold. */
+  .tend-section:is([data-kind="pictureText"], [data-kind="intro"][data-layout="1"])
+    .tend-section-words
+    > div:has(> .node-image)
+    > .node-button {
+    justify-self: start;
+  }
+}
+
+/* Or behind them, under enough of one colour to read the words on any photo. */
+
+.tend-section[data-kind="intro"][data-layout="2"] .tend-section-words > div:has(> .node-image) {
+  --tend-veil: var(--tend-paper);
+  display: flow-root;
+  align-content: center;
+  min-height: 30rem;
+  padding-block: 4.5rem;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"][data-tone="muted"]
+  .tend-section-words
+  > div:has(> .node-image) {
+  --tend-veil: var(--tend-tint);
+}
+
+.tend-section[data-kind="intro"][data-layout="2"][data-tone="accent"]
+  .tend-section-words
+  > div:has(> .node-image) {
+  --tend-veil: color-mix(in oklab, var(--tend-accent) 16%, #0f0b08);
+  color: #fffdf9;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div:has(> .node-image)
+  > :not(.node-image) {
+  position: relative;
+  max-width: min(100%, 34rem);
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div:has(> .node-image)
+  > h2 {
+  max-width: min(100%, 9em);
+}
+
+.tend-section[data-kind="intro"][data-layout="2"][data-align="center"]
+  .tend-section-words
+  > div:has(> .node-image)
+  > :not(.node-image, .node-button) {
+  margin-inline: auto;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image) {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  :is(.tend-image, .tend-image > div, .tend-image-frame) {
+  height: 100%;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  .tend-picture {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  .tend-image-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--tend-veil) 90%, transparent),
+    color-mix(in oklab, var(--tend-veil) 70%, transparent) calc(var(--tend-pad) + 30rem),
+    color-mix(in oklab, var(--tend-veil) 20%, transparent) calc(var(--tend-pad) + 44rem)
+  );
+  pointer-events: none;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"][data-align="center"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  .tend-image-frame::after {
+  background: color-mix(in oklab, var(--tend-veil) 70%, transparent);
+}
+
+/* Out of the way of the words, which start at the other side. */
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  .tend-undescribed {
+  inset-block: 0.75rem auto;
+}
+
+/* Over the words, where the photo shows most. */
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  .tend-over {
+  inset-inline: auto 0.75rem;
+  transform: none;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  .tend-caption {
+  position: absolute;
+  inset-block-end: 0.75rem;
+  inset-inline-end: 0.75rem;
+  z-index: 2;
+  width: min(22rem, 60%);
+  background: var(--color-surface);
+  color: var(--color-muted);
+}
+
+/* Links are as dark as the words they're among: their own colour may not be enough on a photo. */
+.tend-section[data-kind="intro"][data-layout="2"] .tend-section-words > div:has(> .node-image) a {
+  color: inherit;
+}
+
+.tend-section[data-kind="intro"][data-layout="2"]
+  .tend-section-words
+  > div
+  > .node-image:nth-child(1 of .node-image)
+  .tend-image-frame {
+  border-radius: 0;
+  outline-offset: -3px;
+}
+
+@container (width < 40rem) {
+  /* Dark, the words are at the bottom of the photo, which shows most above them. */
+  .tend-section[data-kind="intro"][data-layout="2"][data-tone="accent"]
+    .tend-section-words
+    > div:has(> .node-image) {
+    align-content: end;
+    min-height: 34rem;
+    padding-block: 10rem 5rem;
+  }
+
+  .tend-section[data-kind="intro"][data-layout="2"][data-tone="accent"]
+    .tend-section-words
+    > div
+    > .node-image:nth-child(1 of .node-image)
+    .tend-image-frame::after {
+    background: linear-gradient(
+      0deg,
+      color-mix(in oklab, var(--tend-veil) 94%, transparent),
+      color-mix(in oklab, var(--tend-veil) 70%, transparent) calc(100% - 10rem),
+      color-mix(in oklab, var(--tend-veil) 6%, transparent)
+    );
+  }
+
+  /* Light, so much of it would be covered that it goes above them instead. */
+  .tend-section[data-kind="intro"][data-layout="2"]:not([data-tone="accent"])
+    .tend-section-words
+    > div:has(> .node-image) {
+    min-height: 0;
+    padding-top: 0;
+  }
+
+  .tend-section[data-kind="intro"][data-layout="2"]:not([data-tone="accent"])
+    .tend-section-words
+    > div
+    > .node-image:nth-child(1 of .node-image) {
+    position: static;
+    margin: 0 calc(-1 * var(--tend-pad)) 1.5rem;
+  }
+
+  .tend-section[data-kind="intro"][data-layout="2"]:not([data-tone="accent"])
+    .tend-section-words
+    > div
+    > .node-image:nth-child(1 of .node-image)
+    .tend-image-frame::after {
+    content: none;
+  }
+
+  .tend-section[data-kind="intro"][data-layout="2"]:not([data-tone="accent"])
+    .tend-section-words
+    > div
+    > .node-image:nth-child(1 of .node-image)
+    .tend-picture {
+    aspect-ratio: 4 / 3;
+  }
+
+  .tend-section[data-kind="intro"][data-layout="2"]
+    .tend-section-words
+    > div
+    > .node-image:nth-child(1 of .node-image)
+    .tend-caption {
+    width: calc(100% - 1.5rem);
+  }
+}

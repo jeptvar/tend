@@ -4,6 +4,8 @@ import {
   closeWhileDown,
   createEntry,
   expect,
+  openHistory,
+  openSettings,
   photo,
   readEntry,
   type Site,
@@ -54,12 +56,6 @@ function heldRows(page: Page): Promise<{ key: string; userId: string; heldAt: nu
       all.onsuccess = () => resolve(all.result);
     });
   });
-}
-
-async function openSettings(page: Page): Promise<void> {
-  const summary = page.getByText("Address, summary and more");
-  await summary.scrollIntoViewIfNeeded();
-  if ((await page.locator("details[open]").count()) === 0) await summary.click();
 }
 
 /** Selects everything and types over it, the way a person would. */
@@ -302,7 +298,7 @@ test.describe("formatting", () => {
   test("the Insert button offers the same things, by keyboard too", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Insert", body: "" });
     await openPost(page, signedIn, post.id);
-    const insert = page.getByRole("button", { name: "Insert +" });
+    const insert = page.getByRole("button", { name: "Insert", exact: true });
     await insert.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("menuitem", { name: "Heading", exact: true })).toBeFocused();
@@ -462,7 +458,7 @@ test.describe("formatting", () => {
     await page.keyboard.type("Every morning");
     await page.getByLabel("Background").selectOption("muted");
     await page.getByLabel("Alignment").selectOption("center");
-    await page.getByLabel("Layout").selectOption("Right across the page");
+    await page.getByLabel("Layout").selectOption("Tall");
 
     const html = await publishedHtml(page, signedIn, entry.id);
     expect(html).toContain('class="t-intro t-tone-muted t-align-center" data-preset="2"');
@@ -470,7 +466,7 @@ test.describe("formatting", () => {
 
     const post = await createEntry(page, signedIn, { title: "Post", body: "" });
     await openPost(page, signedIn, post.id);
-    await page.getByRole("button", { name: "Insert +" }).click();
+    await page.getByRole("button", { name: "Insert", exact: true }).click();
     await expect(page.getByRole("menuitem", { name: "Big intro" })).toHaveCount(0);
   });
 
@@ -1195,7 +1191,7 @@ test.describe("two people editing", () => {
     await expect(body(page)).toBeEditable();
     expect(bodyText(await readEntry(page, signedIn, post.id))).toBe("My text");
 
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     await expect(page.getByText("Another version, kept for you").first()).toBeVisible();
   });
 
@@ -1210,7 +1206,7 @@ test.describe("two people editing", () => {
     await expect(saveStatus(page)).toHaveText("Saved");
     await expect(page.getByText("hadn't reached the server")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     await expect(page.getByText("Another version, kept for you").first()).toBeVisible();
   });
 });
@@ -1502,7 +1498,7 @@ test.describe("preview", () => {
     expect(await page.evaluate(() => "pwned" in window)).toBe(false);
 
     await dialog.getByRole("button", { name: "Phone" }).click();
-    await expect(dialog.locator("iframe")).toHaveCSS("max-width", "375px");
+    await expect(dialog.locator("iframe")).toHaveCSS("max-width", "390px");
     await dialog.getByRole("button", { name: "Close" }).click();
     await expect(page.getByRole("button", { name: "Preview" })).toBeFocused();
   });
@@ -1559,7 +1555,7 @@ test.describe("recovering from a mistake", () => {
     await page.getByRole("button", { name: "Publish changes" }).click();
     await expect(saveStatus(page)).toContainText("On your site");
 
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     await history
       .getByRole("button", { name: /Published/ })
@@ -1590,13 +1586,13 @@ test.describe("recovering from a mistake", () => {
     const post = await createEntry(page, signedIn, { title: "Post", body: "Old", publish: true });
     await openPost(page, signedIn, post.id);
     await retype(page, "Newer words");
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     await history.getByRole("button", { name: /Published/ }).click();
     await history.getByRole("button", { name: "Restore this version" }).click();
     await expect(body(page)).toHaveText("Old");
 
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     await history.getByRole("button", { name: /Before restoring/ }).click();
     await expect(page.frameLocator("iframe").getByText("Newer words")).toBeVisible();
   });
