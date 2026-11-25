@@ -4,6 +4,8 @@
 
 **Design** has your logo, site icon, accent colour, fonts, header, footer text and social links. **Preview** shows your site with them before you save. After **Save design** there's an **Undo**.
 
+The accent colour makes all the others: softer backgrounds, links, buttons and the bottom of the page. With **Clean** fonts, your site uses the ones on each visitor's device. **Classic** and **Friendly** come with Tend, and your site sends them itself.
+
 If a colour is hard to read where links are, Tend says so and suggests one close to it.
 
 Custom CSS is under **Advanced**, for people who know it. A mistake there can make your site hard to read, and it may stop working when the theme is updated.
@@ -22,7 +24,7 @@ A page that isn't on your site any more leaves the menu by itself, and comes bac
 
 ## Business details
 
-**Settings**, then **Business details**: your address, phone, email, opening hours and a link to a map. They show at the bottom of every page and in every Contact & hours section, and search engines are told. Change them once, here.
+**Settings**, then **Business details**: your address, phone, email, opening hours and a link to a map. They show at the bottom of every page, in every Contact & hours section, and right under the Big intro on your homepage, and search engines are told. Your phone number is at the top of every page, too. Change them once, here.
 
 ## Who can see it
 

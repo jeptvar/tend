@@ -77,6 +77,7 @@ A mistake in a theme never takes a site down: visitors get that page with Meadow
 - Each setting is a field in Design. `type` is `color` or `select`. `hint` is a line of help.
 - `contrastAgainst` is the backgrounds that words in this colour go on. Design warns about a colour that's hard to read there.
 - A choice is `design.fonts` in templates, and `--tend-fonts` in CSS when it isn't the default. An underscore in an `id` is a dash in CSS.
+- Meadow gives `contrastAgainst` two backgrounds and makes all its other colours from the accent, so a colour that's readable on those two makes a palette that is.
 
 ## What templates get
 
@@ -111,7 +112,7 @@ On pages, use Meadow's `page-text` partial, which fills in Contact & hours: `{% 
 | `{% menu "main" %}`, `{% menu "footer" %}` | A menu, drawn with the `menu` partial |
 | `{% image post.image, size: "card" %}` | A picture, in the size each screen needs, with its dimensions and its description |
 
-`{% image %}` takes `size` (`normal`, `half`, `wide`, `full`, `card`, `cover` or `logo`), `sizes` for a layout of your own, `alt`, `decorative: true` beside words that say it all, and `priority: true` for the one to fetch first. The first picture on a page is fetched first by itself.
+`{% image %}` takes `size` (`normal`, `half`, `wide`, `full`, `card`, `cover` or `logo`), `sizes` for a layout of your own, `alt`, `decorative: true` beside words that say it all, and `priority: true` for the one to fetch first. The first picture on a page is fetched first by itself. The sizes are Meadow's: if your layout is another, pass `sizes`, or phones get bigger files than they need.
 
 Templates share a layout with `{% layout "layout" %}` and `{% block content %}`.
 
@@ -132,9 +133,28 @@ And [Liquid's own](https://liquidjs.com/filters/overview.html).
 
 `locales/en.json` has the theme's words, and other languages theirs: `locales/pt-BR.json`. Tend looks in the site's language, then the same language elsewhere, then English, and then in Meadow. `{phone}` in a word's text is a value given to `t`.
 
+## Fonts
+
+Put them in `assets/fonts`, and their `@font-face` in `partials/fonts.liquid`, which Meadow's layout writes into every page as CSS. Each address goes through `asset_url`, so a browser keeps the file for good:
+
+```liquid
+{%- if design.fonts == "classic" -%}
+@font-face {
+  font-family: "My font";
+  font-display: swap;
+  src: url("{{ "fonts/my-font.woff2" | asset_url }}") format("woff2");
+}
+:root { --tend-font-heading: "My font", Georgia, serif; }
+{%- endif -%}
+```
+
+The admin uses the same CSS where people write, so a title there looks as it will on the site. Meadow's are **Fraunces** (Classic) and **Nunito** (Friendly), both under the SIL Open Font License. Keep a font's licence beside it.
+
 ## Sections
 
-What people put on pages has stable classes to style: `.t-intro`, `.t-picture-text` and `.t-contact`, with the background and the alignment as classes on them, and the layout as `data-preset`. Meadow's `theme.css` shows them all.
+What people put on pages has stable classes to style: `.t-intro`, `.t-picture-text` and `.t-contact`, with the background (`.t-tone-none`, `.t-tone-muted`, `.t-tone-accent`) and the alignment as classes on them, and the layout as `data-preset`. Meadow's `theme.css` shows them all.
+
+A Big intro's first picture is the photo it opens with. Meadow puts it beside the words in layout 1, and behind them in layout 2, under a veil of one colour thick enough to read the words on any photo.
 
 ## Limits
 
@@ -145,3 +165,4 @@ A page has half a second and 100 MB to be drawn in, and a template 1 MB to be. O
 - Keep one `<h1>`, and a skip link to the content, as Meadow's layout has.
 - Check it with a keyboard, at 320 px wide, and in dark mode.
 - Pages have no JavaScript. Yours doesn't need any either.
+- Words on a photo have to be readable on an all-white one and an all-black one.

@@ -31,7 +31,7 @@ packages/
   tendcms/      the published package: server, command line, migrations (bundled by tsdown)
   admin/        the admin, in React (Vite); copied into tendcms/dist/admin at build time
   create-tend/  npm create tend
-themes/meadow/  the theme: templates, styles, words and starting points
+themes/meadow/  the theme: templates, styles, fonts, words and starting points
 e2e/            tests in real browsers (Playwright)
 fixtures/       a site from each version, to upgrade
 docs/           the guide, the error pages and the decisions

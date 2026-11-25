@@ -18,7 +18,7 @@ What you write stays off your site until you publish it.
 - **Ctrl+K** (⌘K on a Mac) adds a link. Type the name of one of your pages, or paste an address. A link to your own page follows it if it moves.
 - Pasting from Google Docs or Word keeps the formatting. If something had to be changed, such as a table, Tend says so.
 
-**Sections** are for pages: **Big intro**, **Picture and text**, and **Contact & hours**. Each has two layouts, three backgrounds and two alignments, above it when it's selected. Contact & hours shows the business details from Settings, so you change them in one place.
+**Sections** are for pages: **Big intro**, **Picture and text**, and **Contact & hours**. Each has two layouts, three backgrounds and two alignments, above it when it's selected. Put a picture in a Big intro and it's the photo the page opens with, beside the words or behind them. Contact & hours shows the business details from Settings, so you change them in one place.
 
 ## Photos
 
