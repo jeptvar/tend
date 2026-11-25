@@ -1757,9 +1757,7 @@ function EditorScreen({
                         ? "bg-[#3fae74]"
                         : look === "waiting"
                           ? "bg-[#d9962b]"
-                          : look === "busy"
-                            ? "animate-pulse bg-edge motion-reduce:animate-none"
-                            : "bg-edge"
+                          : "bg-edge"
                     }`}
                   />
                 )}
