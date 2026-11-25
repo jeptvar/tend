@@ -144,11 +144,13 @@ Put them in `assets/fonts`, and their `@font-face` in `partials/fonts.liquid`, w
   font-display: swap;
   src: url("{{ "fonts/my-font.woff2" | asset_url }}") format("woff2");
 }
-:root { --tend-font-heading: "My font", Georgia, serif; }
+:root { --tend-font-heading: "My font", Georgia, serif; --tend-heading-weight: 600; }
 {%- endif -%}
 ```
 
-The admin uses the same CSS where people write, so a title there looks as it will on the site. Meadow's are **Fraunces** (Classic) and **Nunito** (Friendly), both under the SIL Open Font License. Keep a font's licence beside it.
+The admin uses the same CSS where people write, so a title there looks as it will on the site, and in Design, where each choice of `fonts` shows itself. What it looks for on `:root`, none of it needed: `--tend-font-body`, `--tend-font-heading`, `--tend-font-display` (for titles), `--tend-heading-weight`, `--tend-heading-tracking`, `--tend-radius` and `--tend-radius-button`. Links and buttons there are in the colour of the setting called `accent`, if there is one.
+
+Meadow's are **Fraunces** (Classic) and **Nunito** (Friendly), both under the SIL Open Font License. Keep a font's licence beside it.
 
 ## Sections
 

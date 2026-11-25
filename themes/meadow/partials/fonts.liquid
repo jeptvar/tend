@@ -46,6 +46,10 @@
 :root {
   --tend-font-heading: Fraunces, "Fraunces until it's here", Georgia, serif;
   --tend-font-display: Fraunces, "Fraunces until it's here, large", Georgia, serif;
+  --tend-heading-weight: 560;
+  --tend-heading-tracking: -0.015em;
+  --tend-radius: 0.5rem;
+  --tend-radius-button: 999px;
 }
 {%- when "friendly" -%}
 @font-face {
@@ -93,5 +97,9 @@
 }
 :root {
   --tend-font-body: Nunito, "Nunito until it's here", system-ui, sans-serif;
+  --tend-heading-weight: 800;
+  --tend-heading-tracking: -0.02em;
+  --tend-radius: 1.75rem;
+  --tend-radius-button: 999px;
 }
 {%- endcase -%}

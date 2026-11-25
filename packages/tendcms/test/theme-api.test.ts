@@ -171,6 +171,32 @@ describe("what templates can use", () => {
     expect(await page(url)).toBe(`All about rye|true|${new Date(made.clock.time).toISOString()}`);
   });
 
+  test("a theme's own fonts are in the admin too, and a mistake in them doesn't reach it", async () => {
+    const settings = [
+      { id: "fonts", type: "select", label: "Fonts", default: "a", options: ["a", "b"] },
+      { id: "accent", type: "text", label: "Accent", default: "warm" },
+    ];
+    const style = async (files: Files) => {
+      const { owner } = await siteWith({ "theme.json": { name: "Own", settings }, ...files });
+      return (await owner.get("/api/admin/design/style")).json();
+    };
+    expect(
+      await style({ "partials/fonts.liquid": ":root { --own: {{ design.fonts }}; }" }),
+    ).toEqual({ css: ":root { --own: a; }", accent: null, accentDark: null });
+    expect((await style({ "partials/fonts.liquid": '{% menu "sidebar" %}' })).css).toBe("");
+    // Meadow's, for a theme with none of its own, and only for a choice of Meadow's.
+    expect((await style({})).css).toBe("");
+    const { owner } = await siteWith({
+      "theme.json": { name: "Own", settings },
+      "partials/fonts.liquid": "{{ design.fonts }}",
+    });
+    const choices = async (theme: string) =>
+      (await (await owner.get(`/api/admin/design/fonts?theme=${theme}`)).json()).fonts;
+    expect(await choices("own")).toEqual({ a: "a", b: "b" });
+    // One that isn't there is Meadow, as on the site.
+    expect(Object.keys(await choices("gone"))).toEqual(["clean", "classic", "friendly"]);
+  });
+
   test("draws a menu, and says which menus there are", async () => {
     const { page, owner } = await siteWith(only('{% menu "main" %}{% menu "footer" %}'));
     await owner.put("/api/admin/menus/footer", {

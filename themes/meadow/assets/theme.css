@@ -1,7 +1,7 @@
 /*
  * Meadow. One choice, the accent colour, makes the whole palette, so a site stays in one style
- * whatever colour its owner likes. The fonts a site can choose come from partials/fonts.liquid;
- * these are the ones every device has.
+ * whatever colour its owner likes. The fonts a site can choose come from partials/fonts.liquid,
+ * with how headings sit and how round things are in each; these are the ones every device has.
  */
 
 :root {
@@ -61,22 +61,6 @@
     --tend-foot: color-mix(in oklab, var(--tend-accent) 7%, #0c0a09);
     --tend-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 14px 40px -18px rgb(0 0 0 / 70%);
   }
-}
-
-/* The choice of fonts says how headings sit and how round things are, as well. */
-
-[data-fonts="classic"] {
-  --tend-heading-weight: 560;
-  --tend-heading-tracking: -0.015em;
-  --tend-radius: 0.5rem;
-  --tend-radius-button: 999px;
-}
-
-[data-fonts="friendly"] {
-  --tend-heading-weight: 800;
-  --tend-heading-tracking: -0.02em;
-  --tend-radius: 1.75rem;
-  --tend-radius-button: 999px;
 }
 
 * {

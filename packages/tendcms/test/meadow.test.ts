@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 import { defaultThemeDir } from "../src/paths.ts";
 import { readableOn } from "../src/site/color.ts";
 import { darkAccent } from "../src/site/router.ts";
-import { type MadeApp, makeApp, setUp } from "./auth-helpers.ts";
+import { type MadeApp, makeApp, setUp, signedInAs } from "./auth-helpers.ts";
 import { type Color, color, everyAccent, meadowColors, over, ratio } from "./meadow-colors.ts";
 
 // Meadow itself: that its words can be read whatever colour its owner likes, that a homepage
@@ -375,6 +375,8 @@ describe("its fonts", () => {
         expect(reply.status, address).toBe(200);
         expect(reply.headers.get("content-type")).toBe("font/woff2");
         expect(reply.headers.get("cache-control")).toContain("immutable");
+        // For a preview in the admin, which is shut off from the site.
+        expect(reply.headers.get("access-control-allow-origin")).toBe("*");
       }
       // A device's own font stands in until they're here, so the page never waits for them.
       expect(page.match(/font-display: swap/g)).toHaveLength(addresses.length);
@@ -386,6 +388,40 @@ describe("its fonts", () => {
         .filter((name) => name.endsWith(".woff2"))
         .sort(),
     );
+  });
+
+  test("are what the admin uses too, with the accent, for anyone who writes", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const { client: writer } = await signedInAs(made, "writer");
+    const style = async () => (await writer.get("/api/admin/design/style")).json();
+    expect(await style()).toEqual({
+      css: "",
+      accent: "#1f6f4a",
+      accentDark: darkAccent("#1f6f4a"),
+    });
+
+    await design(owner, { fonts: "classic", accent: "#8a4b1f" });
+    const chosen = await style();
+    expect(chosen).toMatchObject({ accent: "#8a4b1f", accentDark: darkAccent("#8a4b1f") });
+    // The same words as on every page, so nothing's loaded twice.
+    const page = await html(made, "/");
+    expect(page).toContain(`<style>${chosen.css}`);
+    expect(chosen.css).toContain("--tend-heading-weight: 560;");
+    expect((await made.app.request("/api/admin/design/style")).status).toBe(401);
+  });
+
+  test("are all there for Design to show, each as it'd be", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const { fonts } = await (await owner.get("/api/admin/design/fonts")).json();
+    expect(Object.keys(fonts)).toEqual(["clean", "classic", "friendly"]);
+    expect(fonts.clean).toBe("");
+    expect(fonts.classic).toContain("--tend-font-heading: Fraunces,");
+    expect(fonts.friendly).toContain("--tend-font-body: Nunito,");
+    await design(owner, { fonts: "friendly" });
+    const { css } = await (await owner.get("/api/admin/design/style")).json();
+    expect(css).toBe(fonts.friendly);
   });
 
   test("come with their licences, and stay small", () => {

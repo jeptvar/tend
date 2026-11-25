@@ -118,6 +118,18 @@ export interface Site {
   preview(input: PreviewInput): Promise<string>;
   /** The homepage with a design that isn't saved yet. */
   previewDesign(design: DesignSettings): Promise<string>;
+  /** What the admin needs for what's written in it to look as it will on the site. */
+  style(): Promise<SiteStyle>;
+  /** Each choice of fonts a theme has, as CSS, by its name. */
+  fontChoices(themeId: string | null): Promise<Record<string, string>>;
+}
+
+export interface SiteStyle {
+  /** The theme's fonts, as CSS that loads them and says what they're for. */
+  css: string;
+  /** The accent colour, and one to use in its place on a dark background. */
+  accent: string | null;
+  accentDark: string | null;
 }
 
 export interface PreviewInput {
@@ -131,6 +143,7 @@ export interface PreviewInput {
 }
 
 const POSTS_PER_PAGE = 10;
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const THEME_SETTLE_MS = 100;
 const FEED_SIZE = 20;
 const FALLBACK_SITE: SiteSettings = {
@@ -149,6 +162,7 @@ const FOREVER = "public, max-age=31536000, immutable";
 /** The same for one person: a browser keeps it, a shared cache never does. */
 const PRIVATELY_FOREVER = "private, max-age=31536000, immutable";
 const VARIANT_FILE = /^(\d{1,5})\.webp$/;
+const FONT = /\.(?:woff2?|ttf|otf)$/i;
 const ICON_FILE = /^icon-(\d{2,3})\.png$/;
 /** The size shared pictures are, when there's one that big: what sharing sites ask for. */
 const SHARE_WIDTH = 1600;
@@ -1035,7 +1049,12 @@ export function createSite(options: SiteOptions): Site {
     // Forever only if the address names the current file. An old or made-up hash mustn't get
     // a stale copy stuck in someone's browser.
     const current = hash === theme.assetHash(relative(theme.assetsDir, file));
-    return (await themeFiles.send(c, file, current ? FOREVER : "no-cache")) ?? fileNotFound(c);
+    const sent = await themeFiles.send(c, file, current ? FOREVER : "no-cache");
+    if (!sent) return fileNotFound(c);
+    // A preview in the admin is shut off from the site, so its fonts come from somewhere else
+    // as far as the browser knows, and it only uses those that say anyone may.
+    if (FONT.test(file)) sent.headers.set("Access-Control-Allow-Origin", "*");
+    return sent;
   });
 
   /**
@@ -1403,6 +1422,36 @@ export function createSite(options: SiteOptions): Site {
     return renderTemplate("home", base, await postsContext(1, "/"));
   }
 
+  async function fontsCss(theme: Theme, chosen: Record<string, string>): Promise<string> {
+    const css = await drawn({ theme, strict: false }, "fonts", (drawing) =>
+      drawing.renderPartial("fonts", { design: drawing.designValues(chosen) }),
+    );
+    return css.trim();
+  }
+
+  async function fontChoices(themeId: string | null): Promise<Record<string, string>> {
+    const theme = themes.chosen(themeId);
+    const setting = theme.settings.find(({ id }) => id === "fonts");
+    if (setting?.type !== "select") return {};
+    const choices: Record<string, string> = {};
+    for (const { value } of setting.options) {
+      choices[value] = await fontsCss(theme, { fonts: value });
+    }
+    return choices;
+  }
+
+  async function style(): Promise<SiteStyle> {
+    const chosen = await settingValue(orm, "design");
+    const theme = themes.chosen(chosen.themeId);
+    const { accent = "" } = theme.designValues(chosen.theme);
+    const isColor = HEX_COLOR.test(accent);
+    return {
+      css: await fontsCss(theme, chosen.theme),
+      accent: isColor ? accent : null,
+      accentDark: isColor ? darkAccent(accent) : null,
+    };
+  }
+
   let watched: { theme: Theme; close: () => void } | undefined;
 
   /** Watches the folder of the theme the site uses now, so a change in it shows straight away. */
@@ -1438,5 +1487,5 @@ export function createSite(options: SiteOptions): Site {
   }
   if (options.watchTheme) inBackground(watchTheme);
 
-  return { app, themes, changed, preview, previewDesign };
+  return { app, themes, changed, preview, previewDesign, style, fontChoices };
 }

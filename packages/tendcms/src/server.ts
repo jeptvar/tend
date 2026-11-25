@@ -338,6 +338,8 @@ export function createApp(options: AppOptions): Hono {
       themes: site.themes,
       platform: options.platform,
       previewDesign: (design) => site.previewDesign(design),
+      siteStyle: () => site.style(),
+      fontChoices: (themeId) => site.fontChoices(themeId),
       backupsDir: options.backupsDir,
       uploadsDir: options.uploadsDir,
       dbPath: options.dataFolder?.dbPath,

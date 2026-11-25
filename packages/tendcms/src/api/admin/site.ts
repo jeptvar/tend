@@ -31,6 +31,7 @@ import {
 import { countLivePostsWithTag, createTag, findTag, listTags } from "../../content/tags.ts";
 import { getSetting, type SiteSettings } from "../../db/repo/settings.ts";
 import { describeMenuItems, type MenuName, menuSetting } from "../../site/menus.ts";
+import type { SiteStyle } from "../../site/router.ts";
 import type { Themes } from "../../site/themes.ts";
 import { ApiError } from "../errors.ts";
 import { type AdminOptions, parseBody, type Routing, readJson } from "./routing.ts";
@@ -42,6 +43,10 @@ export interface SiteRouteOptions extends AdminOptions {
   platform?: Platform | undefined;
   /** The homepage as it would look with a design that isn't saved yet. */
   previewDesign?: (design: SettingTypes["design"]) => Promise<string>;
+  /** The site's fonts and colour, for the admin to show what's written in. */
+  siteStyle?: () => Promise<SiteStyle>;
+  /** Each choice of fonts a theme has, for Design to show. */
+  fontChoices?: (themeId: string | null) => Promise<Record<string, string>>;
 }
 
 /** The settings behind Settings: each is checked by its own schema. */
@@ -320,6 +325,18 @@ export function registerSiteRoutes(routing: Routing, options: SiteRouteOptions):
   }
 
   route("get", "/design", "design:manage", async (c) => c.json(await designJson()));
+
+  // For anyone who writes, not only for who may change it: none of it is a secret, since every
+  // page on the site has the same.
+  route("get", "/design/style", "entry:list", async (c) => {
+    if (!options.siteStyle) throw new Error("The site's style isn't available here.");
+    return c.json(await options.siteStyle());
+  });
+
+  route("get", "/design/fonts", "design:manage", async (c) => {
+    if (!options.fontChoices) throw new Error("The site's fonts aren't available here.");
+    return c.json({ fonts: await options.fontChoices(c.req.query("theme") || null) });
+  });
 
   route("put", "/design", "design:manage", async (c, user) => {
     const design = await checkedDesign(await readJson(c));
