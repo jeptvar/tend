@@ -605,7 +605,7 @@
   "backups.disk.veryLow": "Space has nearly run out, and when it does your changes can't be saved. Remove photos and files you no longer need from Media, or ask your host for more.",
   "backups.copies.heading": "Copies kept on this server",
   "backups.copies.body": "Each day at 3 in the morning, Tend saves a copy of your pages, posts and settings here, and it saves one before each update too. It keeps a week of daily copies and four weekly ones, in no more than a fifth of the disk. Photos and files aren't in these copies: a downloaded backup has everything. Keep a downloaded copy private too, because it holds everyone's sign-in details. Anything you delete from Media stays on this server for up to six weeks, so these copies can still show it, or less if space runs low.",
-  "backups.copies.none": "There are no copies yet. The first is saved at 3 in the morning.",
+  "backups.copies.none": "There are no copies yet. Tend saves the first within a day.",
   "backups.copies.save": "Save a copy now",
   "backups.copies.saved": "Copy saved.",
   "backups.copies.download": "Download",

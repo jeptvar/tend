@@ -22,7 +22,7 @@ So that the admin, the messages and the guide say the same thing for the same th
 | **Media** | Photos and files | Assets, library |
 | **Trash** | Where things wait for 30 days | Bin, archive |
 | **History** | Earlier versions | Revisions, versions list |
-| **Owner**, **Admin**, **Editor**, **Writer** | What someone can do | Role, permission, user level |
+| **Owner**, **Admin**, **Editor** | What someone can do | Role, permission, user level |
 | **Person**, **people** | Whoever can sign in | User |
 | **Visitor** | Whoever looks at the site | User, reader |
 | **Recovery kit**, **recovery code** | The way back in without email | Backup codes |

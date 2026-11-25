@@ -2,20 +2,18 @@
 
 Everyone who can sign in to your site is under **People**, which Admins see.
 
-| | Writer | Editor | Admin | Owner |
-|---|---|---|---|---|
-| Write posts of their own | yes | yes | yes | yes |
-| Add photos, and describe their own | yes | yes | yes | yes |
-| Change anyone's posts, and pages | | yes | yes | yes |
-| Publish, and move things to the Trash | | yes | yes | yes |
-| Replace a photo everywhere it's used | | yes | yes | yes |
-| Site menu | | yes | yes | yes |
-| Design, Settings and People | | | yes | yes |
-| Delete things forever | | | yes | yes |
-| Invite and change Editors and Writers | | | yes | yes |
-| Invite and change Admins | | | | yes |
-| Download backups | | | | yes |
-| Hand the site over | | | | yes |
+| | Editor | Admin | Owner |
+|---|---|---|---|
+| Write and publish posts and pages | yes | yes | yes |
+| Add, describe and replace photos and files | yes | yes | yes |
+| Move things to the Trash, and restore them | yes | yes | yes |
+| Site menu | yes | yes | yes |
+| Design, Settings and People | | yes | yes |
+| Delete things forever | | yes | yes |
+| Invite and change Editors | | yes | yes |
+| Invite and change Admins | | | yes |
+| Download backups | | | yes |
+| Hand the site over | | | yes |
 
 There's one **Owner**: whoever set the site up, until they hand it over.
 
