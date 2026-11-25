@@ -213,3 +213,20 @@ body {
   font-weight: var(--tend-heading-weight, 700);
   letter-spacing: var(--tend-heading-tracking, -0.02em);
 }
+
+/*
+ * Windows' high contrast has a few colours of its own, and does away with backgrounds and shadows.
+ * What those said, that something is a button or has been chosen, lines say there instead.
+ */
+@media (forced-colors: active) {
+  .primary,
+  .side {
+    border: 1px solid;
+  }
+
+  [aria-current="page"],
+  [aria-pressed="true"],
+  [aria-selected="true"] {
+    border: 3px solid Highlight;
+  }
+}

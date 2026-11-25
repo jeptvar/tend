@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import {
   createEntry,
   expect,
@@ -412,6 +412,35 @@ test.describe("the rest of the admin", () => {
     // Not the words: on the picture.
     await row.click({ position: { x: 40, y: 40 } });
     await expect(title(page)).toHaveValue("Rye");
+  });
+
+  test("what's chosen can be told in high contrast, which has no backgrounds", async ({
+    page,
+    signedIn,
+    browserName,
+  }) => {
+    test.skip(browserName === "webkit", "It's Windows', and Safari has none of it.");
+    await page.emulateMedia({ forcedColors: "active" });
+    await page.goto(`${signedIn.base}/admin/design`);
+    const border = (what: Locator) =>
+      what.evaluate((element) => getComputedStyle(element).borderTopWidth);
+    const blue = page.getByRole("button", { name: "Blue" });
+    await blue.click();
+    await expect(blue).toHaveAttribute("aria-pressed", "true");
+    expect(await border(blue)).toBe("3px");
+    expect(await border(page.getByRole("button", { name: "Green" }))).toBe("0px");
+    // The colours to choose from still are.
+    await expect(blue.locator("span")).toHaveCSS("background-color", "rgb(36, 81, 184)");
+    // A choice that's drawn has its radio button as well.
+    const fonts = page.getByRole("radio", { name: "Classic" });
+    await expect(fonts).toHaveCSS("opacity", "1");
+    expect((await fonts.boundingBox())?.width).toBeLessThan(30);
+
+    await page.goto(`${signedIn.base}/admin/posts`);
+    expect(await border(page.getByRole("button", { name: /^All/ }))).toBe("3px");
+    expect(await border(page.getByRole("button", { name: /^Drafts/ }))).toBe("0px");
+    expect(await border(page.getByRole("link", { name: "Posts" }))).toBe("3px");
+    expect(await border(page.getByRole("link", { name: "Pages" }))).toBe("0px");
   });
 
   test("Design's choices look like what they choose", async ({ page, signedIn }) => {

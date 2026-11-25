@@ -189,11 +189,11 @@ function ColorChoice({
                 setTyped(accent.value);
                 onChange(accent.value);
               }}
-              className="grid size-11 place-items-center rounded-full border-2 border-transparent focus-visible:outline-3 focus-visible:outline-brand aria-pressed:border-ink"
+              className="grid size-11 place-items-center rounded-full border-2 border-transparent focus-visible:outline-3 focus-visible:outline-brand aria-pressed:border-ink forced-colors:not-aria-pressed:border-0"
             >
               <span
                 aria-hidden="true"
-                className="size-8.5 rounded-full"
+                className="size-8.5 rounded-full forced-color-adjust-none"
                 style={{ background: accent.value }}
               />
             </button>
@@ -243,7 +243,7 @@ function ColorChoice({
             <span className="flex items-center gap-2">
               <span
                 aria-hidden="true"
-                className="inline-block size-6 shrink-0 rounded-full border border-ink/20"
+                className="inline-block size-6 shrink-0 rounded-full border border-ink/20 forced-color-adjust-none"
                 style={{ background: suggestion }}
               />
               <FormattedMessage
@@ -268,8 +268,9 @@ function ColorChoice({
   );
 }
 
-/** Over all of what it's for, which shows whether it's chosen. */
-const hiddenRadioClass = "absolute inset-0 size-full cursor-pointer opacity-0";
+/** Over all of what it's for, which shows whether it's chosen, where that can be seen. */
+const hiddenRadioClass =
+  "absolute inset-0 size-full cursor-pointer opacity-0 forced-colors:static forced-colors:size-5 forced-colors:shrink-0 forced-colors:opacity-100";
 
 /** How a header is laid out, drawn small. */
 function HeaderPicture({ centered }: { centered: boolean }) {
