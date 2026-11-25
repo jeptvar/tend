@@ -620,9 +620,8 @@ test.describe("the site menu", () => {
             // are checked in every browser.
             const walk = tabsToLinks ? ["More", ...items] : [];
             await page.locator(".t-dropdown summary").focus();
-            for (const label of walk) {
-              await page.keyboard.press("Tab");
-              const focused = await page.evaluate(() => {
+            const focused = () =>
+              page.evaluate(() => {
                 const element = document.activeElement as HTMLElement;
                 const { left, right, top, bottom } = element.getBoundingClientRect();
                 const middle = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
@@ -633,11 +632,12 @@ test.describe("the site menu", () => {
                   uncovered: middle?.closest("a") === element,
                 };
               });
-              expect(focused, `${name}: ${label}`).toEqual({
-                label,
-                inView: true,
-                uncovered: true,
-              });
+            for (const label of walk) {
+              await page.keyboard.press("Tab");
+              // WebKit scrolls to what has the keyboard a moment after the key.
+              await expect
+                .poll(focused, { message: `${name}: ${label}` })
+                .toEqual({ label, inView: true, uncovered: true });
             }
             expectOnScreen(await openLists(page), `${name}, at its last link`);
             const results = await new AxeBuilder({ page }).analyze();
