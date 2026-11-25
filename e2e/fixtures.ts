@@ -123,6 +123,14 @@ async function runSite(use: (site: Site) => Promise<void>): Promise<void> {
 }
 
 export const test = base.extend<{ site: Site; signedIn: Site; newSite: Site }>({
+  // Closes any other windows a test opened. Playwright records each one left open again in
+  // every later test, which takes WebKit on Windows about a third of a core, even for an idle
+  // page. A few of them leave it too slow to answer.
+  context: async ({ browser, context }, use) => {
+    await use(context);
+    for (const other of browser.contexts()) if (other !== context) await other.close();
+  },
+
   // Every page in a test shares its context's request, so this covers them all.
   page: async ({ page }, use) => {
     closeAfterEachAnswer(page.request);
