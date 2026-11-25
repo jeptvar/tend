@@ -323,6 +323,23 @@ test.describe("the rest of the admin", () => {
     }
   });
 
+  test("a Private site's own pictures are in what shows the site", async ({ page, signedIn }) => {
+    await page.request.put(`${signedIn.base}/api/admin/settings/visibility`, {
+      data: { mode: "private" },
+    });
+    const { entries } = await (
+      await page.request.get(`${signedIn.base}/api/admin/entries?type=page`)
+    ).json();
+    const home = entries.find((entry: { isHome: boolean }) => entry.isHome);
+    for (const path of ["/admin/", "/admin/design", `/admin/pages/${home.id}`]) {
+      await page.goto(`${signedIn.base}${path}`);
+      if (path.includes("pages")) await page.getByRole("button", { name: "Preview" }).click();
+      const picture = page.frameLocator("iframe").last().locator("img").first();
+      const width = () => picture.evaluate((image) => (image as HTMLImageElement).naturalWidth);
+      await expect.poll(width, { message: path }).toBeGreaterThan(0);
+    }
+  });
+
   test("a post's picture and first words are in its row, and all of it leads there", async ({
     page,
     signedIn,

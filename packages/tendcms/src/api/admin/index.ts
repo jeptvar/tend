@@ -3,7 +3,7 @@ import { type BackupRouteOptions, registerBackupRoutes } from "./backups.ts";
 import { registerEntryRoutes } from "./entries.ts";
 import { type HealthRouteOptions, registerHealthRoutes } from "./health.ts";
 import { registerMediaRoutes } from "./media.ts";
-import { registerOverviewRoutes } from "./overview.ts";
+import { type OverviewRouteOptions, registerOverviewRoutes } from "./overview.ts";
 import { registerPeopleRoutes } from "./people.ts";
 import { createRouting, type RoutePolicy } from "./routing.ts";
 import { registerSiteRoutes, type SiteRouteOptions } from "./site.ts";
@@ -12,7 +12,7 @@ export type { AdminOptions, RoutePolicy } from "./routing.ts";
 
 /** Everything under /api/admin. Each route has to state the action that guards it. */
 export function createAdminRoutes(
-  options: SiteRouteOptions & BackupRouteOptions & HealthRouteOptions,
+  options: SiteRouteOptions & BackupRouteOptions & HealthRouteOptions & OverviewRouteOptions,
 ): {
   app: Hono;
   policies: RoutePolicy[];

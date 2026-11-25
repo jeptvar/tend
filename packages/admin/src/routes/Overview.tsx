@@ -227,19 +227,27 @@ function SiteStatus({ me }: { me: Me }) {
  */
 function SitePicture({ name }: { name: string }) {
   const intl = useIntl();
+  // Not at its own address: what a frame that's allowed nothing asks for comes without a cookie,
+  // and on a Private site that's nothing at all.
+  const page = useQuery({
+    queryKey: ["homepage"],
+    queryFn: () => api<{ html: string }>("/admin/overview/homepage"),
+    retry: false,
+  });
   return (
     <div aria-hidden="true" className="hidden sm:block">
       <BrowserFrame name={name}>
         <div className="relative h-80 overflow-hidden">
-          <iframe
-            title={intl.formatMessage({ id: "overview.picture" })}
-            src="/"
-            sandbox=""
-            loading="lazy"
-            tabIndex={-1}
-            inert
-            className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50"
-          />
+          {page.data && (
+            <iframe
+              title={intl.formatMessage({ id: "overview.picture" })}
+              srcDoc={page.data.html}
+              sandbox=""
+              tabIndex={-1}
+              inert
+              className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50"
+            />
+          )}
         </div>
       </BrowserFrame>
     </div>

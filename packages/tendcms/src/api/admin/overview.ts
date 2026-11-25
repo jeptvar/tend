@@ -24,6 +24,8 @@ const ACTIVITY_SHOWN = 8;
 export interface OverviewRouteOptions extends AdminOptions {
   /** Where the copies Tend makes are kept. Absent only in tests that don't need it. */
   backupsDir?: string | undefined;
+  /** The homepage as it is. Absent only in tests that don't need it. */
+  homepage?: (() => Promise<string>) | undefined;
 }
 
 export type StepId = "home" | "business" | "post" | "logo" | "photo" | "kit" | "online" | "domain";
@@ -65,6 +67,12 @@ export function registerOverviewRoutes(routing: Routing, options: OverviewRouteO
     else list.push({ id: "domain", done: !isHostingAddress(url) });
     return list;
   }
+
+  // As JSON, like a preview, so it can only be shown in a frame that's allowed nothing.
+  route("get", "/overview/homepage", "entry:list", async (c) => {
+    if (!options.homepage) throw new Error("The homepage isn't available here.");
+    return c.json({ html: await options.homepage() });
+  });
 
   route("get", "/overview", "entry:list", async (c, user) => {
     const authorId = seesOnlyOwnEntries(user) ? user.id : undefined;

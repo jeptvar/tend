@@ -69,6 +69,7 @@ import { type CachedPage, PageCache, type RenderedPage } from "./cache.ts";
 import { readableOn } from "./color.ts";
 import { type FeedItem, robots, rss, type SitemapEntry, sitemap } from "./feeds.ts";
 import { siteMenus } from "./menus.ts";
+import { createPictureKeys } from "./picture-keys.ts";
 import {
   BUSINESS_PLACEHOLDER,
   mediaPlaceholderIds,
@@ -118,6 +119,8 @@ export interface Site {
   preview(input: PreviewInput): Promise<string>;
   /** The homepage with a design that isn't saved yet. */
   previewDesign(design: DesignSettings): Promise<string>;
+  /** The homepage as it is, for a picture of it. */
+  homepage(): Promise<string>;
   /** What the admin needs for what's written in it to look as it will on the site. */
   style(): Promise<SiteStyle>;
   /** Each choice of fonts a theme has, as CSS, by its name. */
@@ -329,6 +332,7 @@ export function createSite(options: SiteOptions): Site {
   const now = options.now ?? Date.now;
   const cache = new PageCache(options.pageCacheBytes);
   const cacheOn = options.pageCacheBytes > 0;
+  const pictureKeys = createPictureKeys();
   // Goes up with every change, so a render that began before one is never stored after it.
   let generation = 0;
   let site = FALLBACK_SITE;
@@ -956,12 +960,17 @@ export function createSite(options: SiteOptions): Site {
   }
 
   /** Who may see the site right now, and so what this visitor gets. */
-  async function access(c: Context): Promise<Access> {
+  async function whoCanSee(): Promise<VisibilitySettings["mode"]> {
     visibility ??= await settingValue(orm, "visibility");
-    if (visibility.mode === "public") return "public";
+    return visibility.mode;
+  }
+
+  async function access(c: Context): Promise<Access> {
+    const mode = await whoCanSee();
+    if (mode === "public") return "public";
     const user = await currentUser(c, orm, options.address.secure, now());
     if (user) return "signedIn";
-    return visibility.mode === "coming_soon" ? "comingSoon" : "private";
+    return mode === "coming_soon" ? "comingSoon" : "private";
   }
 
   async function cachedPage(
@@ -1205,10 +1214,11 @@ export function createSite(options: SiteOptions): Site {
    */
   async function mediaAccess(c: Context, item: Media): Promise<"everyone" | "signedIn" | "no"> {
     const who = await access(c);
-    if (who === "public" || who === "comingSoon" || visibility?.mode !== "private") {
+    if (who === "public" || who === "comingSoon" || (await whoCanSee()) !== "private") {
       return "everyone";
     }
     if (who === "signedIn") return "signedIn";
+    if (pictureKeys.opens(c.req.query("key"), item.id, now())) return "signedIn";
     const design = await settingValue(orm, "design");
     return item.id === design.logoId || item.id === siteIconId(design) ? "everyone" : "no";
   }
@@ -1249,9 +1259,9 @@ export function createSite(options: SiteOptions): Site {
   });
 
   app.get("/robots.txt", async (c) => {
-    visibility ??= await settingValue(orm, "visibility");
+    const open = (await whoCanSee()) === "public";
     await loadSite();
-    return c.text(robots({ origin: originOf(c), open: visibility.mode === "public" }), 200, {
+    return c.text(robots({ origin: originOf(c), open }), 200, {
       "Cache-Control": "public, max-age=0, must-revalidate",
     });
   });
@@ -1351,12 +1361,13 @@ export function createSite(options: SiteOptions): Site {
   }
 
   /** Links in a preview do nothing rather than wandering off to the real site. */
-  function asPreview(rendered: string): string {
+  async function asPreview(rendered: string): Promise<string> {
     // The frame showing this isn't allowed to open a new window, so _blank goes nowhere.
     const head = '<base target="_blank">';
-    return /<head[^>]*>/i.test(rendered)
+    const html = /<head[^>]*>/i.test(rendered)
       ? rendered.replace(/<head[^>]*>/i, (tag) => `${tag}${head}`)
       : `${head}${rendered}`;
+    return (await whoCanSee()) === "private" ? pictureKeys.addTo(html, now()) : html;
   }
 
   async function preview(input: PreviewInput): Promise<string> {
@@ -1388,12 +1399,14 @@ export function createSite(options: SiteOptions): Site {
     await loadSite();
     const base = await pageBase(undefined, entryFacts(entry), { preview: true });
     const more = { [input.type === "post" ? "post" : "page"]: liveJson(entry) };
-    return asPreview(await renderTemplate(input.isHome === 1 ? "home" : input.type, base, more));
+    return await asPreview(
+      await renderTemplate(input.isHome === 1 ? "home" : input.type, base, more),
+    );
   }
 
   async function previewDesign(design: DesignSettings): Promise<string> {
     try {
-      return asPreview(await homeWith(design));
+      return await asPreview(await homeWith(design));
     } catch (error) {
       if (!(error instanceof ThemeMistake)) throw error;
       throw new ApiError(400, "theme_mistake", `This theme has a mistake in it: ${error.message}`, {
@@ -1403,11 +1416,17 @@ export function createSite(options: SiteOptions): Site {
     }
   }
 
-  async function homeWith(design: DesignSettings): Promise<string> {
+  async function homepage(): Promise<string> {
+    return asPreview(await homeWith());
+  }
+
+  /** The homepage, with a design that isn't saved, or with the one that is. */
+  async function homeWith(unsaved?: DesignSettings): Promise<string> {
     await loadSite();
+    const extra = { ...(unsaved ? { design: unsaved } : {}), preview: true };
     const home = await findLiveHome(orm);
     if (home) {
-      const base = await pageBase(undefined, entryFacts(home), { design, preview: true });
+      const base = await pageBase(undefined, entryFacts(home), extra);
       return renderTemplate("home", base, { page: liveJson(home) });
     }
     const facts: PageFacts = {
@@ -1418,7 +1437,7 @@ export function createSite(options: SiteOptions): Site {
       imageId: null,
       noindex: true,
     };
-    const base = await pageBase(undefined, facts, { design, preview: true });
+    const base = await pageBase(undefined, facts, extra);
     return renderTemplate("home", base, await postsContext(1, "/"));
   }
 
@@ -1487,5 +1506,5 @@ export function createSite(options: SiteOptions): Site {
   }
   if (options.watchTheme) inBackground(watchTheme);
 
-  return { app, themes, changed, preview, previewDesign, style, fontChoices };
+  return { app, themes, changed, preview, previewDesign, homepage, style, fontChoices };
 }
