@@ -270,6 +270,26 @@ export async function typeAddress(dialog: Locator, address: string): Promise<voi
   await expect(dialog.getByText("Nothing found")).toBeAttached();
 }
 
+/** How Overview greets whoever it's for, whatever the time is where they are. */
+export const GREETING = /^Good (morning|afternoon|evening), /;
+
+/**
+ * Shows what a post or a page has besides its words. On a wide window that's beside it, and on
+ * any other in a drawer.
+ */
+export async function openSettings(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: /^(Post|Page) settings$/ });
+  if ((await button.getAttribute("aria-expanded")) !== "true") await button.click();
+}
+
+/** Opens the earlier versions: from beside Preview, or on a phone from the settings. */
+export async function openHistory(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "History", exact: true });
+  await expect(page.getByRole("textbox", { name: "Text" })).toBeVisible();
+  if (!(await button.isVisible())) await openSettings(page);
+  await button.click();
+}
+
 interface TextNode {
   text?: string;
   content?: TextNode[];

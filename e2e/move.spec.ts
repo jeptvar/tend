@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { expect, OWNER, photo, signIn, test, upload } from "./fixtures.ts";
+import { expect, GREETING, OWNER, photo, signIn, test, upload } from "./fixtures.ts";
 
 // J10 (PLAN.md): moving a site. A backup downloaded from one site starts another, at another
 // address, with everything in it, and nothing on the new site names the old address.
@@ -67,7 +67,7 @@ test("a backup moves a site to a new address: its pages, pictures and sign-ins",
   await page.getByLabel("Email").fill(OWNER.email);
   await page.getByLabel("Password", { exact: true }).fill(OWNER.password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Rise Bakery" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: GREETING })).toBeVisible();
 
   // Visitors get the old site's post, picture and all.
   const visitor = await page.context().newPage();
@@ -95,7 +95,7 @@ test("a backup moves a site to a new address: its pages, pictures and sign-ins",
   await visitor.reload();
   await expect(visitor.getByRole("heading", { name: "Fresh loaves" })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Rise Bakery" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: GREETING })).toBeVisible();
 });
 
 test("a site that's online is asked once whether the address it's at is its own", async ({
@@ -121,6 +121,6 @@ test("a site that's online is asked once whether the address it's at is its own"
   const after = await (await page.request.get(`${signedIn.base}/`)).text();
   expect(after).toContain(`<link rel="canonical" href="${base}/">`);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
   await expect(question).toBeHidden();
 });

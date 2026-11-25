@@ -14,8 +14,10 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { EntryPicture, EntryStatus } from "../components/EntryRow.tsx";
 import { Icon } from "../components/icons.tsx";
 import { Problem } from "../components/Problem.tsx";
+import { Tabs } from "../components/Tabs.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { api } from "../lib/api.ts";
 import { releaseAllDrafts } from "../lib/held-drafts.ts";
@@ -59,12 +61,6 @@ function focusRowAt(index: number): void {
   const target = row?.querySelector<HTMLElement>("button, a");
   if (target) target.focus();
   else focusHeading();
-}
-
-/** What someone needs to know about an entry at a glance, in plain words (PLAN.md P15). */
-function StatusLabel({ entry }: { entry: EntrySummary }) {
-  if (entry.url === null) return <FormattedMessage id="status.draft" />;
-  return <FormattedMessage id={entry.dirty ? "status.changes" : "status.onSite"} />;
 }
 
 function listPath(type: EntryType): string {
@@ -180,58 +176,64 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
   const error = list.error ?? create.error ?? restore.error;
 
   return (
-    <AdminLayout me={me} screen={type === "post" ? "posts" : "pages"}>
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="-ml-2 flex flex-wrap">
-          {ENTRY_VIEWS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={view === option}
-              onClick={() => setParams(option === "all" ? {} : { show: option }, { replace: true })}
-              className={`min-h-11 min-w-11 rounded px-2 text-center hover:underline focus-visible:outline-3 focus-visible:outline-brand ${view === option ? "font-semibold" : "text-muted"}`}
-            >
-              <FormattedMessage id={`list.${option}`} />
-              {counts && (
-                <>
-                  {" "}
-                  <span className="ml-0.5 font-normal text-muted">
-                    <FormattedNumber value={counts[option]} />
-                  </span>
-                </>
-              )}
-            </button>
-          ))}
-        </div>
+    <AdminLayout
+      me={me}
+      screen={type === "post" ? "posts" : "pages"}
+      width="wide"
+      actions={
         <button
           type="button"
           disabled={create.isPending}
           onClick={newEntry}
           className={primaryButtonClass}
         >
+          <Icon name="add" className="size-4.5" />
           <FormattedMessage id={type === "post" ? "list.newPost" : "list.newPage"} />
         </button>
+      }
+    >
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <Tabs>
+          {ENTRY_VIEWS.map((option) => (
+            <Tabs.Tab
+              key={option}
+              chosen={view === option}
+              onChoose={() =>
+                setParams(option === "all" ? {} : { show: option }, { replace: true })
+              }
+            >
+              <FormattedMessage id={`list.${option}`} />
+              {counts && (
+                <>
+                  {" "}
+                  <span className="ml-0.5 font-normal">
+                    <FormattedNumber value={counts[option]} />
+                  </span>
+                </>
+              )}
+            </Tabs.Tab>
+          ))}
+        </Tabs>
+        {((counts && counts.all + counts.trash >= WORTH_SEARCHING) || typed !== "") && (
+          <div className="relative w-full sm:w-80">
+            <label htmlFor={searchId} className="sr-only">
+              <FormattedMessage id={`list.search.${type}`} />
+            </label>
+            <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-muted">
+              <Icon name="search" />
+            </span>
+            <input
+              id={searchId}
+              type="search"
+              value={typed}
+              maxLength={200}
+              placeholder={intl.formatMessage({ id: `list.search.${type}` })}
+              onChange={(event) => setTyped(event.target.value)}
+              className="min-h-11 w-full rounded-xl border border-edge bg-field pr-3 pl-11 placeholder:text-muted focus-visible:outline-3 focus-visible:outline-brand"
+            />
+          </div>
+        )}
       </div>
-
-      {((counts && counts.all + counts.trash >= WORTH_SEARCHING) || typed !== "") && (
-        <div className="relative mt-4">
-          <label htmlFor={searchId} className="sr-only">
-            <FormattedMessage id={`list.search.${type}`} />
-          </label>
-          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[#5b655f]">
-            <Icon name="search" />
-          </span>
-          <input
-            id={searchId}
-            type="search"
-            value={typed}
-            maxLength={200}
-            placeholder={intl.formatMessage({ id: `list.search.${type}` })}
-            onChange={(event) => setTyped(event.target.value)}
-            className="min-h-11 w-full rounded-lg border border-muted bg-white pr-3 pl-10 text-lg text-[#1d2420] placeholder:text-[#5b655f] focus-visible:outline-3 focus-visible:outline-brand"
-          />
-        </div>
-      )}
       <p role="status" className="sr-only">
         {search && list.data && !list.isFetching && (
           <FormattedMessage
@@ -265,7 +267,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
       )}
 
       {rows?.length === 0 && (
-        <p className="mt-8 text-muted">
+        <p className="dashed mt-5 px-6 py-12 text-center text-muted">
           {search ? (
             <FormattedMessage id="list.nothingFound" values={{ search }} />
           ) : (
@@ -282,37 +284,34 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
         </p>
       )}
 
-      <ul className="mt-6 divide-y divide-ink/10 border-y border-ink/10 empty:hidden">
+      <ul className="card mt-5 divide-y divide-line px-4 empty:hidden sm:px-5">
         {rows?.map((entry, index) => (
           <li
             key={entry.id}
             data-entry-row={entry.id}
-            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 [contain-intrinsic-size:auto_5rem] [content-visibility:auto]"
+            className="relative flex flex-wrap items-center gap-x-4 gap-y-2 py-3.5 [contain-intrinsic-size:auto_6rem] [content-visibility:auto]"
           >
-            <div className="min-w-0">
+            <EntryPicture
+              entry={entry}
+              className={`h-14 w-18 rounded-xl sm:h-16 sm:w-21 ${trashed ? "opacity-60" : ""}`}
+            />
+            <div className="min-w-0 flex-1 basis-48">
               {trashed ? (
-                <span className="font-medium [overflow-wrap:anywhere]">
+                <span className="text-lg leading-snug font-semibold [overflow-wrap:anywhere]">
                   {entry.title || <FormattedMessage id="list.untitled" />}
                 </span>
               ) : (
+                // The whole row leads to it, but for what's on top of it.
                 <Link
                   href={`${path}/${entry.id}`}
-                  className="inline-flex min-h-11 min-w-0 items-center font-medium [overflow-wrap:anywhere] underline-offset-4 hover:underline focus-visible:outline-3 focus-visible:outline-brand"
+                  className="text-lg leading-snug font-semibold [overflow-wrap:anywhere] underline-offset-4 after:absolute after:inset-0 after:rounded-xl hover:underline focus-visible:outline-none focus-visible:after:outline-3 focus-visible:after:outline-brand"
                 >
                   {entry.title || <FormattedMessage id="list.untitled" />}
                 </Link>
               )}
-              <p className="text-sm text-muted">
-                {entry.isHome && (
-                  <>
-                    <FormattedMessage id="list.homepage" />
-                    {" · "}
-                  </>
-                )}
-                <StatusLabel entry={entry} />
-                {" · "}
-                <FormattedDate value={entry.updatedAt} dateStyle="medium" />
-              </p>
+              {entry.words && (
+                <p className="line-clamp-1 text-muted [overflow-wrap:anywhere]">{entry.words}</p>
+              )}
               {trashed && entry.trashedAt !== null && (
                 <p className="text-sm text-muted">
                   <FormattedMessage
@@ -326,6 +325,32 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
                 </p>
               )}
             </div>
+            {!trashed && (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+                {entry.isHome && (
+                  <span className="text-sm font-medium text-muted">
+                    <FormattedMessage id="list.homepage" />
+                  </span>
+                )}
+                <EntryStatus entry={entry} />
+                <span className="text-sm text-muted sm:min-w-24 sm:text-right">
+                  <FormattedDate value={entry.updatedAt} dateStyle="medium" />
+                </span>
+                {/* As wide whether or not it's on the site, so the rest of the rows line up. */}
+                <span className="flex sm:min-w-16 sm:justify-end">
+                  {entry.url && (
+                    <a
+                      href={entry.url}
+                      target="_blank"
+                      rel="noopener"
+                      className={`relative z-1 ${textLinkClass}`}
+                    >
+                      <FormattedMessage id="list.view" />
+                    </a>
+                  )}
+                </span>
+              </div>
+            )}
             {trashed && (
               <div className="flex flex-wrap gap-3">
                 <button
@@ -356,11 +381,6 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
                 )}
               </div>
             )}
-            {!trashed && entry.url && (
-              <a href={entry.url} target="_blank" rel="noopener" className={textLinkClass}>
-                <FormattedMessage id="list.view" />
-              </a>
-            )}
           </li>
         ))}
       </ul>
@@ -381,7 +401,7 @@ function EntryListScreen({ me, type }: { me: Me; type: EntryType }) {
       {confirmDelete && (
         <Dialog labelledBy={confirmHeadingId} onClose={() => setConfirmDelete(null)}>
           <div className="grid gap-4">
-            <h2 id={confirmHeadingId} className="text-xl font-semibold">
+            <h2 id={confirmHeadingId} className="text-xl font-bold">
               <FormattedMessage
                 id="list.confirmDelete"
                 values={{

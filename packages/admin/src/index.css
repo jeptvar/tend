@@ -12,38 +12,103 @@
   }
 }
 
+/* A window so short that a bar kept on it would take up most of it, as when zoomed in a lot. */
+@custom-variant short (@media (max-height: 30rem));
+
+/*
+ * Paper is what everything lies on, surface is a card on it, and sunken is a little lower. Line
+ * only separates things. Edge is what says where a field or a box is, so it has to be seen.
+ */
 @theme {
   --color-brand: #1f6f4a;
   --color-brand-strong: #17573a;
-  --color-paper: #faf8f3;
+  --color-on-brand: #ffffff;
+  --color-mint: #e3efe8;
+  --color-paper: #f5f2ea;
   --color-surface: #ffffff;
-  --color-ink: #1d2420;
-  --color-muted: #5b655f;
+  --color-sunken: #e9e4d8;
+  --color-field: #ffffff;
+  --color-ink: #1a2320;
+  --color-muted: #56615a;
+  --color-line: #e4ddcf;
+  --color-edge: #878170;
   --color-danger: #a8321f;
+  --color-danger-soft: #fbeae6;
+  --color-wait: #855000;
+  --color-wait-soft: #fdf0d8;
+  --color-wait-line: #efd6a4;
+  /* The menu's own, which is dark either way. */
+  --color-side: #143a2a;
+  --color-side-deep: #0e2b21;
+  --color-on-side: #dbe8e0;
+  --color-side-muted: #b3cabd;
+  --color-leaf: #9fdcbc;
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --shadow-card: 0 1px 2px rgb(30 38 32 / 5%), 0 18px 40px -26px rgb(30 38 32 / 30%);
+  --shadow-raised: 0 2px 6px rgb(30 38 32 / 6%), 0 16px 34px -18px rgb(30 38 32 / 34%);
+  --shadow-button: 0 1px 2px rgb(16 60 38 / 35%), inset 0 1px 0 rgb(255 255 255 / 18%);
+}
+
+:root {
+  color-scheme: light;
+  --tend-primary: linear-gradient(180deg, #25805a, #1c6644);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-brand: #5fbf8f;
-    --color-brand-strong: #7fd3a8;
-    --color-paper: #141a17;
-    --color-surface: #1b2320;
-    --color-ink: #e9eeeb;
-    --color-muted: #a3aea8;
+    color-scheme: dark;
+    --color-brand: #62c795;
+    --color-brand-strong: #86dcb0;
+    --color-on-brand: #0b1611;
+    --color-mint: #1c3a2c;
+    --color-paper: #101614;
+    --color-surface: #18201d;
+    --color-sunken: #1f2926;
+    --color-field: #101715;
+    --color-ink: #eaf0ec;
+    --color-muted: #a6b2ac;
+    --color-line: #2a3430;
+    --color-edge: #73807a;
     --color-danger: #f2a79a;
+    --color-danger-soft: #351b16;
+    --color-wait: #f0c67a;
+    --color-wait-soft: #33280f;
+    --color-wait-line: #574419;
+    --color-side: #0f2a20;
+    --color-side-deep: #0a1a14;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 18px 40px -26px rgb(0 0 0 / 80%);
+    --shadow-raised: 0 2px 6px rgb(0 0 0 / 40%), 0 16px 34px -18px rgb(0 0 0 / 80%);
+    --shadow-button: 0 1px 2px rgb(0 0 0 / 40%);
+    --tend-primary: linear-gradient(180deg, #6fd1a1, #57bb89);
   }
 }
 
 /* The same colours, for someone who chose dark on a device that's light. */
 :root[data-theme="dark"] {
-  --color-brand: #5fbf8f;
-  --color-brand-strong: #7fd3a8;
-  --color-paper: #141a17;
-  --color-surface: #1b2320;
-  --color-ink: #e9eeeb;
-  --color-muted: #a3aea8;
+  color-scheme: dark;
+  --color-brand: #62c795;
+  --color-brand-strong: #86dcb0;
+  --color-on-brand: #0b1611;
+  --color-mint: #1c3a2c;
+  --color-paper: #101614;
+  --color-surface: #18201d;
+  --color-sunken: #1f2926;
+  --color-field: #101715;
+  --color-ink: #eaf0ec;
+  --color-muted: #a6b2ac;
+  --color-line: #2a3430;
+  --color-edge: #73807a;
   --color-danger: #f2a79a;
+  --color-danger-soft: #351b16;
+  --color-wait: #f0c67a;
+  --color-wait-soft: #33280f;
+  --color-wait-line: #574419;
+  --color-side: #0f2a20;
+  --color-side-deep: #0a1a14;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 18px 40px -26px rgb(0 0 0 / 80%);
+  --shadow-raised: 0 2px 6px rgb(0 0 0 / 40%), 0 16px 34px -18px rgb(0 0 0 / 80%);
+  --shadow-button: 0 1px 2px rgb(0 0 0 / 40%);
+  --tend-primary: linear-gradient(180deg, #6fd1a1, #57bb89);
 }
 
 /* How tall the bar at the bottom of a phone is, for what else stays at the bottom. */
@@ -64,6 +129,89 @@ body {
   color: var(--color-ink);
   /* A pasted address or long name has to wrap, not push the page sideways on a phone. */
   overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A card on the page. */
+@utility card {
+  border: 1px solid color-mix(in srgb, var(--color-line) 80%, transparent);
+  border-radius: 1.125rem;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+/* The main button of a screen, a little rounded under the light. */
+@utility primary {
+  background: var(--color-brand) var(--tend-primary);
+  color: var(--color-on-brand);
+  box-shadow: var(--shadow-button);
+
+  &:hover {
+    background: var(--color-brand-strong);
+  }
+}
+
+/* The menu, and anything else that's the colour of it. */
+@utility side {
+  background:
+    radial-gradient(26rem 16rem at 0 0, rgb(255 255 255 / 9%), transparent),
+    linear-gradient(180deg, var(--color-side), var(--color-side-deep));
+  color: var(--color-on-side);
+}
+
+/* Like an empty field, where files can be dropped. */
+@utility dashed {
+  border: 1.5px dashed var(--color-edge);
+  border-radius: 1.125rem;
+}
+
+/*
+ * A box that grows with its words: out of sight, in the same place, are the same words, which
+ * take up as much room as they need.
+ */
+.tend-grow {
+  display: grid;
+}
+
+.tend-grow::after,
+.tend-grow > textarea {
+  grid-area: 1 / 1;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.tend-grow::after {
+  content: attr(data-words) " ";
+  visibility: hidden;
+}
+
+.tend-grow > textarea {
+  overflow: hidden;
+  resize: none;
+}
+
+.tend-grow-field {
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.tend-grow-field::after,
+.tend-grow-field > textarea {
+  min-height: 2.75rem;
+  padding: 0.4375rem 0.75rem;
+  border-width: 1px;
+}
+
+/* Words in the site's own fonts, outside of what's being written. */
+.tend-font {
+  font-family: var(--tend-font-heading, var(--tend-font-body, var(--font-sans)));
+  font-weight: var(--tend-heading-weight, 700);
+  letter-spacing: var(--tend-heading-tracking, -0.02em);
 }
 
 /* The words being written: close to how they'll look, without pretending to be the theme. */

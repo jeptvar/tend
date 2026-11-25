@@ -4,9 +4,10 @@ import { FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useLocation } from "wouter";
 import { api, errorText } from "../lib/api.ts";
 import { useHeldDrafts, useKeptOnDevice } from "../lib/held-drafts.ts";
+import { onThisComputer } from "../lib/hosts.ts";
 import { type EntrySummary, type Me, useMe, useSetupStatus } from "../lib/queries.ts";
 import { useSignOut } from "../lib/sign-out.ts";
-import { CannotReachTend, Leaf, Loading } from "./AuthLayout.tsx";
+import { CannotReachTend, Loading, textLinkClass } from "./AuthLayout.tsx";
 import { Dialog } from "./Dialog.tsx";
 import { useNavigationFocus } from "./focus.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -57,6 +58,8 @@ interface Place {
   icon: IconName;
   /** Who sees it, as PLAN.md §6 sets out: a Writer writes posts, so has no Pages. */
   roles?: string[];
+  /** Starts a new group, under a line. */
+  apart?: boolean;
 }
 
 /** The server checks again who may do what, whatever the menu shows. */
@@ -65,19 +68,63 @@ const PLACES: Place[] = [
   { href: "/posts", id: "nav.posts", icon: "posts" },
   { href: "/pages", id: "nav.pages", icon: "pages", roles: ["admin", "editor"] },
   { href: "/media", id: "nav.media", icon: "media" },
-  { href: "/menu", id: "nav.menu", icon: "menu", roles: ["admin", "editor"] },
+  { href: "/menu", id: "nav.menu", icon: "menu", roles: ["admin", "editor"], apart: true },
   { href: "/design", id: "nav.design", icon: "design", roles: ["admin"] },
   { href: "/people", id: "nav.people", icon: "people", roles: ["admin"] },
   { href: "/settings", id: "nav.settings", icon: "settings", roles: ["admin"] },
 ];
 
-const navLinkClass =
-  "inline-flex min-h-11 items-center rounded px-2 hover:underline focus-visible:outline-3 focus-visible:outline-brand";
 const menuItemClass =
-  "flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left hover:bg-ink/5 focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-brand";
+  "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left hover:bg-white/8 focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white";
 
 function isHere(location: string, href: string): boolean {
   return href === "/" ? location === "/" : location === href || location.startsWith(`${href}/`);
+}
+
+/** The first letter of a name, or of its first two words, for a picture of someone or something. */
+export function initials(name: string, most = 2): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, most)
+    .map((word) => [...word][0] ?? "")
+    .join("")
+    .toLocaleUpperCase();
+}
+
+/** Who can see the site, in a couple of words, and only what's true (PLAN.md P15). */
+function siteState(me: Me): { id: string; color: string } {
+  const { address, addressIsPublic, visibility } = me.site;
+  const waiting = "bg-[#e8b04b]";
+  if (onThisComputer()) return { id: "nav.state.local", color: waiting };
+  if (!address) return { id: "nav.state.noAddress", color: waiting };
+  if (visibility !== "public") return { id: `nav.state.${visibility}`, color: waiting };
+  return addressIsPublic
+    ? { id: "nav.state.live", color: "bg-[#5fce93]" }
+    : { id: "nav.state.network", color: waiting };
+}
+
+function SiteName({ me, rail = false }: { me: Me; rail?: boolean }) {
+  const { id, color } = siteState(me);
+  return (
+    <p className={`flex min-w-0 items-center gap-2.5 ${rail ? "justify-center" : "flex-1"}`}>
+      <span
+        aria-hidden="true"
+        className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-lg font-bold text-[#1f6f4a] shadow-md"
+      >
+        {initials(me.site.name, 1)}
+      </span>
+      <span className={rail ? "sr-only" : "min-w-0"}>
+        <span className="line-clamp-2 font-semibold [overflow-wrap:anywhere] text-white">
+          {me.site.name}
+        </span>
+        <span className="flex items-baseline gap-1.5 text-[0.8125rem] leading-tight text-side-muted">
+          <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${color}`} />
+          <FormattedMessage id={id} />
+        </span>
+      </span>
+    </p>
+  );
 }
 
 /**
@@ -105,19 +152,20 @@ function Menu({
     </span>
   );
   const hint = (id: string) => (rail ? { title: intl.formatMessage({ id }) } : {});
+  const itemClass = `${menuItemClass} ${rail ? "justify-center px-0" : ""}`;
 
-  function link({ href, id, icon }: Place) {
+  function link({ href, id, icon, apart }: Place) {
     const here = isHere(location, href);
     return (
-      <li key={href}>
+      <li key={href} className={apart ? "mt-2 border-t border-white/10 pt-2" : ""}>
         <Link
           href={href}
           aria-current={here ? "page" : undefined}
           onClick={onGo}
-          className={`${menuItemClass} ${here ? "bg-brand/10 font-semibold" : ""} ${rail ? "justify-center px-0" : ""}`}
+          className={`${itemClass} ${here ? "bg-white/14 font-semibold text-white" : ""}`}
           {...hint(id)}
         >
-          <Icon name={icon} />
+          <Icon name={icon} className={`size-5 ${here ? "text-leaf" : ""}`} />
           {label(id)}
         </Link>
       </li>
@@ -126,19 +174,19 @@ function Menu({
 
   return (
     <>
-      <nav aria-label={intl.formatMessage({ id: "nav.label" })} className="px-2">
+      <nav aria-label={intl.formatMessage({ id: "nav.label" })} className="px-3">
         <ul className="grid gap-0.5">
           {PLACES.filter((place) => !place.roles || place.roles.includes(me.user.role)).map(link)}
         </ul>
       </nav>
-      <div className="mt-auto border-t border-ink/10 px-2 pt-2">
+      <div className="mt-auto px-3 pt-4">
         <ul className="grid gap-0.5">
           <li>
             <a
               href="/"
               target="_blank"
               rel="noopener"
-              className={`${menuItemClass} ${rail ? "justify-center px-0" : ""}`}
+              className={itemClass}
               {...hint("nav.viewSite")}
             >
               <Icon name="view" />
@@ -152,7 +200,7 @@ function Menu({
               type="button"
               disabled={signOut.isPending}
               onClick={() => signOut.mutate()}
-              className={`${menuItemClass} ${rail ? "justify-center px-0" : ""}`}
+              className={itemClass}
               {...hint("nav.signOut")}
             >
               <Icon name="signOut" />
@@ -161,14 +209,31 @@ function Menu({
           </li>
         </ul>
         {/* Always mounted: screen readers can miss a live region added along with its text. */}
-        <p role="alert" className="px-3 py-1 text-sm font-medium text-danger empty:sr-only">
+        <p role="alert" className="px-3 py-1 text-sm font-medium text-[#f7c4b9] empty:sr-only">
           {signOut.isError && <Problem error={signOut.error} />}
         </p>
-        {!rail && (
-          <p className="px-3 py-1 text-sm [overflow-wrap:anywhere] text-muted">
-            <FormattedMessage id="nav.signedInAs" values={{ name: me.user.name }} />
-          </p>
-        )}
+        <p
+          className={`mt-2 flex items-center gap-3 rounded-xl ${rail ? "justify-center py-1" : "bg-white/7 p-2.5"}`}
+        >
+          <span
+            aria-hidden="true"
+            className="grid size-9 shrink-0 place-items-center rounded-full bg-linear-to-br from-[#f3cc98] to-[#dd9757] text-xs font-bold text-[#4b2708]"
+          >
+            {initials(me.user.name)}
+          </span>
+          <span
+            className={
+              rail ? "sr-only" : "min-w-0 text-sm [overflow-wrap:anywhere] text-side-muted"
+            }
+          >
+            <FormattedMessage
+              id="nav.signedInAs"
+              values={{
+                name: <span className="block font-semibold text-white">{me.user.name}</span>,
+              }}
+            />
+          </span>
+        </p>
       </div>
     </>
   );
@@ -183,8 +248,10 @@ function keptRail(): boolean {
 }
 
 /** The menu down the side of a wide screen. Someone can make it narrow, and this device remembers. */
-function SideMenu({ me }: { me: Me }) {
-  const [rail, setRail] = useState(keptRail);
+function SideMenu({ me, narrow }: { me: Me; narrow: boolean }) {
+  const intl = useIntl();
+  const [kept, setRail] = useState(keptRail);
+  const rail = narrow || kept;
 
   function toggle() {
     setRail(!rail);
@@ -198,29 +265,25 @@ function SideMenu({ me }: { me: Me }) {
 
   return (
     <header
-      className={`sticky top-0 hidden h-dvh shrink-0 flex-col gap-2 overflow-y-auto border-r border-ink/10 py-3 lg:flex print:hidden ${rail ? "w-18" : "w-60"}`}
+      className={`side sticky top-0 hidden h-dvh shrink-0 flex-col gap-3 overflow-y-auto py-4 lg:flex print:hidden ${rail ? "w-19" : "w-66"}`}
     >
-      <p
-        className={`flex min-h-11 items-center gap-3 px-5 font-semibold ${rail ? "justify-center px-0" : ""}`}
-      >
-        <Leaf className="size-6" />
-        <span className={rail ? "sr-only" : "min-w-0 [overflow-wrap:anywhere]"}>
-          {me.site.name}
-        </span>
-      </p>
-      <Menu me={me} rail={rail} />
-      <div className="px-2">
-        <button
-          type="button"
-          onClick={toggle}
-          className={`${menuItemClass} text-muted ${rail ? "justify-center px-0" : ""}`}
-        >
-          <Icon name={rail ? "widen" : "narrow"} />
-          <span className={rail ? "sr-only" : ""}>
-            <FormattedMessage id={rail ? "nav.widen" : "nav.narrow"} />
-          </span>
-        </button>
+      <div className={`flex items-center gap-0.5 ${rail ? "flex-col px-3" : "pr-1.5 pl-4.5"}`}>
+        <SiteName me={me} rail={rail} />
+        {!narrow && (
+          <button
+            type="button"
+            onClick={toggle}
+            title={intl.formatMessage({ id: rail ? "nav.widen" : "nav.narrow" })}
+            className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-side-muted hover:bg-white/8 hover:text-white focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white"
+          >
+            <Icon name={rail ? "widen" : "narrow"} />
+            <span className="sr-only">
+              <FormattedMessage id={rail ? "nav.widen" : "nav.narrow"} />
+            </span>
+          </button>
+        )}
       </div>
+      <Menu me={me} rail={rail} />
     </header>
   );
 }
@@ -231,16 +294,13 @@ function TopBar({ me }: { me: Me }) {
   const headingId = useId();
   const [open, setOpen] = useState(false);
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-ink/10 px-4 py-1 lg:hidden print:hidden">
-      <span className="flex min-w-0 items-center gap-2 font-semibold">
-        <Leaf className="size-6" />
-        <span className="min-w-0 truncate">{me.site.name}</span>
-      </span>
+    <header className="side flex items-center justify-between gap-3 px-4 py-2 lg:hidden print:hidden">
+      <SiteName me={me} />
       <button
         type="button"
         aria-haspopup="dialog"
         onClick={() => setOpen(true)}
-        className={`${navLinkClass} -mr-2 gap-2`}
+        className="-mr-2 inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl px-3 font-medium text-white hover:bg-white/8 focus-visible:outline-3 focus-visible:outline-white"
       >
         <Icon name="open" />
         <FormattedMessage id="nav.open" />
@@ -248,15 +308,15 @@ function TopBar({ me }: { me: Me }) {
       {open && (
         <Dialog labelledBy={headingId} size="side" onClose={() => setOpen(false)}>
           <div className="flex min-h-full flex-col gap-2 py-3">
-            <div className="flex items-center justify-between gap-2 px-5">
-              <h2 id={headingId} className="font-semibold">
+            <div className="flex items-center justify-between gap-2 pr-3 pl-6">
+              <h2 id={headingId} className="font-semibold text-white">
                 <FormattedMessage id="nav.open" />
               </h2>
               <button
                 type="button"
                 aria-label={intl.formatMessage({ id: "nav.close" })}
                 onClick={() => setOpen(false)}
-                className={`${navLinkClass} -mr-2 min-w-11 justify-center`}
+                className="inline-flex size-11 items-center justify-center rounded-xl hover:bg-white/8 focus-visible:outline-3 focus-visible:outline-white"
               >
                 <Icon name="close" />
               </button>
@@ -270,7 +330,7 @@ function TopBar({ me }: { me: Me }) {
 }
 
 const barItemClass =
-  "flex min-h-16 w-full flex-col items-center justify-center gap-0.5 px-1 text-xs focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-brand";
+  "flex min-h-16 w-full flex-col items-center justify-center gap-0.5 px-1 text-xs font-medium focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-brand";
 
 /**
  * What a phone has within reach of a thumb, which follows how the site began (PLAN.md §6): a
@@ -301,7 +361,7 @@ function BottomBar({ me }: { me: Me }) {
         <Link
           href={href}
           aria-current={here ? "page" : undefined}
-          className={`${barItemClass} ${here ? "font-semibold text-brand" : ""}`}
+          className={`${barItemClass} ${here ? "font-semibold text-brand" : "text-muted"}`}
         >
           <Icon name={icon} />
           <FormattedMessage id={id} />
@@ -313,7 +373,7 @@ function BottomBar({ me }: { me: Me }) {
   return (
     <nav
       aria-label={intl.formatMessage({ id: "nav.quick" })}
-      className="tend-bar fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-paper lg:hidden print:hidden"
+      className="tend-bar fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface shadow-[0_-10px_30px_-22px_rgb(0_0_0/45%)] lg:hidden print:hidden"
     >
       <ul className="mx-auto grid max-w-lg grid-cols-4">
         {link("/", "nav.overview", "overview")}
@@ -330,9 +390,11 @@ function BottomBar({ me }: { me: Me }) {
                 onSuccess: (entry) => navigate(`${list}/${entry.id}`),
               });
             }}
-            className={barItemClass}
+            className={`${barItemClass} text-brand`}
           >
-            <Icon name="add" />
+            <span className="primary grid h-7 w-12 place-items-center rounded-full">
+              <Icon name="add" />
+            </span>
             <FormattedMessage id="nav.new" />
           </button>
         </li>
@@ -358,7 +420,7 @@ function DataRiskNotice({
   return (
     <section
       aria-labelledby="data-risk"
-      className="mt-4 rounded-lg border-2 border-danger p-4 [overflow-wrap:anywhere] print:hidden"
+      className="mt-6 rounded-2xl border-2 border-danger bg-danger-soft p-5 [overflow-wrap:anywhere] print:hidden"
     >
       <h2 id="data-risk" className="text-lg font-semibold text-danger">
         <FormattedMessage id="risk.heading" />
@@ -369,7 +431,7 @@ function DataRiskNotice({
       <ol className="mt-2 grid list-decimal gap-1 pl-6">
         <li>
           {isOwner ? (
-            <Link href="/settings/backups" className={`${navLinkClass} -ml-2 text-brand underline`}>
+            <Link href="/settings/backups" className={`${textLinkClass} underline`}>
               <FormattedMessage id="risk.backup" />
             </Link>
           ) : (
@@ -387,24 +449,44 @@ function DataRiskNotice({
   );
 }
 
+/** How much of the window a screen wants: forms are read, lists and pictures are looked over. */
+const WIDTHS = {
+  form: "max-w-200",
+  wide: "",
+};
+
 export function AdminLayout({
   me,
   screen,
   title,
+  intro,
+  actions,
+  width = "form",
   focusHeading = true,
   currentEntryId,
   writing = false,
+  beside,
   children,
 }: {
   me: Me;
   screen: string;
   /** Replaces the `<screen>.title` message, for headings with a name in them. */
   title?: string;
+  /** A line under the heading. */
+  intro?: ReactNode;
+  /** What can be done here, beside the heading. */
+  actions?: ReactNode;
+  width?: keyof typeof WIDTHS;
   focusHeading?: boolean;
   /** The entry open on this screen, whose unsaved text doesn't need a notice. */
   currentEntryId?: string;
-  /** Leaves out the bar at the bottom of phones, where there's little enough room to write. */
+  /**
+   * A screen for writing: the menu is only its drawings, phones have neither bar, and the
+   * heading is for screen readers, because the title being written is the biggest thing.
+   */
   writing?: boolean;
+  /** What a form has beside it, on a window wide enough for both. */
+  beside?: ReactNode;
   children: ReactNode;
 }) {
   const intl = useIntl();
@@ -434,52 +516,76 @@ export function AdminLayout({
           event.preventDefault();
           headingRef.current?.focus();
         }}
-        className="absolute top-2 left-2 z-40 inline-flex min-h-11 -translate-y-20 items-center rounded-lg bg-brand px-4 font-medium text-paper focus:translate-y-0 print:hidden"
+        className="absolute top-2 left-2 z-40 inline-flex min-h-11 -translate-y-20 items-center rounded-lg bg-brand px-4 font-medium text-on-brand focus:translate-y-0 print:hidden"
       >
         <FormattedMessage id="nav.skip" />
       </a>
-      <SideMenu me={me} />
-      <div className="min-w-0 flex-1">
-        <TopBar me={me} />
-        <main
-          id={contentId}
-          className={`mx-auto max-w-3xl px-4 py-8 ${writing ? "" : "max-lg:pb-24"}`}
-        >
-          <OpenConnection address={me.site.address} />
-          <h1
-            ref={headingRef}
-            tabIndex={-1}
-            className="text-3xl font-semibold tracking-tight break-words outline-none"
+      <SideMenu me={me} narrow={writing} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {!writing && <TopBar me={me} />}
+        <main id={contentId} className="flex w-full flex-1">
+          <div
+            className={
+              writing
+                ? "min-w-0 flex-1"
+                : `mx-auto w-full max-w-6xl min-w-0 px-4 py-8 max-lg:pb-24 sm:px-8 lg:px-11 ${
+                    beside
+                      ? "xl:mx-0 xl:w-112 xl:shrink-0 xl:border-r xl:border-line xl:bg-surface xl:px-7 xl:pb-0"
+                      : ""
+                  }`
+            }
           >
-            {title ?? <FormattedMessage id={`${screen}.title`} />}
-          </h1>
-          {me.dataRisk && <DataRiskNotice risk={me.dataRisk} isOwner={me.user.isOwner} />}
-          {heldDrafts.length > 0 && (
-            <ul className="mt-4 grid gap-2">
-              {heldDrafts.map((held) => (
-                <li
-                  key={held.key}
-                  className="flex flex-wrap items-center justify-between gap-x-4 rounded-lg border border-danger px-3 py-1"
-                >
-                  <span className="[overflow-wrap:anywhere]">
-                    <FormattedMessage
-                      id={onDevice ? "held.notice" : "held.noticeTab"}
-                      values={{
-                        title: held.draft.title || intl.formatMessage({ id: "list.untitled" }),
-                      }}
-                    />
-                  </span>
-                  <Link
-                    href={`/${held.type === "post" ? "posts" : "pages"}/${held.id}`}
-                    className={`${navLinkClass} text-brand underline`}
+            <div className={writing ? "" : WIDTHS[width]}>
+              <div className={writing ? "mx-auto max-w-4xl px-4 *:mt-4" : "contents"}>
+                <OpenConnection address={me.site.address} />
+              </div>
+              <div className={writing ? "" : "flex flex-wrap items-end gap-x-6 gap-y-4"}>
+                <div className={writing ? "sr-only" : "min-w-0 flex-1 basis-72"}>
+                  <h1
+                    ref={headingRef}
+                    tabIndex={-1}
+                    className="text-3xl font-bold tracking-tight break-words outline-none sm:text-[2.125rem]"
                   >
-                    <FormattedMessage id="held.open" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-          {children}
+                    {title ?? <FormattedMessage id={`${screen}.title`} />}
+                  </h1>
+                  {intro && <div className="mt-1.5 text-muted">{intro}</div>}
+                </div>
+                {actions && <div className="flex flex-wrap items-center gap-3">{actions}</div>}
+              </div>
+              <div className={writing ? "mx-auto max-w-4xl px-4 *:last:mb-6" : "contents"}>
+                {me.dataRisk && <DataRiskNotice risk={me.dataRisk} isOwner={me.user.isOwner} />}
+                {heldDrafts.length > 0 && (
+                  <ul className="mt-6 grid gap-2">
+                    {heldDrafts.map((held) => (
+                      <li
+                        key={held.key}
+                        className="flex flex-wrap items-center justify-between gap-x-4 rounded-2xl border border-danger bg-danger-soft px-5 py-1.5"
+                      >
+                        <span className="[overflow-wrap:anywhere]">
+                          <FormattedMessage
+                            id={onDevice ? "held.notice" : "held.noticeTab"}
+                            values={{
+                              title:
+                                held.draft.title || intl.formatMessage({ id: "list.untitled" }),
+                            }}
+                          />
+                        </span>
+                        <Link
+                          href={`/${held.type === "post" ? "posts" : "pages"}/${held.id}`}
+                          className={`${textLinkClass} underline`}
+                        >
+                          <FormattedMessage id="held.open" />
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {children}
+            </div>
+          </div>
+          {/* By the window's own width, which is there before anything here hears of a new one. */}
+          {beside && <div className="min-w-0 flex-1 max-xl:hidden">{beside}</div>}
         </main>
       </div>
       {!writing && <BottomBar me={me} />}

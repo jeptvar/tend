@@ -21,7 +21,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     if (!this.state.failed) return this.props.children;
     return (
       <main className="mx-auto max-w-xl px-4 py-16">
-        <h1 className="text-3xl font-semibold tracking-tight">
+        <h1 className="text-3xl font-bold tracking-tight">
           <FormattedMessage id="problem.title" />
         </h1>
         <p className="mt-4 text-lg text-muted">

@@ -55,6 +55,78 @@ const DRAWINGS = {
   widen: <path d="m13 7 5 5-5 5M6 7l5 5-5 5" />,
   down: <path d="m6 9 6 6 6-6" />,
   done: <path d="m5 12.5 4.5 4.5L19 7.5" />,
+  right: <path d="m9 6 6 6-6 6" />,
+  back: <path d="m15 6-6 6 6 6" />,
+  undo: <path d="M8 6 4 10l4 4M4.5 10H14a5 5 0 0 1 0 10h-3" />,
+  redo: <path d="m16 6 4 4-4 4M19.5 10H10a5 5 0 0 0 0 10h3" />,
+  bold: (
+    <path d="M8 5h5a3.4 3.4 0 0 1 0 6.8H8zM8 11.8h6a3.6 3.6 0 0 1 0 7.2H8z" strokeWidth="2.3" />
+  ),
+  italic: <path d="M11 5h6M7 19h6M14 5l-4 14" />,
+  link: (
+    <path d="M10 14a4 4 0 0 0 6 .4l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.4 1.5M14 10a4 4 0 0 0-6-.4l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.4-1.5" />
+  ),
+  history: <path d="M4 12a8 8 0 1 0 2.6-5.9L4 8.5M4 4v4.5h4.5M12 8v4.4l3 1.8" />,
+  eye: (
+    <>
+      <path d="M2.8 12S6.2 5.8 12 5.8 21.2 12 21.2 12 17.8 18.2 12 18.2 2.8 12 2.8 12z" />
+      <circle cx="12" cy="12" r="2.7" />
+    </>
+  ),
+  upload: <path d="M12 16V5M7.5 9.5 12 5l4.5 4.5M5 19h14" />,
+  computer: <path d="M4 5h16v11H4zM9 20h6M12 16v4" />,
+  phone: <path d="M8 3h8v18H8zM11 18h2" />,
+  panel: <path d="M4 5h16v14H4zM14.5 5v14" />,
+  text: <path d="M5 7V5h14v2M12 5v14M9 19h6" />,
+  heading2: <path d="M4 6v12M11 6v12M4 12h7M15.4 11a2.4 2.4 0 1 1 4.2 1.7L15.4 18H20" />,
+  heading3: <path d="M4 6v12M11 6v12M4 12h7M15.4 9h4.3l-2.3 3.2a2.9 2.9 0 1 1-2.3 4.9" />,
+  heading4: <path d="M4 6v12M11 6v12M4 12h7M19 18V9l-4.2 6H21" />,
+  bulletList: <path d="M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01" />,
+  orderedList: (
+    <path d="M10 7h10M10 12h10M10 17h10M4 5.5 5.5 5v4.5M3.8 14.4a1.5 1.5 0 1 1 2.6 1L3.8 18.5h3" />
+  ),
+  quote: (
+    <path
+      d="M10 7.6C7 8.4 5 10.5 5 13.6V17h5v-5H7.5c.1-1.4 1-2.3 2.5-2.8zM19 7.6c-3 .8-5 2.9-5 6V17h5v-5h-2.5c.1-1.4 1-2.3 2.5-2.8z"
+      className="fill-current"
+      strokeWidth="0.5"
+    />
+  ),
+  code: <path d="m8.5 8-4.5 4 4.5 4M15.5 8l4.5 4-4.5 4" />,
+  divider: <path d="M4 12h16M8 6.5h8M8 17.5h8" />,
+  button: (
+    <path d="M6 8h12a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3zM8 12h8" />
+  ),
+  intro: <path d="M4 5h16v14H4zM7.5 10h7M7.5 13.5h4.5" />,
+  pictureText: <path d="M4 6h8v12H4zM15 8h5M15 12h5M15 16h3" />,
+  contact: (
+    <>
+      <path d="M12 21s-6.5-5.6-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 15.4 12 21 12 21Z" />
+      <circle cx="12" cy="10.5" r="2.3" />
+    </>
+  ),
+  pencil: <path d="m5 19 .8-3.6L16.2 5a1.9 1.9 0 0 1 2.7 2.7L8.6 18.2ZM14.4 6.8l2.7 2.7" />,
+  copy: <path d="M9 9h10v10H9zM5 15V5h10" />,
+  trash: <path d="M5 7h14M10 7V5h4v2M7 7l.8 12h8.4L17 7M10.5 10.5v5M13.5 10.5v5" />,
+  hide: (
+    <path d="m4 4 16 16M9.6 6.1a9 9 0 0 1 2.4-.3c5.8 0 9.2 6.2 9.2 6.2a16 16 0 0 1-2.7 3.4M6.2 7.7A15 15 0 0 0 2.8 12S6.2 18.2 12 18.2a9 9 0 0 0 3.7-.8" />
+  ),
+  world: (
+    <>
+      <circle cx="12" cy="12" r="8.2" />
+      <path d="M3.8 12h16.4M12 3.8c2.3 2.3 3.4 5 3.4 8.2s-1.1 5.9-3.4 8.2c-2.3-2.3-3.4-5-3.4-8.2s1.1-5.9 3.4-8.2Z" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="8.2" />
+      <path d="M12 7.5V12l3 2" />
+    </>
+  ),
+  lock: <path d="M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3" />,
+  download: <path d="M12 4.5v11M7.5 11 12 15.5l4.5-4.5M5 19.5h14" />,
+  up: <path d="m6 15 6-6 6 6" />,
+  warning: <path d="M12 4 3 19.5h18ZM12 10v4.5M12 17h.01" />,
   search: (
     <>
       <circle cx="10.5" cy="10.5" r="5.5" />

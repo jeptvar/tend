@@ -13,7 +13,7 @@ export function OpenConnection({ address }: { address?: string | null }) {
   return (
     <section
       aria-labelledby={id}
-      className="mb-6 rounded-lg border-2 border-danger p-4 [overflow-wrap:anywhere] print:hidden"
+      className="mb-6 rounded-2xl border-2 border-danger bg-danger-soft p-5 [overflow-wrap:anywhere] print:hidden"
     >
       <h2 id={id} className="text-lg font-semibold text-danger">
         <FormattedMessage id="http.heading" />

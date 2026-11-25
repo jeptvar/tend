@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import {
   createEntry,
   expect,
+  GREETING,
   OWNER,
   type Site,
   signIn,
@@ -41,7 +42,7 @@ test.describe("Overview", () => {
       publish: true,
     });
     await page.goto(`${signedIn.base}/admin/`);
-    await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
     await expect(page.getByRole("region", { name: /on your site yet/ })).toHaveCount(0);
 
     await edit(page, signedIn, about.id, "About the bakery");
@@ -131,14 +132,18 @@ test.describe("Overview", () => {
   });
 
   test("only says the site is live when anyone can see it (P15)", async ({ page, signedIn }) => {
+    // The menu says it too, in a couple of words.
+    const menu = page.getByRole("banner");
     await page.goto(`${signedIn.base}/admin/`);
     await expect(
       page.getByText("Your site is ready on this computer. Only you can see it."),
     ).toBeVisible();
+    await expect(menu.getByText("Only on this computer")).toBeVisible();
 
     const base = elsewhere(signedIn);
     await signIn(page, { ...signedIn, base }, "/admin/login");
     await expect(page.getByText("it doesn't have a public address yet")).toBeVisible();
+    await expect(menu.getByText("No public address yet")).toBeVisible();
     await page
       .getByRole("region", { name: "Your site's address" })
       .getByRole("button", { name: "Use this address" })
@@ -147,6 +152,7 @@ test.describe("Overview", () => {
     // It's an address only this computer knows, so it isn't live.
     await expect(page.getByText("which only works on your own network")).toBeVisible();
     await expect(page.getByText(/is live/)).toHaveCount(0);
+    await expect(menu.getByText("On your own network")).toBeVisible();
 
     // As it is at an address everyone can reach.
     const pretend = async (visibility: string) => {
@@ -163,19 +169,23 @@ test.describe("Overview", () => {
         await route.fulfill({ json: me });
       });
       await page.reload();
-      await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+      await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
     };
     await pretend("public");
     await expect(page.getByText("Your site is live at")).toBeVisible();
+    await expect(menu.getByText("Live", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("link", { name: "https://risebakery.com", exact: true }),
     ).toBeVisible();
     await pretend("coming_soon");
     await expect(page.getByText("see a Coming soon page")).toBeVisible();
     await expect(page.getByText(/is live/)).toHaveCount(0);
+    await expect(menu.getByText("Coming soon page")).toBeVisible();
     await pretend("private");
     await expect(page.getByText("is private: only people signed in see it")).toBeVisible();
     await expect(page.getByText(/is live/)).toHaveCount(0);
+    await expect(menu.getByText("Private", { exact: true })).toBeVisible();
+    await expect(menu.getByText("Live", { exact: true })).toHaveCount(0);
     await page.getByRole("link", { name: "Change who can see it" }).click();
     await expect(page.getByRole("heading", { name: "General", level: 1 })).toBeVisible();
   });
@@ -213,7 +223,7 @@ test("says when pictures can't be added on this server, and who can do something
   await expect(notice).toContainText("Ask an Admin of this site to look at Help.");
   await expect(notice.getByRole("link")).toHaveCount(0);
   await page.goto(`${signedIn.base}/admin/`);
-  await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
   await expect(notice).toHaveCount(0);
 });
 
@@ -482,7 +492,7 @@ test.describe("going online", () => {
   }) => {
     const warning = page.getByRole("region", { name: "This connection isn't private" });
     await page.goto(`${signedIn.base}/admin/`);
-    await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
     await expect(warning).toHaveCount(0);
     await page.goto(`${elsewhere(signedIn)}/admin/login`);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
