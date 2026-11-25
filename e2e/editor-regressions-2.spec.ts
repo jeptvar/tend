@@ -20,6 +20,11 @@ const saveStatus = (page: Page) => page.getByTestId("save-status");
 const postsLink = (page: Page) => page.getByRole("link", { name: "Posts", exact: true });
 const toast = (page: Page) => page.locator(".fixed");
 
+/** The part of what the editor knows that's looked at here. */
+interface EditorState {
+  selection: { $from: { index(depth: number): number } };
+}
+
 async function openPost(page: Page, site: Site, id: string, kind = "posts"): Promise<void> {
   await page.goto(`${site.base}/admin/${kind}/${id}`);
   await expect(body(page)).toBeVisible();
@@ -681,15 +686,34 @@ test.describe("the editor itself", () => {
       ),
     });
     await openPost(page, signedIn, created.id);
+    // WebKit tells the editor where the cursor is a moment after the key or the press that moved
+    // it, and what's pasted here comes sooner than a person could paste it.
+    const paragraphWithCursor = () =>
+      body(page).evaluate((element) => {
+        const { state } = (element as unknown as { editor: { state: EditorState } }).editor;
+        return state.selection.$from.index(0);
+      });
+    const dismissed = async () => {
+      await paste(page, '<img src="/a.png">');
+      const scrolled = await page.evaluate(() => scrollY);
+      await page.getByRole("button", { name: "OK" }).click();
+      await expect(body(page)).toBeFocused();
+      expect(await page.evaluate(() => scrollY)).toBe(scrolled);
+    };
     await body(page).click();
     await page.keyboard.press("ControlOrMeta+End");
-    await paste(page, '<img src="/a.png">');
-    const scrolled = await page.evaluate(() => scrollY);
-    await page.getByRole("button", { name: "OK" }).click();
-    await expect(body(page)).toBeFocused();
-    expect(await page.evaluate(() => scrollY)).toBe(scrolled);
+    await expect.poll(paragraphWithCursor).toBe(29);
+    await dismissed();
     await page.keyboard.type("more");
-    await expect(body(page)).toContainText("more");
+    await expect(body(page).locator("p").last()).toContainText("more");
+
+    // And right under the bars, where pasting brings back a cursor that was out of sight.
+    await body(page).locator("p").nth(9).click();
+    await expect.poll(paragraphWithCursor).toBe(9);
+    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+    await dismissed();
+    await page.keyboard.type("again");
+    await expect(body(page).locator("p").nth(9)).toContainText("again");
   });
 
   test("closing a button's dialog hands focus back to its Edit button, in place", async ({
