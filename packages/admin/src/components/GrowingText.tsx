@@ -1,4 +1,5 @@
 import { forwardRef, type TextareaHTMLAttributes } from "react";
+import { isComposing } from "../lib/keys.ts";
 
 interface GrowingTextProps
   extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange" | "rows"> {
@@ -25,7 +26,7 @@ export const GrowingText = forwardRef<HTMLTextAreaElement, GrowingTextProps>(fun
         onChange={(event) => onChange(event.target.value.replace(/\s*[\r\n]+\s*/g, " "))}
         onKeyDown={(event) => {
           onKeyDown?.(event);
-          if (event.key === "Enter" && !event.nativeEvent.isComposing) event.preventDefault();
+          if (event.key === "Enter" && !isComposing(event)) event.preventDefault();
         }}
         className={className}
         {...input}

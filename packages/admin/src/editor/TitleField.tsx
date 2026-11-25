@@ -1,6 +1,7 @@
 import { forwardRef, useId } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { GrowingText } from "../components/GrowingText.tsx";
+import { isComposing } from "../lib/keys.ts";
 
 /** The title, written where it'll be and as it'll look: no box, and as big as a title is. */
 export const TitleField = forwardRef<
@@ -29,7 +30,7 @@ export const TitleField = forwardRef<
         value={value}
         onChange={onChange}
         onKeyDown={(event) => {
-          if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+          if (event.key !== "Enter" || isComposing(event)) return;
           event.preventDefault();
           onEnter();
         }}

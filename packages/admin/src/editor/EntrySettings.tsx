@@ -7,6 +7,7 @@ import { Icon } from "../components/icons.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { api } from "../lib/api.ts";
+import { isComposing } from "../lib/keys.ts";
 import { useMediaItems } from "../lib/media.ts";
 
 const smallButtonClass = `${secondaryButtonClass} aria-disabled:opacity-60`;
@@ -143,7 +144,7 @@ export function TagsField({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter" || event.key === ",") {
+    if ((event.key === "Enter" || event.key === ",") && !isComposing(event)) {
       event.preventDefault();
       add();
     }

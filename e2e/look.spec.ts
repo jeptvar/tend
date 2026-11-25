@@ -94,6 +94,38 @@ test.describe("what's being written", () => {
     await expect(title(page)).toHaveValue("Open again from Monday");
   });
 
+  test("leaves the Enter that accepts a suggested word to the keyboard suggesting it", async ({
+    page,
+    signedIn,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Bread", body: "" });
+    await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
+    await openSettings(page);
+    const tags = page.getByLabel("Tags", { exact: true });
+    // Most browsers send it while the word is being put together, and Safari just after.
+    const accept = async (box: typeof tags) => {
+      for (const isComposing of [true, false]) {
+        await box.dispatchEvent("keydown", { key: "Enter", keyCode: 229, isComposing });
+      }
+      // Anywhere else the keyboard could go to is gone to by now.
+      await page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+      );
+      await expect(box).toBeFocused();
+    };
+    await title(page).fill("パンの店");
+    await accept(title(page));
+    await title(page).press("Enter");
+    await expect(body(page)).toBeFocused();
+
+    await tags.fill("ライ麦");
+    await accept(tags);
+    await expect(tags).toHaveValue("ライ麦");
+    await tags.press("Enter");
+    await expect(page.getByRole("button", { name: "Remove tag ライ麦" })).toBeVisible();
+    await expect(tags).toHaveValue("");
+  });
+
   test("has its styles in a menu that says which it is", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Hours", body: "" });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
