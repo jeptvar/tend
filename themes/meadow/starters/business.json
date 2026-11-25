@@ -5,7 +5,59 @@
       "title": "{site}",
       "slug": "home",
       "isHome": true,
-      "body": "This is your homepage. Tell visitors what you do and why they'll be glad they came.\n\nEdit this text to make it your own, then publish your changes."
+      "doc": {
+        "type": "doc",
+        "content": [
+          {
+            "type": "section",
+            "attrs": {
+              "kind": "intro",
+              "preset": "1",
+              "tone": "muted",
+              "align": "left"
+            },
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Welcome to {site}"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "This is your homepage. Tell visitors what you do and why they'll be glad they came."
+                  }
+                ]
+              },
+              {
+                "type": "button",
+                "attrs": {
+                  "href": "/contact",
+                  "label": "Get in touch"
+                }
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Edit this text to make it your own, then publish your changes."
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "type": "page",

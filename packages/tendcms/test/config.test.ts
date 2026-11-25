@@ -1,15 +1,20 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   type Config,
   ConfigError,
   checkNodeVersion,
+  dataFolderError,
   ensureSecretKey,
   explainDataFolderFailure,
   loadConfig,
+  parseSecretKey,
   portsToTry,
   prepareDataDir,
+  readSecretKey,
+  SECRET_KEY_BYTES,
+  secretKeyText,
 } from "../src/config.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -94,32 +99,23 @@ describe("loadConfig", () => {
   });
 });
 
-describe("the site's own address", () => {
-  test("comes from TEND_PUBLIC_URL first, then from what the hosting platform says", () => {
-    expect(loadConfig({ TEND_PUBLIC_URL: "https://rise.example" }).siteUrl).toBe(
-      "https://rise.example",
-    );
+describe("the address a hosting platform gave the site", () => {
+  test("comes from what it tells every app it runs", () => {
     expect(
       loadConfig({
         RAILWAY_ENVIRONMENT: "production",
         RAILWAY_PUBLIC_DOMAIN: "rise.up.railway.app",
-      }).siteUrl,
+      }).platformUrl,
     ).toBe("https://rise.up.railway.app");
     expect(
-      loadConfig({ RENDER: "true", RENDER_EXTERNAL_URL: "https://rise.onrender.com" }).siteUrl,
+      loadConfig({ RENDER: "true", RENDER_EXTERNAL_URL: "https://rise.onrender.com" }).platformUrl,
     ).toBe("https://rise.onrender.com");
-    expect(loadConfig({ FLY_APP_NAME: "rise" }).siteUrl).toBe("https://rise.fly.dev");
-    expect(
-      loadConfig({
-        TEND_PUBLIC_URL: "https://rise.example",
-        RAILWAY_PUBLIC_DOMAIN: "rise.up.railway.app",
-      }).siteUrl,
-    ).toBe("https://rise.example");
+    expect(loadConfig({ FLY_APP_NAME: "rise" }).platformUrl).toBe("https://rise.fly.dev");
   });
 
   test("is unknown for a plain run, so pages name the address they're asked for", () => {
-    expect(loadConfig({}).siteUrl).toBeUndefined();
-    expect(loadConfig({ RAILWAY_PUBLIC_DOMAIN: "not a host/" }).siteUrl).toBeUndefined();
+    expect(loadConfig({}).platformUrl).toBeUndefined();
+    expect(loadConfig({ RAILWAY_PUBLIC_DOMAIN: "not a host/" }).platformUrl).toBeUndefined();
   });
 });
 
@@ -130,6 +126,7 @@ describe("explainDataFolderFailure", () => {
     "EACCES",
     "EROFS",
     "ENOSPC",
+    "EDQUOT",
     "SQLITE_CANTOPEN",
     "SQLITE_READONLY",
     "SQLITE_IOERR_WRITE",
@@ -148,16 +145,19 @@ describe("explainDataFolderFailure", () => {
     expect(fix("railway")).toContain("https://tendcms.dev/errors/data_not_writable");
   });
 
-  test.each(["ERR_DLOPEN_FAILED", "MODULE_NOT_FOUND"])(
-    "%s says the database component failed, with the reason",
-    (code) => {
-      const explained = explainDataFolderFailure("/data", failure(code)) as Error;
-      expect(explained).toBeInstanceOf(ConfigError);
-      expect(explained.message).toContain("database component couldn't load");
-      expect(explained.message).toContain(`${code} details`);
-      expect(explained.message).not.toContain("write access");
-    },
-  );
+  test.each([
+    ["ENOSPC", "Its disk is full"],
+    ["EDQUOT", "Its disk is full"],
+    ["SQLITE_FULL", "Its disk is full"],
+    ["EROFS", "a disk that can only be read"],
+  ])("%s isn't said to be about who may write there", (code, says) => {
+    for (const platform of [undefined, "docker", "railway"] as const) {
+      const { message } = dataFolderError("/data", failure(code), platform);
+      expect(message).toContain(`Tend can't write to its data folder, /data (${code}). `);
+      expect(message).toContain(says);
+      expect(message).not.toMatch(/write access|chown|RAILWAY_RUN_UID/);
+    }
+  });
 
   test("anything else is passed on unchanged, not blamed on the folder", () => {
     const original = failure("ERR_SOMETHING_ELSE");
@@ -171,6 +171,25 @@ describe("explainDataFolderFailure, for the lock file", () => {
     const explained = explainDataFolderFailure("/data", error) as Error;
     expect(explained.message).toContain(".lock.db");
     expect(explained.message).not.toContain("write access");
+  });
+});
+
+describe("the key's file", () => {
+  test("holds the key as text, and nothing else counts as one", () => {
+    const key = Buffer.alloc(SECRET_KEY_BYTES, 0xab);
+    expect(secretKeyText(key)).toBe(`${"ab".repeat(32)}\n`);
+    expect(parseSecretKey(Buffer.from(secretKeyText(key)))?.equals(key)).toBe(true);
+    expect(parseSecretKey(Buffer.from("ab".repeat(32)))?.equals(key)).toBe(true);
+    expect(parseSecretKey(key)).toBeUndefined();
+    expect(parseSecretKey(Buffer.from("ab".repeat(31)))).toBeUndefined();
+    expect(parseSecretKey(Buffer.from(`${"ab".repeat(32)}\n\n`))).toBeUndefined();
+    expect(parseSecretKey(Buffer.alloc(0))).toBeUndefined();
+  });
+
+  test("isn't read as a key when it's damaged", () => {
+    const config = configIn(tempDir());
+    writeFileSync(config.secretKeyPath, "ab".repeat(31));
+    expect(() => readSecretKey(config)).toThrow(/is damaged.*Restore it from a backup/);
   });
 });
 

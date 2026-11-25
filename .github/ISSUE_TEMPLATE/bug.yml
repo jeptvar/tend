@@ -1,0 +1,24 @@
+name: Something isn't working
+description: Tell us what happened, so we can make it happen here and fix it.
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect instead?
+      description: What you did, one step at a time. A screenshot helps.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: What does tendcms doctor say?
+      description: >-
+        Run `npx tendcms doctor` in your site's folder, or `docker exec tend tendcms doctor` if
+        your container is called tend. It changes nothing, and what it prints has no passwords,
+        emails or content in it.
+      render: text
+  - type: input
+    id: browser
+    attributes:
+      label: Which browser and device were you using?
+      description: If it's about the admin, or how your site looks.

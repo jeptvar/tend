@@ -1,0 +1,67 @@
+name: railway-check
+
+# Whether a site on Railway can be updated the way people are told to (PLAN.md §13): the newest
+# image, and Redeploy. It needs a Railway project of the project's own, made from the template,
+# so until the railway environment has one this does nothing. docs/releasing.md says how to set
+# it up. Railway's API: https://docs.railway.com/reference/public-api
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: railway-check
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    if: vars.RAILWAY_CHECK_URL != ''
+    runs-on: ubuntu-latest
+    # The token in it can only reach the test project.
+    environment: railway
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # The test site's own address, and which service it is.
+      SITE: ${{ vars.RAILWAY_CHECK_URL }}
+      SERVICE: ${{ vars.RAILWAY_SERVICE_ID }}
+      ENVIRONMENT: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Redeploy it, and wait for the newest version to answer
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          newest=$(git tag --list 'v[0-9]*' --sort=-version:refname | grep --invert-match -- - | head -n 1 | sed 's/^v//')
+          test -n "$newest"
+          # The site's own name. The rest of a page can look different in a newer version.
+          title() { curl --fail --silent --show-error "$SITE/" | grep --only-matching '<title>[^<]*</title>'; }
+          before=$(title)
+          jq --null-input --arg service "$SERVICE" --arg environment "$ENVIRONMENT" '{
+            query: "mutation ($environment: String!, $service: String!) { serviceInstanceRedeploy(environmentId: $environment, serviceId: $service) }",
+            variables: { environment: $environment, service: $service }
+          }' > redeploy.json
+          curl --fail --silent --show-error --output answer.json \
+            --header "Project-Access-Token: $RAILWAY_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data @redeploy.json https://backboard.railway.com/graphql/v2
+          if jq --exit-status .errors answer.json; then
+            exit 1
+          fi
+          # Railway stops the old one first, because it has a volume, so there's a short gap.
+          for _ in $(seq 1 60); do
+            sleep 10
+            if curl --silent "$SITE/healthz" | grep --quiet "\"version\":\"$newest\""; then
+              # And it's the same site, with everything that was in it.
+              test "$(title)" = "$before"
+              exit 0
+            fi
+          done
+          echo "After ten minutes, $SITE wasn't running $newest."
+          exit 1

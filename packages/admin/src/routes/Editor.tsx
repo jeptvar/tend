@@ -11,9 +11,16 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Field } from "../components/fields.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { dismissToast, showToast } from "../components/Toast.tsx";
 import { BodyEditor, type BodyHandle } from "../editor/BodyEditor.tsx";
-import { type Check, findChecks, linkedIds, type PictureFacts } from "../editor/checks.ts";
+import {
+  type Check,
+  type CheckTarget,
+  findChecks,
+  linkedIds,
+  type PictureFacts,
+} from "../editor/checks.ts";
 import { FeaturedImageField, SearchFields, TagsField } from "../editor/EntrySettings.tsx";
 import { HistoryDialog } from "../editor/HistoryDialog.tsx";
 import { PreviewDialog } from "../editor/PreviewDialog.tsx";
@@ -49,7 +56,6 @@ import {
   type EntryType,
   entriesKey,
   entryKey,
-  entryListKey,
   type LinkTarget,
   ME_KEY,
   type Me,
@@ -455,7 +461,7 @@ function EditorScreen({
     setCurrent(next);
     setTrouble(null);
     setProblem(null);
-    void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
+    void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
     const latest = draftNow();
     if (sameDraft(latest, sent)) {
       s.heldUntouched = null;
@@ -584,6 +590,36 @@ function EditorScreen({
     // After anything open has closed and handed focus back, and the settings have opened,
     // because something hidden can't take focus.
     requestAnimationFrame(() => (field === "title" ? titleRef : slugRef).current?.focus());
+  }
+
+  /** Leads to what a check is about, for its Fix button. */
+  function goToCheck(target: CheckTarget): void {
+    setReview(null);
+    if (target.kind === "slug") {
+      goToField("slug");
+      return;
+    }
+    // Once the review has closed and handed focus back, or it would take it again.
+    requestAnimationFrame(() => {
+      if (!bodyRef.current?.goTo(target)) statusRef.current?.focus();
+    });
+  }
+
+  /** Says it's on the site, with the way to see it there (PLAN.md J1). */
+  function sayPublished(url: string | null): void {
+    showToast({
+      message: intl.formatMessage({ id: "publish.done" }),
+      ...(url
+        ? {
+            action: {
+              label: intl.formatMessage({
+                id: type === "post" ? "publish.viewPost" : "publish.viewPage",
+              }),
+              run: () => window.open(url, "_blank", "noopener"),
+            },
+          }
+        : {}),
+    });
   }
 
   function retrySoon(): void {
@@ -791,7 +827,13 @@ function EditorScreen({
         ? [{ id: "check.uploading", values: { count: String(arriving.going) } }]
         : []),
       ...(arriving.failed > 0
-        ? [{ id: "check.uploadFailed", values: { count: String(arriving.failed) } }]
+        ? [
+            {
+              id: "check.uploadFailed",
+              values: { count: String(arriving.failed) },
+              target: { kind: "upload" as const },
+            },
+          ]
         : []),
     ];
     const s = session.current.entry;
@@ -842,7 +884,7 @@ function EditorScreen({
       // Publishing changes is a routine thing, so it only stops if there's something to say.
       if (s.entry.url && checks.length === 0 && !blocked) {
         await publishNow();
-        announce("status.onSite");
+        sayPublished(session.current.entry.url);
       } else {
         setReview({ checks, done: false });
       }
@@ -855,7 +897,7 @@ function EditorScreen({
       await saveFirst();
       await publishNow(options);
       setReview((open) => (open && firstTime ? { ...open, done: true } : null));
-      if (!firstTime) announce("status.onSite");
+      if (!firstTime) sayPublished(session.current.entry.url);
     });
   }
 
@@ -976,7 +1018,7 @@ function EditorScreen({
         method: "POST",
       });
       session.current.done = true;
-      void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
+      void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
       navigate(`${listPath}/${copy.id}`);
       showToast({ message: intl.formatMessage({ id: "editor.duplicated" }) });
     });
@@ -1002,12 +1044,12 @@ function EditorScreen({
       releaseDraft(entry.id, s.editSession);
       queryClient.removeQueries({ queryKey: entryKey(entry.id) });
       // Off the list straight away, rather than sitting beside "Moved to the Trash".
-      queryClient.setQueryData<InfiniteData<EntryPage>>(entryListKey(type, false), (data) =>
-        withoutEntry(data, entry.id),
+      queryClient.setQueriesData<InfiniteData<EntryPage>>(
+        { queryKey: entriesKey(type), predicate: ({ queryKey }) => !queryKey.includes("trash") },
+        (data) => withoutEntry(data, entry.id),
       );
       const refreshLists = () => {
-        void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
-        void queryClient.invalidateQueries({ queryKey: entriesKey(type, true) });
+        void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
       };
       refreshLists();
       navigate(listPath);
@@ -1055,7 +1097,7 @@ function EditorScreen({
         setCurrent(next);
         if (!s.heldUntouched) scheduleSave();
       }
-      void queryClient.invalidateQueries({ queryKey: entriesKey(type, true) });
+      void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
       statusRef.current?.focus();
     });
   }
@@ -1337,7 +1379,7 @@ function EditorScreen({
         });
         trackSave(
           entry.id,
-          save.then(() => queryClient.invalidateQueries({ queryKey: entriesKey(type, false) })),
+          save.then(() => queryClient.invalidateQueries({ queryKey: entriesKey(type) })),
         );
         save.then(
           () => {
@@ -1366,7 +1408,7 @@ function EditorScreen({
                     body: { editSession: s.editSession, editSeq: s.seq },
                   })
                     .then(() => {
-                      void queryClient.invalidateQueries({ queryKey: entriesKey(type, false) });
+                      void queryClient.invalidateQueries({ queryKey: entriesKey(type) });
                       showToast({ message: words.formatMessage({ id: "editor.publishedNow" }) });
                     })
                     .catch((error) => {
@@ -1440,6 +1482,7 @@ function EditorScreen({
       screen={type === "post" ? "editor.post" : "editor.page"}
       focusHeading={entry.title !== ""}
       currentEntryId={entry.id}
+      writing
     >
       <div className="mt-2">
         <Link href={listPath} className={textLinkClass}>
@@ -1799,11 +1842,13 @@ function EditorScreen({
 
       {review && (
         <PublishDialog
+          me={me}
           entry={session.current.entry}
           type={type}
           checks={review.checks}
           summary={fields.seoDescription.trim() || reviewSummary}
           shareTitle={fields.seoTitle.trim()}
+          sharePicture={fields.featuredImageId ?? imageIds(session.current.saved.doc)[0] ?? null}
           done={review.done}
           busy={busy}
           problem={problemText}
@@ -1813,6 +1858,7 @@ function EditorScreen({
             setReview(null);
             goToField(field);
           }}
+          onGoTo={goToCheck}
           onClose={() => setReview(null)}
           onWriteAnother={onWriteAnother}
         />
@@ -1881,7 +1927,7 @@ function DeletedEntryRecovery({ me, held }: { me: Me; held: HeldDraft }) {
         <p className="mt-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{words}</p>
       </div>
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {problem ? errorText(problem, intl.formatMessage({ id: "offline.body" })) : null}
+        {problem ? <Problem error={problem} /> : null}
       </p>
       <div className="mt-4 flex flex-wrap gap-3">
         <button
@@ -1936,7 +1982,6 @@ function DeletedEntryRecovery({ me, held }: { me: Me; held: HeldDraft }) {
 }
 
 function LoadedEditor({ me, id, type }: { me: Me; id: string; type: EntryType }) {
-  const intl = useIntl();
   const entry = useQuery({
     queryKey: entryKey(id),
     queryFn: async () => {
@@ -1965,7 +2010,7 @@ function LoadedEditor({ me, id, type }: { me: Me; id: string; type: EntryType })
     return (
       <AdminLayout me={me} screen={type === "post" ? "editor.post" : "editor.page"}>
         <p role="alert" className="mt-6 text-lg text-muted">
-          {errorText(entry.error, intl.formatMessage({ id: "offline.body" }))}
+          {<Problem error={entry.error} />}
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-4">
           <button

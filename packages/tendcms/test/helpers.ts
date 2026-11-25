@@ -71,8 +71,13 @@ export interface RunningCli {
 }
 
 /** Spawns `node src/cli.ts <args>` with a clean Tend environment. */
-export function runCli(args: string[], env: Record<string, string>): RunningCli {
+export function runCli(
+  args: string[],
+  env: Record<string, string>,
+  options: { cwd?: string } = {},
+): RunningCli {
   const child = spawn(process.execPath, [cliPath, ...args], {
+    ...options,
     env: cleanEnv(env),
     stdio: ["ignore", "pipe", "pipe"],
   });

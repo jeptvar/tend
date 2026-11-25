@@ -1,4 +1,3 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { type Context, Hono, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -12,14 +11,23 @@ import { currentUser } from "./auth/current-user.ts";
 import { MAX_UPLOAD_BYTES } from "./media/process.ts";
 import { MediaStore } from "./media/store.ts";
 import { createSite } from "./site/router.ts";
-import { contentTypeFor, resolveInside } from "./static-files.ts";
+import { SiteAddress } from "./site-address.ts";
+import { resolveInside, StaticFiles } from "./static-files.ts";
 
-export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDir"> {
+export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDir" | "address"> {
   version: string;
   adminDir: string;
   adminDevUrl: string | undefined;
+  /** TEND_PUBLIC_URL. */
   publicUrl: string | undefined;
+  /** The address the hosting platform gave the site, if it said. */
+  platformUrl?: string | undefined;
+  /** Whether the site is reached over https, until an Admin confirms its address. */
+  secureCookies: boolean;
   themeDir: string;
+  /** Where themes of people's own are. */
+  themeFolders?: string[] | undefined;
+  showThemeMistakes?: boolean | undefined;
   uploadsDir: string;
   /** Where Tend keeps copies of the site, for Settings → Backups. */
   backupsDir?: string | undefined;
@@ -170,12 +178,13 @@ const ADMIN_NOT_BUILT = `<!doctype html>
 export function createApp(options: AppOptions): Hono {
   const app = new Hono();
   const now = options.now ?? Date.now;
+  const address = new SiteAddress(options.orm, options);
 
   app.use("*", async (c, next) => {
     await next();
     c.res.headers.set("X-Content-Type-Options", "nosniff");
     c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    if (options.secureCookies) {
+    if (address.secure) {
       c.res.headers.set("Strict-Transport-Security", "max-age=31536000");
     }
     if (c.req.path === "/admin" || c.req.path.startsWith("/admin/")) {
@@ -216,10 +225,14 @@ export function createApp(options: AppOptions): Hono {
       const type = c.req.header("content-type")?.toLowerCase() ?? "";
       if (isUpload(c.req.method, c.req.path) || isBackupPart(c.req.method, c.req.path)) {
         if (!type.startsWith("application/octet-stream")) {
-          throw new ApiError(415, "needs_file", "Tend expected a file here.");
+          throw new ApiError(415, "needs_file", "Tend expected a file here.", {
+            fix: "Upload it from Media, or send the file itself as application/octet-stream.",
+          });
         }
       } else if (!type.startsWith("application/json")) {
-        throw new ApiError(415, "needs_json", "Tend only accepts JSON here.");
+        throw new ApiError(415, "needs_json", "Tend only accepts JSON here.", {
+          fix: "Send it as application/json.",
+        });
       }
     }
     await next();
@@ -281,7 +294,7 @@ export function createApp(options: AppOptions): Hono {
   // Nothing sent to the admin is read until it's known who sent it. A body can be 20 MB, so
   // reading first would let anyone at all fill the server's memory. Each route checks again.
   app.use("/api/admin/*", async (c, next) => {
-    const user = await currentUser(c, options.orm, options.secureCookies, now());
+    const user = await currentUser(c, options.orm, address.secure, now());
     if (!user) throw notSignedIn();
     if (isUpload(c.req.method, c.req.path)) await receiveUpload(c, user.id, next);
     else await next();
@@ -296,39 +309,48 @@ export function createApp(options: AppOptions): Hono {
     orm: options.orm,
     store,
     themeDir: options.themeDir,
+    themeFolders: options.themeFolders,
+    showThemeMistakes: options.showThemeMistakes,
     pageCacheBytes: options.pageCacheBytes,
-    publicUrl: options.siteUrl ?? options.publicUrl,
-    secureCookies: options.secureCookies,
+    address,
     trustProxy: options.trustProxy,
     now: options.now,
+    version: options.version,
     watchTheme: options.watchTheme ?? false,
     onBackgroundWork: options.onBackgroundWork,
   });
-  const onSiteChanged = (path?: string) => site.changed(path);
+  const onSiteChanged = (path?: string) => {
+    address.refresh();
+    site.changed(path);
+  };
 
-  app.route("/api/auth", createAuthRoutes({ ...options, onSiteChanged }));
+  app.route("/api/auth", createAuthRoutes({ ...options, address, onSiteChanged }));
   app.route(
     "/api/admin",
     createAdminRoutes({
       orm: options.orm,
       store,
-      secureCookies: options.secureCookies,
+      address,
       now: options.now,
       onSiteChanged,
       preview: (input) => site.preview(input),
-      publicUrl: options.siteUrl ?? options.publicUrl,
-      themeSettings: () => site.theme.settings,
-      designValues: (chosen) => site.theme.designValues(chosen),
+      themes: site.themes,
+      platform: options.platform,
       previewDesign: (design) => site.previewDesign(design),
       backupsDir: options.backupsDir,
       uploadsDir: options.uploadsDir,
+      dbPath: options.dataFolder?.dbPath,
       secretKey: options.secretKey,
       version: options.version,
+      trustProxy: options.trustProxy,
+      dataRisk: options.dataRisk,
     }).app,
   );
 
   app.all("/api/*", () => {
-    throw new ApiError(404, "not_found", "There's nothing at this address.");
+    throw new ApiError(404, "not_found", "There's nothing at this address.", {
+      fix: "Reload this page. If it keeps happening, Tend may have been updated since it opened.",
+    });
   });
 
   app.onError((error, c) => {
@@ -353,13 +375,16 @@ export function createApp(options: AppOptions): Hono {
     return c.json({ ok: true, version: options.version });
   });
 
+  const adminFiles = new StaticFiles();
   app.get("/admin", (c) => c.redirect("/admin/"));
-  app.get("/admin/*", (c) => {
+  // Easier to say over the phone to someone who's locked out (PLAN.md J7).
+  app.get("/recover", (c) => c.redirect("/admin/recover"));
+  app.get("/admin/*", async (c) => {
     if (options.adminDevUrl) {
       const { pathname, search } = new URL(c.req.url);
       return c.redirect(new URL(pathname + search, options.adminDevUrl).toString());
     }
-    return serveAdmin(options.adminDir, c.req.path);
+    return serveAdmin(c, adminFiles, options.adminDir);
   });
 
   // Last, because the public site answers every address nothing above has claimed.
@@ -368,40 +393,26 @@ export function createApp(options: AppOptions): Hono {
   return app;
 }
 
-/** Serves the built admin SPA: real files when they exist, index.html for client routes. */
-function serveAdmin(adminDir: string, requestPath: string): Response {
-  const indexPath = join(adminDir, "index.html");
-  if (!existsSync(indexPath)) return html(ADMIN_NOT_BUILT);
+const FOREVER = "public, max-age=31536000, immutable";
 
-  const encoded = requestPath.slice("/admin/".length);
+/** Serves the built admin SPA: real files when they exist, index.html for client routes. */
+async function serveAdmin(c: Context, files: StaticFiles, adminDir: string): Promise<Response> {
+  const encoded = c.req.path.slice("/admin/".length);
   let relative: string;
   try {
     relative = decodeURIComponent(encoded);
   } catch {
     return new Response("Bad request", { status: 400 });
   }
-  const filePath = resolveInside(adminDir, encoded);
-
-  if (filePath && existsSync(filePath) && statSync(filePath).isFile()) {
-    return new Response(readFileSync(filePath), {
-      headers: {
-        "Content-Type": contentTypeFor(filePath),
-        // Vite puts content hashes in everything under assets/.
-        "Cache-Control": relative.startsWith("assets/")
-          ? "public, max-age=31536000, immutable"
-          : "no-cache",
-      },
+  const index = async () =>
+    (await files.send(c, join(adminDir, "index.html"), "no-cache")) ??
+    new Response(ADMIN_NOT_BUILT, {
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
     });
-  }
-  if (relative.startsWith("assets/")) return new Response("Not found", { status: 404 });
-  return html(readFileSync(indexPath, "utf8"));
-}
-
-function html(body: string): Response {
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-cache",
-    },
-  });
+  const path = resolveInside(adminDir, encoded);
+  // Vite puts content hashes in everything under assets/.
+  const isAsset = relative.startsWith("assets/");
+  const file = path && (await files.send(c, path, isAsset ? FOREVER : "no-cache"));
+  if (file) return file;
+  return isAsset ? new Response("Not found", { status: 404 }) : index();
 }

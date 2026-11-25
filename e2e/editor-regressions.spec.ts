@@ -788,7 +788,8 @@ test.describe("what the editor can say about itself", () => {
     await expect(saveStatus(page)).toContainText("not on your site yet", { timeout: 5000 });
     await page.getByRole("button", { name: "Publish changes" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Publish changes" }).click();
-    await expect(announcements(page)).toHaveText("On your site");
+    await expect(page.getByRole("status").filter({ hasText: "Published." })).toBeVisible();
+    await expect(saveStatus(page)).toContainText("On your site");
   });
 
   test("a red error doesn't stay beside Saved", async ({ page, signedIn }) => {
@@ -1266,7 +1267,7 @@ test.describe("keyboard focus", () => {
       await page.request.post(`${signedIn.base}/api/admin/entries/${post.id}/trash`, { data: {} });
     }
     await page.goto(`${signedIn.base}/admin/posts`);
-    await page.getByRole("button", { name: "Trash", exact: true }).click();
+    await page.getByRole("button", { name: /^Trash/ }).click();
     await page.getByRole("button", { name: "Restore" }).first().focus();
     await page.keyboard.press("Enter");
     // On to the row that took its place, so a long list isn't started again from the top.

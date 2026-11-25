@@ -2,7 +2,13 @@ import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { z } from "zod";
 import { clientIp, networkKey, rateLimitKey, storedIpPrefix } from "../auth/client-ip.ts";
-import { currentUser, deviceCookieName, sessionCookieName } from "../auth/current-user.ts";
+import {
+  cookieOptions,
+  currentUser,
+  deviceCookieName,
+  SESSION_COOKIE_MAX_AGE_SECONDS,
+  sessionCookieName,
+} from "../auth/current-user.ts";
 import {
   createDeviceCookie,
   DEVICE_COOKIE_MAX_AGE_SECONDS,
@@ -20,11 +26,10 @@ import { AccountBackoff, TokenBuckets, WorkGate } from "../auth/ratelimit.ts";
 import { completeSetup, loadStarter, SetupClosedError } from "../auth/setup.ts";
 import { type SetupCodeSource, setupCodeMatches } from "../auth/setup-code.ts";
 import type { RestoreTarget } from "../backups/restore.ts";
-import { isLocalAddress } from "../config.ts";
-import { isLocale } from "../content/settings.ts";
+import type { Platform } from "../config.ts";
+import { isLocale, settingValue } from "../content/settings.ts";
 import type { Orm } from "../db/client.ts";
 import {
-  ABSOLUTE_MS,
   createSessionIfPasswordUnchanged,
   deleteSession,
   deleteUserSessions,
@@ -38,23 +43,26 @@ import {
   type User,
   upgradePasswordHash,
 } from "../db/repo/users.ts";
+import { pictureError } from "../media/process.ts";
+import type { SiteAddress } from "../site-address.ts";
+import type { DataRiskDetails } from "../volume.ts";
 import { registerAccountRoutes } from "./accounts.ts";
-import { ApiError, tendIsBusy, tooManyTries } from "./errors.ts";
+import { ApiError, type ApiErrorDetails, tendIsBusy, tooManyTries } from "./errors.ts";
 import { registerSetupBackupRoutes } from "./setup-backup.ts";
 
 export interface AuthOptions extends SetupCodeSource {
   orm: Orm;
-  secureCookies: boolean;
+  address: SiteAddress;
   trustProxy: number;
   now?: () => number;
   /** How many made-up emails to remember. Only tests change this. */
   unknownEmailKeys?: number;
   themeDir: string;
   onSiteChanged: () => void;
-  /** Whether the site has a real public address. */
-  isPublic: boolean;
-  /** The address pages name as their own, when it's known for sure. See Config.siteUrl. */
-  siteUrl?: string | undefined;
+  /** Where Tend runs, which decides how to give the site a domain. */
+  platform?: Platform | undefined;
+  /** Why this site could be lost with its container, if it could. See volume.ts. */
+  dataRisk?: DataRiskDetails | undefined;
   /** The data folder, which Start from a backup restores into. Absent in some tests. */
   dataFolder?: RestoreTarget | undefined;
 }
@@ -134,16 +142,19 @@ function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body);
   if (result.success) return result.data;
   const issue = result.error.issues[0];
-  throw new ApiError(400, "needs_fixing", issue?.message ?? "Check what you typed and try again.", {
+  throw new ApiError(400, "needs_fixing", issue?.message ?? "Something's missing.", {
     field: issue?.path.join("."),
-  });
+    fix: issue?.message ? undefined : "Check what you typed and try again.",
+  } as ApiErrorDetails);
 }
 
 async function readJson(c: Context): Promise<unknown> {
   try {
     return await c.req.json();
   } catch {
-    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request. Try again.");
+    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request.", {
+      fix: "Try again.",
+    });
   }
 }
 
@@ -159,13 +170,14 @@ function publicUser(user: User) {
 
 /** Sessions, sign-in and first-run setup: everything under /api/auth. */
 export function createAuthRoutes(options: AuthOptions): Hono {
-  const { orm, secureCookies, trustProxy, secretKey } = options;
+  const { orm, address, trustProxy, secretKey } = options;
   const now = options.now ?? Date.now;
   const clock = { now };
 
-  const sessionCookie = sessionCookieName(secureCookies);
-  const deviceCookie = deviceCookieName(secureCookies);
-  const cookieBase = { httpOnly: true, sameSite: "Lax", path: "/", secure: secureCookies } as const;
+  // Asked for each time, since confirming the site's address can change them.
+  const sessionCookie = () => sessionCookieName(address.secure);
+  const deviceCookie = () => deviceCookieName(address.secure);
+  const cookieBase = () => cookieOptions(address.secure);
 
   const setupCodeAttempts = new TokenBuckets({
     perMinute: SETUP_CODE_ATTEMPTS_PER_MINUTE,
@@ -218,15 +230,18 @@ export function createAuthRoutes(options: AuthOptions): Hono {
       now: now(),
     });
     if (!token) throw loginFailed();
-    setCookie(c, sessionCookie, token, { ...cookieBase, maxAge: ABSOLUTE_MS / 1000 });
-    setCookie(c, deviceCookie, createDeviceCookie(secretKey, user.email.toLowerCase(), now()), {
-      ...cookieBase,
+    setCookie(c, sessionCookie(), token, {
+      ...cookieBase(),
+      maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+    });
+    setCookie(c, deviceCookie(), createDeviceCookie(secretKey, user.email.toLowerCase(), now()), {
+      ...cookieBase(),
       maxAge: DEVICE_COOKIE_MAX_AGE_SECONDS,
     });
   }
 
   async function requireUser(c: Context): Promise<User> {
-    const user = await currentUser(c, orm, secureCookies, now());
+    const user = await currentUser(c, orm, address.secure, now());
     if (!user) {
       throw new ApiError(401, "not_signed_in", "You're not signed in.", {
         fix: "Sign in again. What you've typed stays in this tab.",
@@ -354,6 +369,14 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     trustProxy,
     now,
     startSession,
+    endSession: async (c) => {
+      const token = getCookie(c, sessionCookie());
+      if (token) await deleteSession(orm, token);
+    },
+    isKnownDevice: (c, email) => {
+      const device = getCookie(c, deviceCookie());
+      return device !== undefined && deviceCookieIsValid(secretKey, device, email, now());
+    },
     requireUser,
     confirmPassword,
     publicUser,
@@ -386,7 +409,7 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     }
 
     const user = await findUserByEmail(orm, email);
-    const device = getCookie(c, deviceCookie);
+    const device = getCookie(c, deviceCookie());
     const knownDevice =
       device !== undefined &&
       deviceCookieIsValid(secretKey, device, email, now()) &&
@@ -423,7 +446,7 @@ export function createAuthRoutes(options: AuthOptions): Hono {
 
     // A new token at every sign-in, so one planted before signing in is worthless after.
     await startSession(c, user, verifiedHash);
-    const previous = getCookie(c, sessionCookie);
+    const previous = getCookie(c, sessionCookie());
     if (previous) await deleteSession(orm, previous);
 
     loginAttemptsPerAddress.refund(addressKey);
@@ -439,16 +462,16 @@ export function createAuthRoutes(options: AuthOptions): Hono {
   });
 
   app.post("/logout", async (c) => {
-    const token = getCookie(c, sessionCookie);
+    const token = getCookie(c, sessionCookie());
     if (token) await deleteSession(orm, token);
-    deleteCookie(c, sessionCookie, cookieBase);
+    deleteCookie(c, sessionCookie(), cookieBase());
     return c.body(null, 204);
   });
 
   app.post("/logout-all", async (c) => {
     const user = await requireUser(c);
     await deleteUserSessions(orm, user.id);
-    deleteCookie(c, sessionCookie, cookieBase);
+    deleteCookie(c, sessionCookie(), cookieBase());
     return c.body(null, 204);
   });
 
@@ -456,14 +479,22 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     const user = await requireUser(c);
     const site = await getSetting(orm, "site");
     const setup = await getSetting(orm, "setup");
-    const confirmed = site?.address_confirmed && site.address ? site.address : undefined;
     return c.json({
       user: publicUser(user),
-      site: { name: site?.name ?? "", tagline: site?.tagline ?? "" },
+      site: {
+        name: site?.name ?? "",
+        tagline: site?.tagline ?? "",
+        // Until it's known, Overview asks whether the address in the browser is the site's.
+        address: address.url ?? null,
+        addressFrom: address.source,
+        addressIsPublic: address.isPublic,
+        visibility: (await settingValue(orm, "visibility")).mode,
+      },
       starter: setup?.starter ?? null,
-      siteIsPublic: options.isPublic || Boolean(confirmed && !isLocalAddress(confirmed)),
-      // Until it's known, Overview asks whether the address in the browser is the site's.
-      addressKnown: Boolean(options.siteUrl ?? confirmed),
+      platform: options.platform ?? "local",
+      picturesWork: pictureError === undefined,
+      // For whoever can do something about it.
+      dataRisk: user.role === "admin" ? (options.dataRisk ?? null) : null,
     });
   });
 

@@ -9,7 +9,10 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { PicturesNotice } from "../components/PicturesNotice.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
 import {
   ACCEPTED_FILES,
@@ -378,6 +381,7 @@ function MediaScreen({ me }: { me: Me }) {
       <p className="mt-2 text-muted">
         <FormattedMessage id="media.hint" />
       </p>
+      <PicturesNotice me={me} />
       <div className="mt-6 flex flex-wrap items-end justify-between gap-3">
         <div className="-ml-2 flex">
           {(["all", "trash"] as const).map((option) => (
@@ -431,14 +435,10 @@ function MediaScreen({ me }: { me: Me }) {
 
       {/* Always mounted: screen readers can miss a live region added along with its text. */}
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {list.error && errorText(list.error, intl.formatMessage({ id: "offline.body" }))}
+        {list.data && list.error && <Problem error={list.error} />}
       </p>
 
-      {list.isPending && (
-        <p className="mt-8 text-muted">
-          <FormattedMessage id="common.loading" />
-        </p>
-      )}
+      {!list.data && <Waiting query={list} />}
       {items?.length === 0 && (
         <p className="mt-8 text-muted">
           <FormattedMessage
@@ -759,7 +759,7 @@ function MediaDetails({
         )}
 
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {error && errorText(error, intl.formatMessage({ id: "offline.body" }))}
+          {error && <Problem error={error} />}
         </p>
 
         <section aria-labelledby={`${headingId}-uses`} className="grid gap-1">
@@ -910,8 +910,7 @@ function MediaDetails({
               <FormattedMessage id="media.confirmDeleteBody" />
             </p>
             <p role="alert" className="font-medium text-danger empty:sr-only">
-              {deleteForever.error &&
-                errorText(deleteForever.error, intl.formatMessage({ id: "offline.body" }))}
+              {deleteForever.error && <Problem error={deleteForever.error} />}
             </p>
             <div className="flex flex-wrap gap-3">
               <button

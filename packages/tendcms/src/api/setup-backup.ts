@@ -20,9 +20,9 @@ import {
   type RestoreTarget,
   restoreRunning,
 } from "../backups/restore.ts";
-import { diskSpace } from "../backups/snapshots.ts";
 import type { Orm } from "../db/client.ts";
 import { SNAPSHOT_TMP_PREFIX } from "../db/migrate.ts";
+import { diskSpace } from "../disk.ts";
 import { appVersion, migrationsDir } from "../paths.ts";
 import { parseBody, readJson } from "./admin/routing.ts";
 import { ApiError } from "./errors.ts";

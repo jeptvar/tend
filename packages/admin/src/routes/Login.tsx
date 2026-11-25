@@ -10,7 +10,8 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Field, PasswordField } from "../components/fields.tsx";
-import { ApiError, api, errorText } from "../lib/api.ts";
+import { Problem } from "../components/Problem.tsx";
+import { ApiError, api } from "../lib/api.ts";
 import { nextPath } from "../lib/next-path.ts";
 import { confirmSignedIn, useMe, useSetupStatus } from "../lib/queries.ts";
 import { useSetup } from "../lib/setup-state.tsx";
@@ -134,7 +135,7 @@ export function Login() {
         />
         {/* Always mounted: screen readers can miss a live region added along with its text. */}
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {signIn.isError && errorText(signIn.error, intl.formatMessage({ id: "offline.body" }))}
+          {signIn.isError && <Problem error={signIn.error} />}
         </p>
         <div className="flex items-center justify-between gap-4">
           <Link href="/login/forgot" className={textLinkClass}>
@@ -149,13 +150,22 @@ export function Login() {
   );
 }
 
+/** For whoever looks after the server, however Tend was put on it. */
+const COMMANDS = [
+  { id: "forgot.npm", command: "npx tendcms reset-password you@example.com" },
+  {
+    id: "forgot.docker",
+    command: "docker compose exec tend tendcms reset-password you@example.com",
+  },
+];
+
 /** J7: the ways back in, the one that needs nobody else first. */
 export function ForgotPassword() {
   return (
     <AuthLayout screen="forgot">
       <ol className="mt-6 grid list-decimal gap-6 pl-6 text-lg">
         <li>
-          <Link href="/recover" className="font-medium text-brand underline underline-offset-4">
+          <Link href="/recover" className={`${textLinkClass} font-medium underline`}>
             <FormattedMessage id="forgot.code" />
           </Link>
           <p className="mt-1 text-base text-muted">
@@ -177,9 +187,16 @@ export function ForgotPassword() {
           <p className="mt-1 text-base text-muted">
             <FormattedMessage id="forgot.developerHint" />
           </p>
-          <pre className="mt-2 rounded-lg border border-muted/50 bg-white/60 p-3 text-sm break-all whitespace-pre-wrap dark:bg-white/5">
-            <code>npx tendcms reset-password you@example.com</code>
-          </pre>
+          {COMMANDS.map(({ id, command }) => (
+            <div key={id} className="mt-2">
+              <p className="text-base">
+                <FormattedMessage id={id} />
+              </p>
+              <pre className="mt-1 rounded-lg border border-muted/50 bg-white/60 p-3 text-sm break-all whitespace-pre-wrap dark:bg-white/5">
+                <code>{command}</code>
+              </pre>
+            </div>
+          ))}
         </li>
       </ol>
       <div className="mt-8">

@@ -6,6 +6,7 @@ import type { Writable } from "node:stream";
 import { finished } from "node:stream/promises";
 import Database from "better-sqlite3";
 import { Zip, ZipDeflate } from "fflate";
+import { secretKeyText } from "../config.ts";
 import type { SqliteDatabase } from "../db/client.ts";
 import { quickCheck, readSchemaVersion, SNAPSHOT_TMP_PREFIX } from "../db/migrate.ts";
 import {
@@ -55,7 +56,8 @@ export async function writeBackup(
     const schemaVersion = checkCopy(copy);
     const database = await zip.addFile(DATABASE_ENTRY, copy, 6);
     if (!database) throw new Error("The copy of the site's data went missing.");
-    const files: BackupFile[] = [database, await zip.addData(KEY_ENTRY, source.secretKey)];
+    const key = Buffer.from(secretKeyText(source.secretKey));
+    const files: BackupFile[] = [database, await zip.addData(KEY_ENTRY, key)];
     for (const name of originalsIn(source.uploadsDir)) {
       const path = join(source.uploadsDir, "originals", name);
       // One deleted forever since the list was made is no longer part of the site.
@@ -117,6 +119,10 @@ function originalsIn(uploadsDir: string): string[] {
     }
   }
   return names;
+}
+
+function destinationClosed(): Error {
+  return new Error("The backup's destination closed before it was done.");
 }
 
 /** fflate's streaming zip, written to a Node stream that may be slower than it. */
@@ -192,6 +198,8 @@ class ZipWriter {
   /** Waits while `out` has more than it can take, and stops if it closed or failed. */
   async #caughtUp(): Promise<void> {
     if (this.#failed) throw this.#failed;
+    // One that closed while nothing was waited for would never say so again.
+    if (this.#out.destroyed) throw destinationClosed();
     if (!this.#behind) return;
     await new Promise<void>((resolve, reject) => {
       const done = (error?: Error) => {
@@ -202,7 +210,7 @@ class ZipWriter {
         else resolve();
       };
       const drained = () => done();
-      const closed = () => done(new Error("The backup's destination closed before it was done."));
+      const closed = () => done(destinationClosed());
       this.#out.once("drain", drained);
       this.#out.once("error", done);
       this.#out.once("close", closed);

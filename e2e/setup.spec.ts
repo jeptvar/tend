@@ -29,7 +29,7 @@ test("from the printed link to a published site, as a new owner", async ({ page,
 
   const visitor = await page.context().newPage();
   await visitor.goto(`${site.base}/`);
-  await expect(visitor.getByRole("heading", { name: "Rise Bakery" })).toBeVisible();
+  await expect(visitor.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
   await expect(visitor.getByRole("link", { name: "Contact" })).toBeVisible();
 });
 

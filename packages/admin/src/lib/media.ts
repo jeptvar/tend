@@ -118,6 +118,8 @@ class BusyError extends ApiError {
  */
 export function worthRetrying(error: unknown): boolean {
   if (!(error instanceof ApiError)) return true;
+  // The server has to be put right first.
+  if (error.code === "pictures_unavailable") return false;
   return (
     error.code === OFFLINE || error.status === 408 || error.status === 429 || error.status >= 500
   );

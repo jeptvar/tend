@@ -1,5 +1,19 @@
 import type { RunResult } from "better-sqlite3";
-import { and, count, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 import { ApiError } from "../api/errors.ts";
 import { foldForSearch, type Orm } from "../db/client.ts";
@@ -23,6 +37,8 @@ import { syncLiveTags } from "./tags.ts";
 
 export type EntryType = "post" | "page";
 export type Entry = typeof entries.$inferSelect;
+/** An entry without its words, which a list has no use for. */
+export type EntryRow = Omit<Entry, "data">;
 export type Revision = typeof revisions.$inferSelect;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -264,34 +280,95 @@ export async function getEntry(orm: Orm, id: string): Promise<Entry | undefined>
   return fetchEntry(orm, id);
 }
 
+/** The parts of a list. "changes" is what's on the site with newer edits that aren't. */
+export type EntryView = "all" | "drafts" | "published" | "changes" | "trash";
+
+export interface EntryFilter {
+  /** Both kinds, when it isn't said. */
+  type?: EntryType | undefined;
+  view: EntryView;
+  /** Only those with these words in their title. */
+  query?: string | undefined;
+  /** When set, only this person's entries. */
+  authorId: string | undefined;
+}
+
+const { data: _words, ...rowColumns } = getTableColumns(entries);
+
+/**
+ * Pressing New post and going straight back shouldn't leave an Untitled row behind, so nothing
+ * appears in any list until it's been saved once.
+ */
+function everSaved() {
+  return or(gt(entries.rev, 1), isNotNull(entries.firstPublishedAt));
+}
+
+function inView(view: EntryView) {
+  if (view === "trash") return isNotNull(entries.trashedAt);
+  return and(
+    isNull(entries.trashedAt),
+    view === "drafts" ? eq(entries.status, "draft") : undefined,
+    view === "published" || view === "changes" ? eq(entries.status, "published") : undefined,
+    view === "changes" ? eq(entries.dirty, 1) : undefined,
+  );
+}
+
+function matching({ type, view, query, authorId }: EntryFilter) {
+  return and(
+    type ? eq(entries.type, type) : undefined,
+    inView(view),
+    everSaved(),
+    authorId ? eq(entries.authorId, authorId) : undefined,
+    query ? sql`tend_fold(${entries.title}) LIKE ${containing(query)} ESCAPE '\\'` : undefined,
+  );
+}
+
+/** A LIKE pattern for these words anywhere in something that's been folded. */
+function containing(words: string): string {
+  return `%${foldForSearch(words).replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+}
+
 export async function listEntries(
   orm: Orm,
-  input: {
-    type: EntryType;
-    trashed: boolean;
-    /** When set, only this person's entries. */
-    authorId: string | undefined;
-    offset: number;
-    limit: number;
-  },
-): Promise<Entry[]> {
+  input: EntryFilter & { offset: number; limit: number },
+): Promise<EntryRow[]> {
   return orm
-    .select()
+    .select(rowColumns)
     .from(entries)
-    .where(
-      and(
-        eq(entries.type, input.type),
-        input.trashed ? isNotNull(entries.trashedAt) : isNull(entries.trashedAt),
-        // Pressing New post and going straight back shouldn't leave an Untitled row behind,
-        // so nothing appears until it's been saved once.
-        or(gt(entries.rev, 1), isNotNull(entries.firstPublishedAt)),
-        input.authorId ? eq(entries.authorId, input.authorId) : undefined,
-      ),
-    )
+    .where(matching(input))
     .orderBy(desc(entries.isHome), desc(entries.updatedAt), desc(entries.id))
     .limit(input.limit)
     .offset(input.offset)
     .all();
+}
+
+export type EntryCounts = Record<EntryView, number>;
+
+/** How many there are in each part of a list. */
+export async function countEntries(
+  orm: Orm,
+  input: Pick<EntryFilter, "type" | "authorId">,
+): Promise<EntryCounts> {
+  const among = (view: EntryView) =>
+    sql<number>`count(*) FILTER (WHERE ${inView(view)})`.mapWith(Number);
+  const counts = orm
+    .select({
+      all: among("all"),
+      drafts: among("drafts"),
+      published: among("published"),
+      changes: among("changes"),
+      trash: among("trash"),
+    })
+    .from(entries)
+    .where(
+      and(
+        input.type ? eq(entries.type, input.type) : undefined,
+        everSaved(),
+        input.authorId ? eq(entries.authorId, input.authorId) : undefined,
+      ),
+    )
+    .get();
+  return counts ?? { all: 0, drafts: 0, published: 0, changes: 0, trash: 0 };
 }
 
 /** Someone following "Try /blog/same-2" may type all of it, not just the last part. */
@@ -735,6 +812,7 @@ export async function discardChanges(
           409,
           "not_on_site",
           "This isn't on your site, so there's nothing to go back to.",
+          { fix: "Use History if you want an earlier version." },
         );
       }
       const keptRevisionId = keepRevision(tx, {
@@ -975,7 +1053,7 @@ export async function searchLinkTargets(
 ): Promise<LinkTarget[]> {
   const { authorId } = input;
   const folded = foldForSearch(input.query);
-  const escaped = folded.replace(/[\\%_]/g, (character) => `\\${character}`);
+  const anywhere = containing(input.query);
   // The title this person is allowed to see: a writer gets other people's as published.
   const title =
     authorId === undefined
@@ -983,8 +1061,8 @@ export async function searchLinkTargets(
       : sql`CASE WHEN ${entries.authorId} = ${authorId} THEN ${entries.title} ELSE ${revisions.title} END`;
   const where = and(
     isNull(entries.trashedAt),
-    or(gt(entries.rev, 1), isNotNull(entries.firstPublishedAt)),
-    input.query ? sql`tend_fold(${title}) LIKE ${`%${escaped}%`} ESCAPE '\\'` : undefined,
+    everSaved(),
+    input.query ? sql`tend_fold(${title}) LIKE ${anywhere} ESCAPE '\\'` : undefined,
     visibleToLinker(authorId),
   );
   // A title that's exactly what was typed comes first, then ones that start with it, so a
@@ -992,7 +1070,7 @@ export async function searchLinkTargets(
   const closeness = input.query
     ? [
         sql`tend_fold(${title}) = ${folded} DESC`,
-        sql`tend_fold(${title}) LIKE ${`${escaped}%`} ESCAPE '\\' DESC`,
+        sql`tend_fold(${title}) LIKE ${anywhere.slice(1)} ESCAPE '\\' DESC`,
       ]
     : [];
   return orm
@@ -1321,7 +1399,9 @@ export interface StarterEntry {
   title: string;
   slug: string;
   isHome?: boolean;
-  body: string;
+  /** What it says: plain words, or a document of its own, sections and all. */
+  body?: string;
+  doc?: Doc;
   /** Ends with a Contact & hours section, showing the business details from Settings. */
   contact?: boolean;
 }
@@ -1363,7 +1443,9 @@ export function seedStarterEntries(
         slug: starter.slug,
         isHome: starter.isHome ? 1 : 0,
         isExample: 1,
-        data: newEntryData(withContactSection(input.toDoc(starter.body), starter.contact)),
+        data: newEntryData(
+          withContactSection(starter.doc ?? input.toDoc(starter.body ?? ""), starter.contact),
+        ),
         authorId: input.authorId,
         createdAt: input.now,
         updatedAt: input.now,

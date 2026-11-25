@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { fsyncDir, fsyncFile } from "./durable.ts";
+import { PlainError } from "./plain-error.ts";
 
 export type Platform = "railway" | "render" | "fly" | "docker" | "local";
 
@@ -20,6 +21,8 @@ export interface Config {
   uploadsDir: string;
   backupsDir: string;
   secretKeyPath: string;
+  /** Where themes of people's own are. The first is where a copy of one goes. */
+  themeFolders: string[];
   platform: Platform;
   /** Undefined means "PORT was not set". */
   port: number | undefined;
@@ -29,11 +32,8 @@ export interface Config {
   adminDevUrl: string | undefined;
   /** TEND_PUBLIC_URL: the site's real address, when it's known up front. */
   publicUrl: string | undefined;
-  /**
-   * The address pages name as their own: TEND_PUBLIC_URL, or else the one the hosting
-   * platform gave the site. Undefined when neither is known, as with a plain Docker run.
-   */
-  siteUrl: string | undefined;
+  /** The address the hosting platform gave the site, if it said. See site-address.ts. */
+  platformUrl: string | undefined;
   /** How many proxies sit in front of Tend (TEND_TRUST_PROXY). */
   trustProxy: number;
   /** Whether the site is reached over https, which decides the cookie mode. */
@@ -46,13 +46,14 @@ export interface Config {
   pageCacheBytes: number;
 }
 
-/** A problem the person running Tend has to fix; `message` is shown as-is. */
-export class ConfigError extends Error {}
+/** A problem the person running Tend has to fix. */
+export class ConfigError extends PlainError {}
 
 const DOCS = "https://tendcms.dev/docs";
 const MIN_NODE_MAJOR = 24;
 const DEFAULT_PORT = 3000;
 const FALLBACK_PORTS = 10;
+export const SECRET_KEY_BYTES = 32;
 const SECRET_KEY_FORMAT = /^[0-9a-f]{64}\n?$/;
 const MIN_SETUP_PASSWORD_LENGTH = 8;
 const DEFAULT_PAGE_CACHE_MB = 32;
@@ -184,6 +185,18 @@ function resolveHosts(env: NodeJS.ProcessEnv, platform: Platform): string[] {
   return platform === "local" ? ["127.0.0.1", "::1"] : ["0.0.0.0"];
 }
 
+/**
+ * Beside the data folder in a site someone made with npm, where it can go in their own
+ * repository. In a container it's on the volume, or built into an image made from Tend's.
+ */
+function themeFolders(dataDir: string, platform: Platform): string[] {
+  const beside = resolve("themes");
+  const inData = join(dataDir, "themes");
+  const folders =
+    platform === "local" ? [beside, inData] : [inData, resolve("/opt/tend/themes"), beside];
+  return [...new Set(folders)];
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const serverless = detectServerless(env);
   if (serverless) {
@@ -202,12 +215,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     uploadsDir: join(dataDir, "uploads"),
     backupsDir: join(dataDir, "backups"),
     secretKeyPath: join(dataDir, "secret.key"),
+    themeFolders: themeFolders(dataDir, platform),
     platform,
     port: parsePort(env.PORT),
     hosts: resolveHosts(env, platform),
     adminDevUrl: env.TEND_ADMIN_DEV_URL || undefined,
     publicUrl,
-    siteUrl: publicUrl ?? platformUrl(env),
+    platformUrl: platformUrl(env),
     trustProxy: parseTrustProxy(env.TEND_TRUST_PROXY, platform),
     // Follows the site's address, never request headers, which a client could fake.
     secureCookies: publicUrl ? publicUrl.startsWith("https:") : HTTPS_PLATFORMS.includes(platform),
@@ -227,8 +241,14 @@ export function portsToTry(config: Pick<Config, "port" | "platform">): number[] 
   return Array.from({ length: FALLBACK_PORTS + 1 }, (_, i) => DEFAULT_PORT + i);
 }
 
-/** What to do about a data folder Tend can't write to, where it's running. */
-function dataFolderFix(platform: Platform | undefined): string {
+/** What to do about a data folder Tend can't write to, for this reason, where it's running. */
+export function dataFolderFix(reason: string, platform: Platform | undefined): string {
+  if (/^(ENOSPC|EDQUOT|SQLITE_FULL)$/.test(reason)) {
+    return "Its disk is full, so make room on it, then start Tend again.";
+  }
+  if (reason === "EROFS") {
+    return "It's on a disk that can only be read, so mount it to be written to as well.";
+  }
   // The image runs as node (user 1000), and a folder from the server, or a volume some
   // hosts make, belongs to root.
   if (platform === "railway") {
@@ -243,7 +263,7 @@ function dataFolderFix(platform: Platform | undefined): string {
 export function dataFolderError(dataDir: string, cause: unknown, platform?: Platform): ConfigError {
   const reason = (cause as NodeJS.ErrnoException).code ?? (cause as Error).message;
   return new ConfigError(
-    `Tend can't write to its data folder, ${dataDir} (${reason}). ${dataFolderFix(platform)} ` +
+    `Tend can't write to its data folder, ${dataDir} (${reason}). ${dataFolderFix(reason, platform)} ` +
       "Fix: https://tendcms.dev/errors/data_not_writable",
   );
 }
@@ -251,7 +271,7 @@ export function dataFolderError(dataDir: string, cause: unknown, platform?: Plat
 // Failures a person can fix by sorting out the folder. Anything else isn't a
 // permissions problem, and blaming permissions would send them the wrong way.
 const FOLDER_FAILURE =
-  /^(EACCES|EPERM|EROFS|ENOSPC|EISDIR|ENOTDIR|SQLITE_CANTOPEN|SQLITE_READONLY|SQLITE_FULL|SQLITE_IOERR)/;
+  /^(EACCES|EPERM|EROFS|ENOSPC|EDQUOT|EISDIR|ENOTDIR|SQLITE_CANTOPEN|SQLITE_READONLY|SQLITE_FULL|SQLITE_IOERR)/;
 
 /** Turns a failure while taking over the data folder into something that tells the truth. */
 export function explainDataFolderFailure(
@@ -261,14 +281,6 @@ export function explainDataFolderFailure(
 ): unknown {
   const code = String((error as NodeJS.ErrnoException).code);
   if (FOLDER_FAILURE.test(code)) return dataFolderError(dataDir, error, platform);
-  // The lock is the first thing to open a database, so this is where a broken
-  // install or a computer with no prebuilt database component shows up.
-  if (code === "ERR_DLOPEN_FAILED" || code === "MODULE_NOT_FOUND") {
-    return new ConfigError(
-      `Tend's database component couldn't load on this computer (${(error as Error).message}). ` +
-        "Install Tend again, or use the Docker version: https://tendcms.dev/errors/database_component",
-    );
-  }
   if (code === "SQLITE_NOTADB") {
     return new ConfigError(
       `The lock file ${join(dataDir, ".lock.db")} is damaged. It holds nothing you need: ` +
@@ -320,21 +332,33 @@ export function tightenPrivateFiles(config: Config): void {
 export function ensureSecretKey(config: Config): void {
   const path = config.secretKeyPath;
   if (existsSync(path)) {
-    if (!SECRET_KEY_FORMAT.test(readFileSync(path, "utf8"))) {
-      throw new ConfigError(
-        `The key file ${path} is damaged, so Tend won't start. Restore it from a backup. ` +
-          "Fix: https://tendcms.dev/errors/secret_key_damaged",
-      );
-    }
+    readSecretKey(config);
     return;
   }
   const tmpPath = `${path}.tmp`;
-  writeFileSync(tmpPath, `${randomBytes(32).toString("hex")}\n`, { mode: 0o600 });
+  writeFileSync(tmpPath, secretKeyText(randomBytes(SECRET_KEY_BYTES)), { mode: 0o600 });
   fsyncFile(tmpPath);
   renameSync(tmpPath, path);
   fsyncDir(config.dataDir);
 }
 
-export function readSecretKey(config: Pick<Config, "secretKeyPath">): Buffer {
-  return Buffer.from(readFileSync(config.secretKeyPath, "utf8").trim(), "hex");
+/** The key in the key file, which has to be there. Throws if it's damaged. */
+export function readSecretKey({ secretKeyPath }: Pick<Config, "secretKeyPath">): Buffer {
+  const key = parseSecretKey(readFileSync(secretKeyPath));
+  if (key) return key;
+  throw new ConfigError(
+    `The key file ${secretKeyPath} is damaged, so Tend won't start. Restore it from a backup. ` +
+      "Fix: https://tendcms.dev/errors/secret_key_damaged",
+  );
+}
+
+/** A key as its file holds it. Backups hold the same, so one can also be put back by hand. */
+export function secretKeyText(key: Buffer): string {
+  return `${key.toString("hex")}\n`;
+}
+
+/** The key that a key file's contents are, or undefined if they aren't one. */
+export function parseSecretKey(contents: Buffer): Buffer | undefined {
+  const text = contents.toString("latin1");
+  return SECRET_KEY_FORMAT.test(text) ? Buffer.from(text.trim(), "hex") : undefined;
 }

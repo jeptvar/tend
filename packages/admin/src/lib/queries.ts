@@ -9,11 +9,28 @@ export interface SetupStatus {
 
 export interface Me {
   user: { id: string; name: string; email: string; role: string; isOwner: boolean };
-  site: { name: string; tagline: string };
+  site: {
+    name: string;
+    tagline: string;
+    /** The site's own address, or null while it follows the one each page is asked for. */
+    address: string | null;
+    /** Who says so: where Tend runs, an Admin, or the hosting platform. */
+    addressFrom: "set" | "confirmed" | "platform" | null;
+    /** Whether people anywhere could reach it there. */
+    addressIsPublic: boolean;
+    visibility: "public" | "coming_soon" | "private";
+  };
   starter: "blog" | "business" | "blank" | null;
-  siteIsPublic: boolean;
-  /** Whether the site knows its own address, rather than following the one each page is asked for. */
-  addressKnown: boolean;
+  /** Where Tend runs. */
+  platform: "railway" | "render" | "fly" | "docker" | "local";
+  /** Whether pictures can be added, which needs a part of Tend that may not load. */
+  picturesWork: boolean;
+  /** For Admins: why this site could be lost with its container, if it could. */
+  dataRisk: {
+    why: "unmounted" | "unnamed";
+    path: string;
+    platform: "railway" | "render" | "fly" | "docker" | "local";
+  } | null;
 }
 
 export type EntryType = "post" | "page";
@@ -93,18 +110,23 @@ export interface RevisionDetail {
 export const SETUP_STATUS_KEY = ["setup-status"];
 export const ME_KEY = ["me"];
 
-export function entriesKey(type: EntryType, trashed: boolean) {
-  return ["entries", type, trashed ? "trash" : "all"];
+/** The parts of a list of posts or pages, each with its own tab. */
+export const ENTRY_VIEWS = ["all", "drafts", "published", "trash"] as const;
+export type EntryView = (typeof ENTRY_VIEWS)[number];
+
+/** Every list of one kind, whichever part of it and whatever was searched for. */
+export function entriesKey(type: EntryType) {
+  return ["entries", type];
 }
 
-/** The list screen's own pages of entries, kept apart because they have a different shape. */
-export function entryListKey(type: EntryType, trashed: boolean) {
-  return [...entriesKey(type, trashed), "list"];
+export function entryListKey(type: EntryType, view: EntryView, search: string) {
+  return [...entriesKey(type), view, search];
 }
 
 export interface EntryPage {
   entries: EntrySummary[];
   nextCursor: string | null;
+  counts: Record<EntryView, number>;
 }
 
 export function entryKey(id: string) {

@@ -3,6 +3,8 @@ export class ApiError extends Error {
   readonly code: string;
   readonly field: string | undefined;
   readonly fix: string | undefined;
+  /** A page about it. */
+  readonly docs: string | undefined;
   /** On an edit conflict, the version someone else saved. */
   readonly current: unknown;
 
@@ -13,6 +15,7 @@ export class ApiError extends Error {
     field?: string,
     fix?: string,
     current?: unknown,
+    docs?: string,
   ) {
     super(message);
     this.status = status;
@@ -20,6 +23,7 @@ export class ApiError extends Error {
     this.field = field;
     this.fix = fix;
     this.current = current;
+    this.docs = docs;
   }
 }
 
@@ -39,6 +43,8 @@ export async function api<T>(
     method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     body?: unknown;
     headers?: Record<string, string>;
+    /** For the few things that take longer than most. */
+    timeoutMs?: number;
   } = {},
 ): Promise<T> {
   const method = options.method ?? "GET";
@@ -46,7 +52,7 @@ export async function api<T>(
   try {
     response = await fetch(`/api${path}`, {
       method,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS),
       ...(method === "GET"
         ? {}
         : {
@@ -60,7 +66,7 @@ export async function api<T>(
 
   if (response.status === 204) return undefined as T;
   let data: {
-    error?: { code: string; message: string; field?: string; fix?: string };
+    error?: { code: string; message: string; field?: string; fix?: string; docs?: string };
     current?: unknown;
   } & T;
   try {
@@ -71,8 +77,8 @@ export async function api<T>(
   }
   if (!response.ok) {
     if (!data.error) throw offline();
-    const { code, message, field, fix } = data.error;
-    throw new ApiError(response.status, code, message, field, fix, data.current);
+    const { code, message, field, fix, docs } = data.error;
+    throw new ApiError(response.status, code, message, field, fix, data.current, docs);
   }
   return data;
 }

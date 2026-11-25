@@ -4,11 +4,13 @@ import {
   closeWhileDown,
   createEntry,
   expect,
+  photo,
   readEntry,
   type Site,
   signIn,
   test,
   typeAddress,
+  upload,
 } from "./fixtures.ts";
 
 const SAVE_PATH = "**/api/admin/entries/*";
@@ -89,9 +91,10 @@ test.describe("writing", () => {
     const done = page.getByRole("dialog", { name: "Your post is on your site." });
     await expect(done).toBeVisible();
     await expect(done.getByRole("heading")).toBeFocused();
+    await expect(done.getByText(`${signedIn.base}/blog/sourdough-is-back`)).toBeVisible();
     await expect(done.getByRole("link", { name: "View post" })).toHaveAttribute(
       "href",
-      `${signedIn.base}/blog/sourdough-is-back`,
+      "/blog/sourdough-is-back",
     );
     await done.getByRole("button", { name: "Keep editing" }).click();
     await expect(saveStatus(page)).toContainText("On your site");
@@ -459,9 +462,10 @@ test.describe("formatting", () => {
     await page.keyboard.type("Every morning");
     await page.getByLabel("Background").selectOption("muted");
     await page.getByLabel("Alignment").selectOption("center");
+    await page.getByLabel("Layout").selectOption("Right across the page");
 
     const html = await publishedHtml(page, signedIn, entry.id);
-    expect(html).toContain('class="t-intro t-tone-muted t-align-center"');
+    expect(html).toContain('class="t-intro t-tone-muted t-align-center" data-preset="2"');
     expect(html).toContain("<h2>Fresh bread</h2>");
 
     const post = await createEntry(page, signedIn, { title: "Post", body: "" });
@@ -725,6 +729,45 @@ test.describe("never losing what's typed", () => {
       "Written just before the crash",
     );
     await expect(again.getByText("hadn't reached the server")).toHaveCount(0);
+  });
+
+  test("a crash while someone types without a pause, and then the tab closing, loses nothing typed 2 seconds before", async ({
+    page,
+    signedIn,
+    context,
+  }) => {
+    test.setTimeout(60_000);
+    const post = await createEntry(page, signedIn, { title: "Draft", body: "" });
+    await openPost(page, signedIn, post.id);
+    await body(page).click();
+    const typed: { word: string; at: number }[] = [];
+    let open = true;
+    const typing = (async () => {
+      for (let n = 1; open; n++) {
+        const word = `word${n}`;
+        await page.keyboard.type(`${word} `, { delay: 25 });
+        typed.push({ word, at: Date.now() });
+      }
+    })().catch(() => {});
+
+    // Long enough that some of it has reached the server, and never long enough for it all.
+    await page.waitForTimeout(12_000);
+    expect(bodyText(await readEntry(page, signedIn, post.id))).toContain("word1 ");
+    await signedIn.crash();
+    await page.waitForTimeout(3000);
+    const closedAt = Date.now();
+    open = false;
+    await page.close();
+    await typing;
+
+    await signedIn.restart();
+    const again = await context.newPage();
+    await again.goto(`${signedIn.base}/admin/posts/${post.id}`);
+    await expect(again.getByText("hadn't reached the server")).toBeVisible();
+    const words = typed.filter(({ at }) => at <= closedAt - 2000).map(({ word }) => word);
+    expect(words.length).toBeGreaterThan(30);
+    const kept = ((await body(again).textContent()) ?? "").trim().split(/\s+/);
+    expect(kept.slice(0, words.length)).toEqual(words);
   });
 
   test("closing the tab straight after typing keeps it", async ({ page, signedIn, context }) => {
@@ -1219,6 +1262,186 @@ test.describe("reviewing before publishing", () => {
     await expect(page.getByRole("dialog", { name: "Your post is on your site." })).toBeVisible();
   });
 
+  test("each check's Fix leads to what it's about", async ({ page, signedIn }) => {
+    const draft = await createEntry(page, signedIn, { type: "page", title: "Not ready yet" });
+    const picture = await upload(page, signedIn, await photo(page, 900, 600), "Loaf.jpg");
+    const post = await createEntry(page, signedIn, { title: "To fix", body: "" });
+    const link = (words: string, href: string) => ({
+      type: "text",
+      text: words,
+      marks: [{ type: "link", attrs: { href } }],
+    });
+    await page.request.patch(`${signedIn.base}/api/admin/entries/${post.id}`, {
+      headers: { "If-Match": String(post.rev) },
+      data: {
+        doc: {
+          type: "doc",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "Fine to begin with." }] },
+            { type: "heading", attrs: { level: 4 }, content: [{ type: "text", text: "Skipped" }] },
+            {
+              type: "paragraph",
+              content: [
+                link("click here", "https://example.com"),
+                { type: "text", text: " or see " },
+                link("the plans", `entry:${draft.id}`),
+              ],
+            },
+            { type: "button", attrs: { href: "", label: "Nowhere" } },
+            { type: "image", attrs: { mediaId: picture.id, alt: null } },
+          ],
+        },
+      },
+    });
+    await openPost(page, signedIn, post.id);
+    const review = page.getByRole("dialog", { name: "Ready to publish?" });
+    const fix = async (about: string) => {
+      await page.getByRole("button", { name: "Publish post" }).click();
+      await review
+        .getByRole("listitem")
+        .filter({ hasText: about })
+        .getByRole("button", { name: "Fix", exact: true })
+        .click();
+      await expect(review).toHaveCount(0);
+    };
+    const selected = () => page.evaluate(() => String(getSelection()));
+
+    await fix("A heading skips a level");
+    await expect(body(page)).toBeFocused();
+    await page.keyboard.type("Not ");
+    await expect(body(page).locator("h4")).toHaveText("Not Skipped");
+    await fix("A link just says");
+    await expect.poll(selected).toBe("click here");
+    await fix('"Not ready yet" isn');
+    await expect.poll(selected).toBe("the plans");
+
+    // A button and a picture's description are changed in dialogs of their own.
+    await fix('The "Nowhere" button');
+    const button = page.getByRole("dialog", { name: "Button" });
+    await typeAddress(button, "https://example.com/menu");
+    await button.getByRole("button", { name: "Done" }).click();
+    await fix("1 image has no description");
+    const describe = page.getByRole("dialog", { name: "Describe this image" });
+    await describe.getByRole("textbox").fill("A loaf");
+    await describe.getByRole("button", { name: "Save" }).click();
+    await expect(describe).toHaveCount(0);
+    await page.getByRole("button", { name: "Publish post" }).click();
+    await expect(review.getByText("A link just says")).toBeVisible();
+    await expect(review.getByText("doesn't go anywhere")).toHaveCount(0);
+    await expect(review.getByText("no description")).toHaveCount(0);
+  });
+
+  test("Fix on a move leads to the address, and on an empty post to the words", async ({
+    page,
+    signedIn,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Moving", body: "", publish: true });
+    await openPost(page, signedIn, post.id);
+    await openSettings(page);
+    await page.getByLabel("Page address").fill("moved");
+    await expect(saveStatus(page)).toContainText("not on your site yet", { timeout: 5000 });
+    await page.getByRole("button", { name: "Publish changes" }).click();
+    const review = page.getByRole("dialog", { name: "Ready to publish?" });
+    const item = (text: string) => review.getByRole("listitem").filter({ hasText: text });
+    await item("This has no words yet").getByRole("button", { name: "Fix", exact: true }).click();
+    await expect(body(page)).toBeFocused();
+    await page.getByRole("button", { name: "Publish changes" }).click();
+    await item("This moves it").getByRole("button", { name: "Fix", exact: true }).click();
+    await expect(page.getByLabel("Page address")).toBeFocused();
+  });
+
+  test("the review shows it as it looks when shared, picture and all", async ({
+    page,
+    signedIn,
+  }) => {
+    const first = await upload(page, signedIn, await photo(page, 900, 600), "First.jpg");
+    const chosen = await upload(page, signedIn, await photo(page, 600, 900, "#336699"), "Two.jpg");
+    const post = await createEntry(page, signedIn, { title: "Shared", body: "Words" });
+    const save = async (data: object) => {
+      const { rev } = await (
+        await page.request.get(`${signedIn.base}/api/admin/entries/${post.id}`)
+      ).json();
+      const reply = await page.request.patch(`${signedIn.base}/api/admin/entries/${post.id}`, {
+        headers: { "If-Match": String(rev) },
+        data,
+      });
+      expect(reply.status()).toBe(200);
+    };
+    const review = page.getByRole("dialog", { name: "Ready to publish?" });
+    const shown = async () => {
+      await openPost(page, signedIn, post.id);
+      await page.getByRole("button", { name: "Publish post" }).click();
+      await expect(review).toBeVisible();
+      return review.locator("img");
+    };
+    await expect(await shown()).toHaveCount(0);
+    // The first picture in it, until one's chosen.
+    await save({
+      doc: { type: "doc", content: [{ type: "image", attrs: { mediaId: first.id, alt: "A" } }] },
+    });
+    await expect(await shown()).toHaveAttribute("src", new RegExp(first.id));
+    await save({ featuredImage: { mediaId: chosen.id, alt: null } });
+    await expect(await shown()).toHaveAttribute("src", new RegExp(chosen.id));
+  });
+
+  test("the address it'll be at is the site's own, and it says who can see it there", async ({
+    page,
+    signedIn,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Where", body: "Words" });
+    const review = page.getByRole("dialog", { name: "Ready to publish?" });
+    await openPost(page, signedIn, post.id);
+    await page.getByRole("button", { name: "Publish post" }).click();
+    await expect(review.getByText(`${signedIn.base}/blog/where`)).toBeVisible();
+    await expect(review.getByText("Only you can see it there")).toBeVisible();
+
+    const base = signedIn.base.replace("//localhost:", "//rise.localhost:");
+    await signIn(page, { ...signedIn, base });
+    await page.route("**/api/auth/me", async (route) => {
+      const me = await (await page.request.get(`${signedIn.base}/api/auth/me`)).json();
+      me.site = {
+        ...me.site,
+        address: "https://risebakery.com",
+        addressIsPublic: true,
+        visibility: "coming_soon",
+      };
+      await route.fulfill({ json: me });
+    });
+    await openPost(page, { ...signedIn, base }, post.id);
+    await page.getByRole("button", { name: "Publish post" }).click();
+    await expect(review.getByText("https://risebakery.com/blog/where")).toBeVisible();
+    await expect(review.getByText("risebakery.com", { exact: true })).toBeVisible();
+    await expect(review.getByText("visitors see the Coming soon page there")).toBeVisible();
+    await review.getByRole("button", { name: "Publish post now" }).click();
+    const done = page.getByRole("dialog", { name: "Your post is on your site." });
+    await expect(done.getByText("https://risebakery.com/blog/where")).toBeVisible();
+    await expect(done.getByText("visitors see the Coming soon page there")).toBeVisible();
+    // Opened where the admin is, which works whatever the domain is doing.
+    await expect(done.getByRole("link", { name: "View post" })).toHaveAttribute(
+      "href",
+      "/blog/where",
+    );
+  });
+
+  test("publishing changes says so, with the way to see them (J1)", async ({ page, signedIn }) => {
+    const post = await createEntry(page, signedIn, {
+      title: "Hours",
+      body: "Open at nine",
+      publish: true,
+    });
+    await openPost(page, signedIn, post.id);
+    await retype(page, "Open at ten");
+    await expect(saveStatus(page)).toContainText("not on your site yet", { timeout: 5000 });
+    await page.getByRole("button", { name: "Publish changes" }).click();
+    const toast = page.getByRole("status").filter({ hasText: "Published." });
+    await expect(toast).toBeVisible();
+    const opened = page.waitForEvent("popup");
+    await toast.getByRole("button", { name: "View post" }).click();
+    const visitor = await opened;
+    await expect(visitor.getByText("Open at ten")).toBeVisible();
+    expect(new URL(visitor.url()).pathname).toBe("/blog/hours");
+  });
+
   test("an empty post gets a mention", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Empty", body: "" });
     await openPost(page, signedIn, post.id);
@@ -1523,7 +1746,7 @@ test.describe("taking things down", () => {
     const post = await createEntry(page, signedIn, { title: "In the bin" });
     await page.request.post(`${signedIn.base}/api/admin/entries/${post.id}/trash`, { data: {} });
     await page.goto(`${signedIn.base}/admin/posts`);
-    await page.getByRole("button", { name: "Trash", exact: true }).click();
+    await page.getByRole("button", { name: /^Trash/ }).click();
     await expect(page.getByText(/Deleted for good on/)).toBeVisible();
     await page.getByRole("button", { name: "Restore" }).click();
     await expect(page.getByText("It's back as a draft.", { exact: true })).toBeVisible();
@@ -1533,7 +1756,7 @@ test.describe("taking things down", () => {
     const post = await createEntry(page, signedIn, { title: "Really gone" });
     await page.request.post(`${signedIn.base}/api/admin/entries/${post.id}/trash`, { data: {} });
     await page.goto(`${signedIn.base}/admin/posts`);
-    await page.getByRole("button", { name: "Trash", exact: true }).click();
+    await page.getByRole("button", { name: /^Trash/ }).click();
     await page.getByRole("button", { name: "Delete forever" }).click();
 
     const dialog = page.getByRole("dialog", { name: 'Delete "Really gone" forever?' });

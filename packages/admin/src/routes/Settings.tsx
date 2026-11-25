@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, useId, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useParams } from "wouter";
+import { AddressChoice } from "../components/AddressChoice.tsx";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import {
   primaryButtonClass,
@@ -10,8 +11,13 @@ import {
 } from "../components/AuthLayout.tsx";
 import { Field } from "../components/fields.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
+import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
+import { bytesText } from "../lib/bytes.ts";
+import { onThisComputer } from "../lib/hosts.ts";
+import { siteLanguages } from "../lib/languages.ts";
 import { useMediaItems } from "../lib/media.ts";
 import { ME_KEY, type Me } from "../lib/queries.ts";
 import { settleScreenDraft, useScreenDraft } from "../lib/screen-drafts.ts";
@@ -21,6 +27,7 @@ import {
   type BackupsInfo,
   type Business,
   type CodeSettings,
+  copyDownloadUrl,
   DAYS,
   type DayHours,
   type General,
@@ -91,18 +98,29 @@ function useSetting<T>(name: string) {
   return { query, save };
 }
 
-/** The field a refusal was about, so its message can sit under that field. */
+/** What a refusal about this field says, to sit under it. */
 function fieldError(error: unknown, field: string): string | undefined {
-  return error instanceof ApiError && error.field === field ? error.message : undefined;
+  return error instanceof ApiError && error.field === field ? errorText(error, "") : undefined;
 }
 
-function SaveRow({ busy, changed, error }: { busy: boolean; changed: boolean; error: unknown }) {
-  const intl = useIntl();
-  const general = error instanceof ApiError && error.field ? null : error;
+function SaveRow({
+  busy,
+  changed,
+  error,
+  fields = [],
+}: {
+  busy: boolean;
+  changed: boolean;
+  error: unknown;
+  /** The fields that show a refusal about them themselves. Any other is shown here. */
+  fields?: string[];
+}) {
+  const general =
+    error instanceof ApiError && error.field && fields.includes(error.field) ? null : error;
   return (
     <div className="grid gap-2">
       <p role="alert" className="font-medium text-danger empty:sr-only">
-        {general ? errorText(general, intl.formatMessage({ id: "offline.body" })) : null}
+        {general ? <Problem error={general} /> : null}
       </p>
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -122,10 +140,6 @@ function SaveRow({ busy, changed, error }: { busy: boolean; changed: boolean; er
   );
 }
 
-function Loading({ children }: { children: ReactNode }) {
-  return <p className="mt-6 text-muted">{children}</p>;
-}
-
 function GeneralForm({
   value,
   onSave,
@@ -143,6 +157,7 @@ function GeneralForm({
   const setForm = draft.set;
   const { changed } = draft;
   const zones = Intl.supportedValuesOf?.("timeZone") ?? [form.timezone];
+  const languages = siteLanguages(intl.locale, form.locale);
   return (
     <form
       className="grid gap-6"
@@ -169,6 +184,25 @@ function GeneralForm({
       />
       <label className="grid gap-2">
         <span className="font-medium">
+          <FormattedMessage id="settings.language" />
+        </span>
+        <span className="text-sm text-muted">
+          <FormattedMessage id="settings.languageHint" />
+        </span>
+        <select
+          value={form.locale}
+          onChange={(event) => setForm({ ...form, locale: event.target.value })}
+          className={inputClass}
+        >
+          {languages.map(({ tag, name }) => (
+            <option key={tag} value={tag}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="grid gap-2">
+        <span className="font-medium">
           <FormattedMessage id="settings.timezone" />
         </span>
         <select
@@ -183,7 +217,7 @@ function GeneralForm({
           ))}
         </select>
       </label>
-      <SaveRow busy={busy} changed={changed} error={error} />
+      <SaveRow busy={busy} changed={changed} error={error} fields={["name", "tagline"]} />
     </form>
   );
 }
@@ -245,6 +279,23 @@ function VisibilityForm({
   );
 }
 
+function AddressSection({ me }: { me: Me }) {
+  const id = useId();
+  return (
+    <section aria-labelledby={id} className="grid gap-3">
+      <h2 id={id} className="text-xl font-semibold">
+        <FormattedMessage id="address.heading" />
+      </h2>
+      <AddressChoice me={me} />
+      <div>
+        <Link href={onThisComputer() ? "/online" : "/domain"} className={textLinkClass}>
+          <FormattedMessage id={onThisComputer() ? "steps.online" : "steps.domain"} />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 function GeneralSection({ me }: { me: Me }) {
   const general = useSetting<General>("general");
   const visibility = useSetting<Visibility>("visibility");
@@ -258,17 +309,19 @@ function GeneralSection({ me }: { me: Me }) {
           error={general.save.error}
         />
       ) : (
-        <Loading>
-          <FormattedMessage id="common.loading" />
-        </Loading>
+        <Waiting query={general.query} />
       )}
-      {visibility.query.data && (
+      <AddressSection me={me} />
+      {visibility.query.data ? (
         <VisibilityForm
           value={visibility.query.data.value}
           onSave={(value, done) => visibility.save.mutate(value, { onSuccess: done })}
           busy={visibility.save.isPending}
           error={visibility.save.error}
         />
+      ) : (
+        // One of the two is enough to say that it's loading.
+        visibility.query.error && <Waiting query={visibility.query} />
       )}
       <p className="text-sm text-muted">
         <FormattedMessage id="settings.signedInAs" values={{ email: me.user.email }} />
@@ -446,20 +499,14 @@ function BusinessForm({
           className={inputClass}
         />
       </div>
-      <SaveRow busy={busy} changed={changed} error={error} />
+      <SaveRow busy={busy} changed={changed} error={error} fields={["phone", "email", "mapUrl"]} />
     </form>
   );
 }
 
 function BusinessSection() {
   const business = useSetting<Business>("business");
-  if (!business.query.data) {
-    return (
-      <Loading>
-        <FormattedMessage id="common.loading" />
-      </Loading>
-    );
-  }
+  if (!business.query.data) return <Waiting query={business.query} />;
   return (
     <BusinessForm
       value={business.query.data.value}
@@ -544,7 +591,7 @@ function SearchForm({
           onClose={() => setPicking(false)}
         />
       )}
-      <SaveRow busy={busy} changed={changed} error={error} />
+      <SaveRow busy={busy} changed={changed} error={error} fields={["description"]} />
     </form>
   );
 }
@@ -587,7 +634,14 @@ function Redirects() {
                   void api<{ redirects: RedirectRow[] }>("/admin/redirects", {
                     method: "POST",
                     body: { from: removed.fromPath, to: removed.toPath },
-                  }).then((again) => queryClient.setQueryData(["redirects"], again));
+                  })
+                    .then((again) => queryClient.setQueryData(["redirects"], again))
+                    .catch((error: unknown) =>
+                      showToast({
+                        message: errorText(error, intl.formatMessage({ id: "offline.body" })),
+                        sticky: true,
+                      }),
+                    );
                 },
               },
             }
@@ -595,7 +649,7 @@ function Redirects() {
       });
     },
   });
-  const rows = list.data?.redirects ?? [];
+  const rows = list.data?.redirects;
   return (
     <section aria-labelledby="redirects-heading" className="grid gap-4">
       <h2 id="redirects-heading" className="text-xl font-semibold">
@@ -604,7 +658,12 @@ function Redirects() {
       <p className="text-muted">
         <FormattedMessage id="redirects.hint" />
       </p>
-      {rows.length === 0 ? (
+      <p role="alert" className="font-medium text-danger empty:sr-only">
+        {remove.error && <Problem error={remove.error} />}
+      </p>
+      {!rows ? (
+        <Waiting query={list} />
+      ) : rows.length === 0 ? (
         <p className="text-muted">
           <FormattedMessage id="redirects.none" />
         </p>
@@ -665,9 +724,9 @@ function Redirects() {
           onChange={(event) => setTo(event.target.value)}
         />
         <p role="alert" className="font-medium text-danger empty:sr-only">
-          {add.error && !(add.error instanceof ApiError && add.error.field)
-            ? errorText(add.error, intl.formatMessage({ id: "offline.body" }))
-            : null}
+          {add.error && !(add.error instanceof ApiError && add.error.field) ? (
+            <Problem error={add.error} />
+          ) : null}
         </p>
         <div>
           <button type="submit" aria-disabled={add.isPending} className={smallButtonClass}>
@@ -691,9 +750,7 @@ function SearchSection() {
           error={seo.save.error}
         />
       ) : (
-        <Loading>
-          <FormattedMessage id="common.loading" />
-        </Loading>
+        <Waiting query={seo.query} />
       )}
       <Redirects />
     </div>
@@ -764,13 +821,7 @@ function CodeForm({
 
 function AdvancedSection() {
   const code = useSetting<CodeSettings>("code");
-  if (!code.query.data) {
-    return (
-      <Loading>
-        <FormattedMessage id="common.loading" />
-      </Loading>
-    );
-  }
+  if (!code.query.data) return <Waiting query={code.query} />;
   return (
     <CodeForm
       value={code.query.data.value}
@@ -781,23 +832,7 @@ function AdvancedSection() {
   );
 }
 
-const BYTE_UNITS = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"] as const;
-
-/** A size the way phones and computers show it, in the site's language: 2.4 GB. */
-function bytesText(intl: ReturnType<typeof useIntl>, bytes: number): string {
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1000 && unit < BYTE_UNITS.length - 1) {
-    value /= 1000;
-    unit++;
-  }
-  return intl.formatNumber(value, {
-    style: "unit",
-    unit: BYTE_UNITS[unit],
-    unitDisplay: "short",
-    maximumFractionDigits: unit > 0 && value < 10 ? 1 : 0,
-  });
-}
+const COPY_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Space used before the disk counts as running low, then as nearly full (PLAN.md §13). */
 const LOW_DISK = 0.8;
@@ -812,24 +847,21 @@ function BackupsSection({ me }: { me: Me }) {
   const downloadId = useId();
   const diskId = useId();
   const copiesId = useId();
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: BACKUPS_KEY,
     queryFn: () => api<BackupsInfo>("/admin/backups"),
   });
-  if (query.error) {
-    return (
-      <p role="alert" className="font-medium text-danger">
-        {errorText(query.error, intl.formatMessage({ id: "offline.body" }))}
-      </p>
-    );
-  }
-  if (!query.data) {
-    return (
-      <Loading>
-        <FormattedMessage id="common.loading" />
-      </Loading>
-    );
-  }
+  const save = useMutation({
+    // A big site's copy takes longer than most requests do.
+    mutationFn: () =>
+      api<BackupsInfo>("/admin/backups", { method: "POST", timeoutMs: COPY_TIMEOUT_MS }),
+    onSuccess: (info) => {
+      queryClient.setQueryData(BACKUPS_KEY, info);
+      showToast({ message: intl.formatMessage({ id: "backups.copies.saved" }) });
+    },
+  });
+  if (!query.data) return <Waiting query={query} />;
   const { snapshots, disk, lastDownloadAt } = query.data;
   const used = Math.max(0, disk.total - disk.free);
   const share = disk.total > 0 ? used / disk.total : 0;
@@ -909,29 +941,59 @@ function BackupsSection({ me }: { me: Me }) {
         <p>
           <FormattedMessage id="backups.copies.body" />
         </p>
+        <div>
+          <button
+            type="button"
+            aria-disabled={save.isPending}
+            onClick={() => {
+              if (!save.isPending) save.mutate();
+            }}
+            className={smallButtonClass}
+          >
+            <FormattedMessage id={save.isPending ? "settings.saving" : "backups.copies.save"} />
+          </button>
+        </div>
+        <p role="alert" className="font-medium text-danger empty:sr-only">
+          {save.error && <Problem error={save.error} />}
+        </p>
         {snapshots.length === 0 ? (
           <p className="text-muted">
             <FormattedMessage id="backups.copies.none" />
           </p>
         ) : (
-          <ul className="grid gap-1">
-            {snapshots.map((snapshot) => (
-              <li key={snapshot.id}>
-                <FormattedMessage
-                  id={`backups.copies.${snapshot.kind}`}
-                  values={{
-                    date: (
-                      <FormattedDate
-                        value={snapshot.takenAt}
-                        dateStyle="medium"
-                        timeStyle="short"
-                      />
-                    ),
-                    size: bytesText(intl, snapshot.bytes),
-                  }}
-                />
-              </li>
-            ))}
+          <ul className="divide-y divide-ink/10 border-y border-ink/10">
+            {snapshots.map((snapshot) => {
+              const when = intl.formatDate(snapshot.takenAt, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              });
+              return (
+                <li
+                  key={snapshot.id}
+                  className="flex flex-wrap items-center justify-between gap-x-4 py-1"
+                >
+                  <span className="py-2">
+                    <FormattedMessage
+                      id={`backups.copies.${snapshot.kind}`}
+                      values={{ date: when, size: bytesText(intl, snapshot.bytes) }}
+                    />
+                  </span>
+                  {me.user.isOwner && (
+                    <a
+                      href={copyDownloadUrl(snapshot.id)}
+                      download
+                      aria-label={intl.formatMessage(
+                        { id: "backups.copies.downloadNamed" },
+                        { date: when },
+                      )}
+                      className={textLinkClass}
+                    >
+                      <FormattedMessage id="backups.copies.download" />
+                    </a>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -978,14 +1040,6 @@ export function SettingsPage() {
   const section = SECTIONS.find((name) => name === params.section);
   if (!section) return <Redirect to="/settings/general" replace />;
   return (
-    <SignedIn>
-      {(me) =>
-        me.user.role === "admin" ? (
-          <SettingsScreen me={me} section={section} />
-        ) : (
-          <Redirect to="/" replace />
-        )
-      }
-    </SignedIn>
+    <SignedIn roles={["admin"]}>{(me) => <SettingsScreen me={me} section={section} />}</SignedIn>
   );
 }

@@ -1,0 +1,23 @@
+{
+  "skip": "Ir para o conteúdo",
+  "main_menu": "Principal",
+  "footer_menu": "Rodapé",
+  "elsewhere": "Noutros sítios",
+  "tags": "Etiquetas",
+  "blog": "Blog",
+  "no_posts": "Ainda não há publicações.",
+  "no_posts_tagged": "Ainda não há publicações com esta etiqueta.",
+  "more_posts": "Mais publicações",
+  "newer": "Publicações mais recentes",
+  "older": "Publicações anteriores",
+  "not_found": "Página não encontrada",
+  "not_found_body": "Não há nada neste endereço. A página pode ter sido movida ou o link pode ter um erro.",
+  "go_home": "Ir para a página inicial",
+  "coming_soon": "Este site estará disponível em breve.",
+  "address": "Morada",
+  "directions": "Como chegar",
+  "contact": "Contacto",
+  "call": "Ligar para {phone}",
+  "hours": "Horário",
+  "closed": "Fechado"
+}

@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";
+import { etagOf } from "../static-files.ts";
 
 export interface RenderedPage {
   status: number;
@@ -30,10 +30,6 @@ function exactCopy(buffer: Buffer): Buffer {
   return copy;
 }
 
-export function pageEtag(raw: Buffer): string {
-  return `"${createHash("sha256").update(raw).digest("base64url").slice(0, 22)}"`;
-}
-
 /** Whole pages, compressed ahead of time, so a hit is only a memory lookup (PLAN.md §10). */
 export class PageCache {
   readonly #maxBytes: number;
@@ -59,7 +55,7 @@ export class PageCache {
     const page: CachedPage = {
       status: rendered.status,
       ...(rendered.type ? { type: rendered.type } : {}),
-      etag: pageEtag(raw),
+      etag: etagOf(raw),
       raw: exactCopy(raw),
       br: exactCopy(brotliCompressSync(raw, { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } })),
       gzip: exactCopy(gzipSync(raw)),

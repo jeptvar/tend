@@ -13,6 +13,7 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import Database from "better-sqlite3";
 import { fsyncDir, fsyncFile } from "../durable.ts";
+import { PlainError } from "../plain-error.ts";
 import { openDatabase, type SqliteDatabase } from "./client.ts";
 
 export interface MigrateOptions {
@@ -31,7 +32,7 @@ export interface MigrateResult {
   snapshotPath: string | undefined;
 }
 
-export class MigrationError extends Error {}
+export class MigrationError extends PlainError {}
 
 const SNAPSHOTS_KEPT = 3;
 /** Work in the backups folder that isn't finished yet. Anything named so is removed at boot. */
@@ -54,13 +55,7 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
   const db = openDatabase(options.dbPath);
   try {
     const current = readSchemaVersion(db);
-    if (current > files.length) {
-      const needs = readMeta(db, "min_app_version") ?? "a newer version";
-      throw new MigrationError(
-        `This site's data was saved by Tend ${needs}, which is newer than this copy (${options.appVersion}). ` +
-          "Install that version again, or restore a backup made with this version.",
-      );
-    }
+    if (current > files.length) throw newerData(db, options.appVersion);
 
     const pending = files.slice(current);
     if (pending.length === 0) {
@@ -107,6 +102,15 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
   } finally {
     db.close();
   }
+}
+
+/** What to say about a database that a newer Tend than this one has updated. */
+export function newerData(db: SqliteDatabase, appVersion: string): MigrationError {
+  const needs = readMeta(db, "min_app_version") ?? "a newer version";
+  return new MigrationError(
+    `This site's data was saved by Tend ${needs}, which is newer than this copy (${appVersion}). ` +
+      "Install that version again, or restore a backup made with this version.",
+  );
 }
 
 /** True when a database is fully updated, for commands that run beside the server. */

@@ -261,6 +261,61 @@ test.describe("the site menu (J4)", () => {
     await expect(menu.getByRole("link")).toHaveText(["About", "Contact"]);
   });
 
+  test("a removed link can be put back where it was, until the screen is left", async ({
+    page,
+    signedIn,
+  }) => {
+    const item = (id: string, label: string, children: object[] = []) => ({
+      id,
+      label,
+      target: { type: "url", url: `/${id}` },
+      children,
+    });
+    const reply = await page.request.put(`${signedIn.base}/api/admin/menus/main`, {
+      data: {
+        items: [
+          item("one", "One", [item("inside", "Inside"), item("last", "Last")]),
+          item("two", "Two"),
+          item("three", "Three"),
+        ],
+      },
+    });
+    expect(reply.status()).toBe(200);
+    await page.goto(`${signedIn.base}/admin/menu`);
+    const rows = page.locator("main [data-item]");
+    const ids = () => rows.evaluateAll((all) => all.map((row) => row.getAttribute("data-item")));
+    await expect.poll(ids).toEqual(["one", "inside", "last", "two", "three"]);
+    const remove = (title: string) =>
+      page.getByRole("button", { name: `Remove "${title}"` }).click();
+
+    await remove("Two");
+    await expect.poll(ids).toEqual(["one", "inside", "last", "three"]);
+    await expect(page.getByText('Removed "Two" from the menu.', { exact: false })).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(ids).toEqual(["one", "inside", "last", "two", "three"]);
+    // All as it was, so there's nothing to save.
+    await expect(page.getByRole("button", { name: "Save menu" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+
+    await remove("Inside");
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(ids).toEqual(["one", "inside", "last", "two", "three"]);
+
+    // One with others under it comes back with them.
+    await remove("One");
+    await expect.poll(ids).toEqual(["two", "three"]);
+    await page.getByRole("button", { name: "Undo" }).click();
+    await expect.poll(ids).toEqual(["one", "inside", "last", "two", "three"]);
+
+    await remove("Three");
+    await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+    await page.getByRole("link", { name: "Media", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Media", level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Undo" })).toHaveCount(0);
+  });
+
   test("Show in site menu adds a new page when it's published", async ({ page, signedIn }) => {
     // A menu of its own, so new pages aren't added by themselves.
     await page.request.put(`${signedIn.base}/api/admin/menus/main`, {
@@ -341,7 +396,10 @@ test.describe("settings", () => {
       "href",
       "tel:+15550100200",
     );
-    await expect(visitor.getByText("Closed on public holidays")).toBeVisible();
+    // In the Contact & hours section, and in the footer.
+    for (const place of ["main", "contentinfo"] as const) {
+      await expect(visitor.getByRole(place).getByText("Closed on public holidays")).toBeVisible();
+    }
     await expect(visitor.getByRole("rowheader", { name: "Monday" })).toBeVisible();
   });
 

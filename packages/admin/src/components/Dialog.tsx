@@ -31,6 +31,12 @@ function opener(): HTMLElement | undefined {
   return active instanceof HTMLElement && active !== document.body ? active : undefined;
 }
 
+const SIZES = {
+  md: "m-auto max-h-[90dvh] max-w-lg rounded-lg p-4 sm:p-6",
+  full: "m-auto h-dvh max-h-none max-w-none p-4 sm:p-6",
+  side: "my-0 mr-auto ml-0 h-dvh max-h-none max-w-72",
+};
+
 /**
  * A native modal dialog: it keeps keyboard focus inside, closes on Escape, and puts focus
  * back where it was. `labelledBy` is the id of its heading. Toasts that arrive while it's
@@ -44,7 +50,8 @@ export function Dialog({
 }: {
   labelledBy: string;
   onClose: () => void;
-  size?: "md" | "full";
+  /** "side" fills the side of the screen, for the menu on phones. */
+  size?: "md" | "full" | "side";
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -79,9 +86,7 @@ export function Dialog({
         event.preventDefault();
         onClose();
       }}
-      className={`m-auto w-full rounded-lg bg-paper p-4 text-ink shadow-xl backdrop:bg-black/50 sm:p-6 ${
-        size === "full" ? "h-dvh max-h-none max-w-none rounded-none" : "max-h-[90dvh] max-w-lg"
-      }`}
+      className={`w-full bg-paper text-ink shadow-xl backdrop:bg-black/50 ${SIZES[size]}`}
     >
       {children}
       <DialogToasts />

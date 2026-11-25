@@ -4,18 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="{{ 'theme.css' | asset_url }}">
-  {%- if design.accent_dark %}
-  <style>:root { --tend-accent: {{ design.accent }}; } @media (prefers-color-scheme: dark) { :root { --tend-accent: {{ design.accent_dark }}; } }</style>
-  {%- endif %}
-  {{ tend.head | raw }}
+  {% seo %}
 </head>
 <body>
-  <a class="t-skip" href="#content">Skip to content</a>
-  {% render "header", site: site, menus: menus, request: request %}
+  <a class="t-skip" href="#content">{{ "skip" | t }}</a>
+  {% render "header" %}
   <main id="content" class="t-main">
     {% block content %}{% endblock %}
   </main>
-  {% render "footer", site: site, menus: menus %}
-  {{ tend.body_end | raw }}
+  {% render "footer" %}
+  {% body_end %}
 </body>
 </html>

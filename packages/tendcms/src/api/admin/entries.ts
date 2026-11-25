@@ -12,11 +12,13 @@ import {
 } from "../../content/doc.ts";
 import {
   checkAddress,
+  countEntries,
   createEntry,
   deleteEntryForever,
   discardChanges,
   duplicateEntry,
   type Entry,
+  type EntryRow,
   type EntryType,
   findLinkTargets,
   getEntry,
@@ -51,6 +53,10 @@ const LINK_LOOKUP_LIMIT = 200;
 const REVISION_PAGE_SIZE = 100;
 
 const typeSchema = z.enum(["post", "page"], { error: "That isn't a kind of content Tend knows." });
+
+const statusSchema = z
+  .enum(["draft", "published"], { error: "That isn't a part of the list." })
+  .optional();
 
 const createSchema = z.object({ type: typeSchema });
 
@@ -107,12 +113,14 @@ function expectedRev(c: Context): number {
   const header = c.req.header("if-match");
   const rev = Number(header);
   if (!header || !Number.isInteger(rev) || rev < 1) {
-    throw new ApiError(400, "needs_fixing", "Tend needs to know which version you were editing.");
+    throw new ApiError(400, "needs_fixing", "Tend needs to know which version you were editing.", {
+      fix: "Send the number it had in an If-Match header, or reload the page and try again.",
+    });
   }
   return rev;
 }
 
-function summaryJson(entry: Entry) {
+export function summaryJson(entry: EntryRow) {
   return {
     id: entry.id,
     type: entry.type,
@@ -290,17 +298,24 @@ export function registerEntryRoutes(routing: Routing, options: AdminOptions): vo
 
   route("get", "/entries", "entry:list", async (c, user) => {
     const type = parseBody(typeSchema, c.req.query("type")) as EntryType;
+    const status = parseBody(statusSchema, c.req.query("status"));
     const offset = offsetFrom(c);
+    const authorId = seesOnlyOwnEntries(user) ? user.id : undefined;
+    const view = status === "draft" ? "drafts" : (status ?? "all");
     const rows = await listEntries(orm, {
       type,
-      trashed: c.req.query("view") === "trash",
-      authorId: seesOnlyOwnEntries(user) ? user.id : undefined,
+      view: c.req.query("view") === "trash" ? "trash" : view,
+      query: (c.req.query("q") ?? "").trim().slice(0, 200),
+      authorId,
       offset,
       limit: PAGE_SIZE + 1,
     });
+    // For the tabs, whichever is open and whatever is being looked for.
+    const { all, drafts, published, trash } = await countEntries(orm, { type, authorId });
     return c.json({
       entries: rows.slice(0, PAGE_SIZE).map(summaryJson),
       nextCursor: rows.length > PAGE_SIZE ? String(offset + PAGE_SIZE) : null,
+      counts: { all, drafts, published, trash },
     });
   });
 

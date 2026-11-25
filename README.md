@@ -1,9 +1,15 @@
 # Tend CMS
 
-An easy, fast, self-hosted CMS for small websites. **In development**: nothing is released yet.
-The full plan lives in [PLAN.md](PLAN.md).
+An easy, fast, self-hosted CMS for small websites. One command on your computer, one click on Railway, or one Docker line, and a few minutes later a site that already looks finished. No accounts with anyone, no JavaScript for your visitors, and everything in one folder that's yours.
 
-## Working on Tend
+**In development: nothing is released yet.** The plan is [PLAN.md](PLAN.md), and [what's built so far](CHANGELOG.md) is in the changelog.
+
+- [The guide](docs/README.md): how to use it, and where it can run
+- [Principles](docs/principles.md) and [decisions](docs/adr/README.md)
+- [Working on Tend](CONTRIBUTING.md), with [a code of conduct](CODE_OF_CONDUCT.md)
+- [Security](SECURITY.md) and [privacy](docs/privacy.md)
+
+## Try it from source
 
 You need Node.js 26 (24 also works) and pnpm 12. With [fnm](https://github.com/Schniz/fnm), `.node-version` picks the right Node for you.
 
@@ -12,37 +18,30 @@ pnpm install
 pnpm dev          # server on http://localhost:3000, admin with hot reload
 ```
 
-Open http://localhost:3000/admin/setup. Development data lives in `./data` (git-ignored); delete it to start over.
-
-| Command | What it does |
-|---|---|
-| `pnpm dev` | Runs the server from TypeScript (`node --watch`) and the admin's Vite dev server together |
-| `pnpm build` | Builds the admin, then bundles the server into `packages/tendcms/dist` |
-| `pnpm smoke` | Boots the built package from an empty folder, serves the real admin, then runs setup and signs in |
-| `pnpm test` | Vitest: setup, sign-in, sessions, request protection, admin serving, data-folder lock, port handling, migrations |
-| `pnpm e2e` | Playwright: real browser tests of the admin and the public site, with accessibility scans. Needs `pnpm build` first, and once: `pnpm exec playwright install chromium` |
-| `pnpm lint` | Biome, plus a check that no migration contains a `PRAGMA` |
-| `pnpm typecheck` | `tsc -b` across the packages |
-| `pnpm db:generate <name>` | Generates a migration from `src/db/schema.ts` and strips drizzle's `PRAGMA` lines |
-
-The running server prints a setup link with a code in it. If you lose it, run this from the project folder with `TEND_DATA_DIR=./data`:
+Open the setup link it prints. Your data is in `./data`, which git ignores: stop Tend and delete it to start over. If you lose the link, its code is in:
 
 ```bash
-node packages/tendcms/src/cli.ts setup-code
+TEND_DATA_DIR=./data node packages/tendcms/src/cli.ts setup-code
 ```
-
-To start over from setup, stop Tend and delete `./data`.
 
 ## Layout
 
 ```
 packages/
-  tendcms/     the published package: server, CLI, migrations (bundled by tsdown)
-  admin/       React admin (Vite); copied into tendcms/dist/admin at build time
-themes/meadow/ the public site's templates, styles and starting points
-e2e/           Playwright browser tests
-docker/        image, compose file and Caddy config
-scripts/       dev runner and migration helpers (zero dependencies)
+  tendcms/      the published package: server, command line, migrations (bundled by tsdown)
+  admin/        the admin, in React (Vite); copied into tendcms/dist/admin at build time
+  create-tend/  npm create tend
+themes/meadow/  the theme: templates, styles, words and starting points
+e2e/            tests in real browsers (Playwright)
+fixtures/       a site from each version, to upgrade
+docs/           the guide, the error pages and the decisions
+docker/         the image, the compose file and Caddy's config
+deploy/         templates for hosts
+scripts/        development, checks and releases (zero dependencies)
 ```
 
-Migrations are applied by Tend's own runner (`packages/tendcms/src/db/migrate.ts`), never by drizzle's migrator. It snapshots the database first, turns foreign keys off outside the transaction, and restores the snapshot if anything fails after commit (PLAN.md §13).
+[CONTRIBUTING.md](CONTRIBUTING.md) has the commands. Migrations are applied by Tend's own runner (`packages/tendcms/src/db/migrate.ts`), never by drizzle's: [why](docs/adr/0007-migrations-in-one-transaction.md).
+
+## Licence
+
+[MIT](LICENSE). The name isn't part of it: [TRADEMARKS.md](TRADEMARKS.md).

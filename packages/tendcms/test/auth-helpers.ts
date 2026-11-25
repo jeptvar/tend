@@ -84,7 +84,6 @@ export async function makeApp(
       secretKeyPath: join(root, "secret.key"),
     },
     pageCacheBytes: 0,
-    isPublic: false,
     now: () => clock.time,
     onBackgroundWork: (work) => {
       background.add(work);

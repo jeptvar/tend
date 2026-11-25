@@ -3,7 +3,7 @@
 <div class="t-wrap">
   <h1>{{ tag.name }}</h1>
   {% if tag.description != blank %}<p class="t-lead">{{ tag.description }}</p>{% endif %}
-  {% for post in posts %}{% render "post-card", post: post %}{% else %}<p>There are no posts with this tag yet.</p>{% endfor %}
+  {% for post in posts %}{% render "post-card", post: post %}{% else %}<p>{{ "no_posts_tagged" | t }}</p>{% endfor %}
   {% render "pagination", pagination: pagination %}
 </div>
 {% endblock %}

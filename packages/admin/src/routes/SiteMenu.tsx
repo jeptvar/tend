@@ -8,7 +8,9 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
-import { showToast } from "../components/Toast.tsx";
+import { Problem } from "../components/Problem.tsx";
+import { dismissToast, showToast } from "../components/Toast.tsx";
+import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { toHref } from "../lib/href.ts";
 import type { LinkTarget, Me } from "../lib/queries.ts";
@@ -323,12 +325,18 @@ function MenuRow({
           <button
             type="button"
             data-control="rename"
+            aria-label={intl.formatMessage({ id: "menu.renameNamed" }, { title })}
             onClick={() => setRenaming(true)}
             className={smallButtonClass}
           >
             <FormattedMessage id="menu.rename" />
           </button>
-          <button type="button" onClick={onRemove} className={smallButtonClass}>
+          <button
+            type="button"
+            aria-label={intl.formatMessage({ id: "menu.removeNamed" }, { title })}
+            onClick={onRemove}
+            className={smallButtonClass}
+          >
             <FormattedMessage id="menu.remove" />
           </button>
         </div>
@@ -345,6 +353,9 @@ function SiteMenuScreen({ me }: { me: Me }) {
   const [adding, setAdding] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const listRef = useRef<HTMLOListElement>(null);
+  /** Its Undo only works here, so it goes when this screen does. */
+  const removedToast = useRef(0);
+  useEffect(() => () => dismissToast(removedToast.current), []);
   /** The control to put focus back on once a moved row has been drawn again. */
   const refocus = useRef<{ id: string; control: string } | null>(null);
 
@@ -457,14 +468,34 @@ function SiteMenuScreen({ me }: { me: Me }) {
 
   function remove(index: number, child: number | null) {
     const next = structuredClone(items);
+    const parentId = child === null ? null : next[index]?.id;
     const removed =
       child === null ? next.splice(index, 1)[0] : next[index]?.children.splice(child, 1)[0];
-    setItems(
-      next,
-      removed ? intl.formatMessage({ id: "menu.removed" }, { title: titleOf(removed) }) : "",
-    );
+    if (!removed) return;
+    setItems(next);
     // The row and its buttons have gone, so focus goes to the list's heading.
     requestAnimationFrame(() => document.querySelector<HTMLElement>("main h1")?.focus());
+
+    // Back where it was, in the menu as it is by then.
+    function putBack(current: MenuItem[]): MenuItem[] {
+      const back = structuredClone(current);
+      const siblings = back.find((item) => item.id === parentId)?.children;
+      const item = removed as MenuItem;
+      if (siblings) siblings.splice(Math.min(child ?? 0, siblings.length), 0, item);
+      else back.splice(Math.min(index, back.length), 0, { ...item, children: item.children ?? [] });
+      return back;
+    }
+    const title = titleOf(removed);
+    removedToast.current = showToast({
+      message: intl.formatMessage({ id: "menu.removed" }, { title }),
+      action: {
+        label: intl.formatMessage({ id: "list.undo" }),
+        run: () => {
+          draft.set(putBack);
+          setAnnouncement(intl.formatMessage({ id: "menu.removedUndone" }, { title }));
+        },
+      },
+    });
   }
 
   // The menu's name travels with the save, so switching tabs meanwhile can't confuse them.
@@ -525,18 +556,13 @@ function SiteMenuScreen({ me }: { me: Me }) {
       </div>
 
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
-        {(menus.error ?? save.error) &&
-          errorText(menus.error ?? save.error, intl.formatMessage({ id: "offline.body" }))}
+        {save.error && <Problem error={save.error} />}
       </p>
       <p role="status" className="sr-only">
         {announcement}
       </p>
 
-      {menus.isPending && (
-        <p className="mt-6 text-muted">
-          <FormattedMessage id="common.loading" />
-        </p>
-      )}
+      {!menus.data && <Waiting query={menus} />}
       {stored?.automatic && !changed && (
         <p className="mt-4 rounded-lg bg-ink/5 p-3">
           <FormattedMessage id={which === "main" ? "menu.automatic" : "menu.footerEmpty"} />
@@ -639,5 +665,5 @@ function SiteMenuScreen({ me }: { me: Me }) {
 }
 
 export function SiteMenu() {
-  return <SignedIn>{(me) => <SiteMenuScreen me={me} />}</SignedIn>;
+  return <SignedIn roles={["admin", "editor"]}>{(me) => <SiteMenuScreen me={me} />}</SignedIn>;
 }

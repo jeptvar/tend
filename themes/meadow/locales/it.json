@@ -1,0 +1,23 @@
+{
+  "skip": "Vai al contenuto",
+  "main_menu": "Principale",
+  "footer_menu": "Piè di pagina",
+  "elsewhere": "Altrove",
+  "tags": "Etichette",
+  "blog": "Blog",
+  "no_posts": "Non ci sono ancora articoli.",
+  "no_posts_tagged": "Non ci sono ancora articoli con questa etichetta.",
+  "more_posts": "Altri articoli",
+  "newer": "Articoli più recenti",
+  "older": "Articoli precedenti",
+  "not_found": "Pagina non trovata",
+  "not_found_body": "Non c'è nulla a questo indirizzo. La pagina potrebbe essere stata spostata o il link potrebbe contenere un errore.",
+  "go_home": "Vai alla home",
+  "coming_soon": "Questo sito sarà presto online.",
+  "address": "Indirizzo",
+  "directions": "Come arrivare",
+  "contact": "Contatti",
+  "call": "Chiama {phone}",
+  "hours": "Orari",
+  "closed": "Chiuso"
+}

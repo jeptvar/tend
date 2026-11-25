@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Redirect, Route, Router, Switch } from "wouter";
+import { Route, Router, Switch } from "wouter";
 import { Loading } from "./components/AuthLayout.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { Toaster } from "./components/Toast.tsx";
@@ -8,8 +8,11 @@ import { AcceptInvite, Recover, ResetPassword } from "./routes/Access.tsx";
 import { Account } from "./routes/Account.tsx";
 import { DesignPage } from "./routes/Design.tsx";
 import { PageList, PostList } from "./routes/Entries.tsx";
+import { Help } from "./routes/Help.tsx";
 import { ForgotPassword, Login } from "./routes/Login.tsx";
 import { MediaLibrary } from "./routes/Media.tsx";
+import { NotFound } from "./routes/NotFound.tsx";
+import { ConnectDomain, PutOnline } from "./routes/Online.tsx";
 import { Overview } from "./routes/Overview.tsx";
 import { People } from "./routes/People.tsx";
 import { SettingsPage } from "./routes/Settings.tsx";
@@ -48,6 +51,9 @@ export function App() {
               <Route path="/design" component={DesignPage} />
               <Route path="/people" component={People} />
               <Route path="/account" component={Account} />
+              <Route path="/help" component={Help} />
+              <Route path="/online" component={PutOnline} />
+              <Route path="/domain" component={ConnectDomain} />
               <Route path="/settings" component={SettingsPage} />
               <Route path="/settings/:section" component={SettingsPage} />
               <Route path="/setup" component={SetupWelcome} />
@@ -61,9 +67,7 @@ export function App() {
               <Route path="/recover" component={Recover} />
               <Route path="/reset" component={ResetPassword} />
               <Route path="/invite" component={AcceptInvite} />
-              <Route>
-                <Redirect to="/" replace />
-              </Route>
+              <Route component={NotFound} />
             </Switch>
           </Suspense>
         </ErrorBoundary>

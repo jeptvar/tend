@@ -22,11 +22,13 @@ import type { Doc } from "../lib/doc.ts";
 import { type MediaItem, uploadWords, useMediaItems } from "../lib/media.ts";
 import type { EntryType } from "../lib/queries.ts";
 import { AltDialog } from "./AltDialog.tsx";
+import type { CheckTarget } from "./checks.ts";
 import { INSERT_ITEMS, type InsertItem, matchingItems } from "./commands.ts";
 import { editorExtensions } from "./extensions.ts";
 import { UPLOAD_META } from "./ImageNode.tsx";
 import { LinkDialog } from "./LinkDialog.tsx";
 import type { RemovedSection } from "./nodes.tsx";
+import { tidyPasted } from "./paste.ts";
 import type { SlashState } from "./slash.ts";
 import { forgetUpload, getUpload, isUploading, startUpload } from "./uploads.ts";
 
@@ -34,6 +36,8 @@ export interface BodyHandle {
   /** Replaces the words: a conflict resolved, or an older version brought back. */
   setDoc(doc: Doc): void;
   focusStart(): void;
+  /** Goes to what a check is about. False if it isn't in the words. */
+  goTo(target: CheckTarget): boolean;
 }
 
 // A pressed button shows it with the whole background, because a faint tint can't be told
@@ -441,50 +445,6 @@ function SlashList({
 }
 
 /**
- * Tables can't be stored yet, and a picture from another site isn't in Media, so nothing
- * should vanish without a word.
- */
-function tidyPastedHtml(html: string, notify: (ids: string[]) => void): string {
-  const hasTable = /<table[\s>]/i.test(html);
-  const notices = [
-    ...(hasTable ? ["paste.table"] : []),
-    ...(/<img[\s>]/i.test(html) ? ["paste.image"] : []),
-  ];
-  if (notices.length > 0) notify(notices);
-  // The title is the page's only top-level heading, and three levels go below it.
-  const tidied = html
-    .replace(/<(\/?)h1(?=[\s>])/gi, "<$1h2")
-    .replace(/<(\/?)h[56](?=[\s>])/gi, "<$1h4");
-  return hasTable ? tablesAsLines(tidied) : tidied;
-}
-
-/**
- * A table becomes a line per row, with its cells kept apart, so opening hours stay readable
- * ("Mon · 9–5") rather than running together. Parsing this way loads nothing and runs nothing.
- */
-function tablesAsLines(html: string): string {
-  const parsed = new DOMParser().parseFromString(html, "text/html");
-  for (const table of parsed.querySelectorAll("table")) {
-    const lines = [...table.querySelectorAll("tr")]
-      .map((row) =>
-        [...row.querySelectorAll("th, td")]
-          .map((cell) => cell.textContent?.replace(/\s+/g, " ").trim() ?? "")
-          .filter(Boolean)
-          .join(" · "),
-      )
-      .filter(Boolean);
-    const replacement = parsed.createDocumentFragment();
-    for (const line of lines) {
-      const paragraph = parsed.createElement("p");
-      paragraph.textContent = line;
-      replacement.append(paragraph);
-    }
-    table.replaceWith(replacement);
-  }
-  return parsed.body.innerHTML;
-}
-
-/**
  * A document always ends with an empty line for the cursor, as the editor would add itself.
  * Adding it here means opening something isn't counted as a change to it.
  */
@@ -492,6 +452,82 @@ function toEditorDoc(doc: Doc): Doc {
   return doc.content.at(-1)?.type === "paragraph"
     ? doc
     : { type: "doc", content: [...doc.content, { type: "paragraph" }] };
+}
+
+/** Whether this part of the words is what a check is about. */
+function isTarget(node: PmNode, target: CheckTarget, headingsBefore: number): boolean {
+  const linksTo = (matches: (href: string) => boolean) =>
+    node.marks.some((mark) => mark.type.name === "link" && matches(String(mark.attrs.href)));
+  switch (target.kind) {
+    case "describe":
+    case "picture":
+      return node.type.name === "image" && node.attrs.mediaId === target.mediaId;
+    case "upload":
+      return (
+        node.type.name === "image" &&
+        !node.attrs.mediaId &&
+        Boolean(getUpload(String(node.attrs.uploadId))?.error)
+      );
+    case "link":
+      return (
+        linksTo((href) => href === target.href) ||
+        (node.type.name === "button" && node.attrs.href === target.href)
+      );
+    case "words":
+      return linksTo(() => true) && node.text?.trim() === target.words;
+    case "heading":
+      return node.type.name === "heading" && headingsBefore === target.index;
+    case "button":
+      return (
+        node.type.name === "button" && !node.attrs.href && String(node.attrs.label) === target.label
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Goes to what a check is about, and opens the dialog that fixes it where there's one: a
+ * picture's description, or where a button goes.
+ */
+function goTo(
+  editor: Editor,
+  target: CheckTarget,
+  setAsk: (ask: LinkAsk) => void,
+  setDescribing: (mediaId: string) => void,
+): boolean {
+  if (target.kind === "start") return editor.commands.focus("start");
+  let at: number | undefined;
+  let found: PmNode | undefined;
+  let headings = 0;
+  editor.state.doc.descendants((node, position) => {
+    if (found) return false;
+    if (isTarget(node, target, headings)) {
+      found = node;
+      at = position;
+    }
+    if (node.type.name === "heading") headings++;
+    return !found;
+  });
+  // A picture's description is the same wherever it's shown, so it needn't be in the words.
+  if (target.kind === "describe") setDescribing(target.mediaId);
+  if (!found || at === undefined) return target.kind === "describe";
+
+  const chain = editor.chain();
+  if (found.isText) chain.setTextSelection({ from: at, to: at + found.nodeSize });
+  else if (found.type.name === "heading") chain.setTextSelection(at + 1);
+  else chain.setNodeSelection(at);
+  if (target.kind === "describe") chain.scrollIntoView().run();
+  else chain.focus(undefined, { scrollIntoView: true }).run();
+  if (target.kind === "button") {
+    setAsk({
+      kind: "editButton",
+      position: at,
+      href: String(found.attrs.href),
+      label: String(found.attrs.label),
+    });
+  }
+  return true;
 }
 
 type LinkAsk =
@@ -601,7 +637,11 @@ export function BodyEditor({
       // The sticky bar shouldn't cover the line being typed.
       scrollMargin: { top: 120, bottom: 24, left: 0, right: 0 },
       scrollThreshold: { top: 120, bottom: 24, left: 0, right: 0 },
-      transformPastedHTML: (html) => tidyPastedHtml(html, notifyMessages),
+      transformPastedHTML: (html) => {
+        const tidied = tidyPasted(html);
+        if (tidied.notices.length > 0) notifyMessages(tidied.notices);
+        return tidied.html;
+      },
       // A pasted or dropped file uploads where it lands, and shows how it's going there.
       handlePaste: (view, event) => {
         const data = event.clipboardData;
@@ -778,6 +818,7 @@ export function BodyEditor({
         callbacks.current.onReady(editor.state.doc);
       },
       focusStart: () => editor.commands.focus("start"),
+      goTo: (target) => goTo(editor, target, setAsk, setDescribing),
     }),
     [editor],
   );

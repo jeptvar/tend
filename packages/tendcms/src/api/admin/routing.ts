@@ -6,12 +6,13 @@ import type { Orm } from "../../db/client.ts";
 import type { User } from "../../db/repo/users.ts";
 import type { MediaStore } from "../../media/store.ts";
 import type { PreviewInput } from "../../site/router.ts";
+import type { SiteAddress } from "../../site-address.ts";
 import { ApiError } from "../errors.ts";
 
 export interface AdminOptions {
   orm: Orm;
   store: MediaStore;
-  secureCookies: boolean;
+  address: SiteAddress;
   now?: (() => number) | undefined;
   /** Called after anything that changes what visitors see. */
   onSiteChanged: (changedPath?: string) => void;
@@ -67,7 +68,7 @@ export function notSignedIn(): ApiError {
 
 export function createRouting(options: {
   orm: Orm;
-  secureCookies: boolean;
+  address: SiteAddress;
   now?: (() => number) | undefined;
 }): Routing {
   const now = options.now ?? Date.now;
@@ -75,7 +76,7 @@ export function createRouting(options: {
   const policies: RoutePolicy[] = [];
 
   async function requireUser(c: Context): Promise<User> {
-    const user = await currentUser(c, options.orm, options.secureCookies, now());
+    const user = await currentUser(c, options.orm, options.address.secure, now());
     if (!user) throw notSignedIn();
     return user;
   }
@@ -126,17 +127,22 @@ export function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
     field === "doc"
       ? "Tend couldn't save that content."
       : (issue?.message ?? "Check what you typed.");
-  throw new ApiError(400, "needs_fixing", message, {
-    ...(typeof field === "string" ? { field } : {}),
-    ...(message === FALLBACK_PROBLEM ? { fix: FALLBACK_FIX } : {}),
-  });
+  const fix = message === FALLBACK_PROBLEM ? { fix: FALLBACK_FIX } : {};
+  throw new ApiError(
+    400,
+    "needs_fixing",
+    message,
+    typeof field === "string" ? { field, ...fix } : { fix: FALLBACK_FIX },
+  );
 }
 
 export async function readJson(c: Context): Promise<unknown> {
   try {
     return await c.req.json();
   } catch {
-    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request. Try again.");
+    throw new ApiError(400, "unreadable_request", "Tend couldn't read that request.", {
+      fix: "Try again.",
+    });
   }
 }
 

@@ -6,6 +6,11 @@ import { type Media, mediaWidths, variantUrl } from "../media/library.ts";
 // Everything people type is escaped before it gets here, so only Tend's own markup matches.
 const MEDIA_PLACEHOLDER = /<tend-image((?: [a-z-]+="[^"<>]*")*)><\/tend-image>/g;
 const ATTRIBUTE = / ([a-z-]+)="([^"<>]*)"/g;
+/**
+ * A picture's address on its own, from a theme's img_url and srcset filters. Only where an
+ * attribute's value starts, which nothing that's been escaped can look like.
+ */
+const ADDRESS_PLACEHOLDER = /(?<==")tend:(img|srcset):([0-9a-f-]{36})(?::(\d{1,5}))?/g;
 export const BUSINESS_PLACEHOLDER = "<tend-business></tend-business>";
 
 /** How wide each kind of picture is shown, to match the theme, so phones get small files. */
@@ -34,7 +39,16 @@ export function mediaPlaceholderIds(html: string): string[] {
     const id = attributesOf(match[1] ?? "").get("data-id");
     if (id) ids.add(id);
   }
+  for (const match of html.matchAll(ADDRESS_PLACEHOLDER)) ids.add(match[2] as string);
   return [...ids];
+}
+
+export function imageUrl(id: string, width: number): string {
+  return `tend:img:${id}:${Math.min(99_999, Math.max(1, Math.floor(width)))}`;
+}
+
+export function imageSrcset(id: string): string {
+  return `tend:srcset:${id}`;
 }
 
 /**
@@ -47,6 +61,10 @@ function altText(attributes: Map<string, string>, item: Media): string {
   const given = attributes.get("data-alt");
   if (given !== undefined) return given;
   return item.decorative === 1 ? "" : escapeHtml(item.alt ?? "");
+}
+
+function srcsetOf(item: Media, widths: number[], origin: string): string {
+  return widths.map((width) => `${origin}${variantUrl(item, width)} ${width}w`).join(", ");
 }
 
 export interface ResolveOptions {
@@ -67,7 +85,19 @@ export function resolveMediaPlaceholders(
 ): string {
   const origin = options.origin ?? "";
   let first = true;
-  return html.replace(MEDIA_PLACEHOLDER, (_, text: string) => {
+  const addressed = html.replace(
+    ADDRESS_PLACEHOLDER,
+    (_, kind: string, id: string, wanted: string | undefined) => {
+      const item = found.get(id);
+      if (item?.kind !== "image" || item.trashedAt !== null) return "";
+      const widths = mediaWidths(item);
+      if (kind === "srcset") return srcsetOf(item, widths, origin);
+      // The smallest that's big enough, or else the biggest there is.
+      const width = widths.find((each) => each >= Number(wanted)) ?? widths.at(-1);
+      return width === undefined ? "" : `${origin}${variantUrl(item, width)}`;
+    },
+  );
+  return addressed.replace(MEDIA_PLACEHOLDER, (_, text: string) => {
     const attributes = attributesOf(text);
     const item = found.get(attributes.get("data-id") ?? "");
     if (item?.kind !== "image" || item.trashedAt !== null) return "";
@@ -79,14 +109,14 @@ export function resolveMediaPlaceholders(
     const alt = altText(attributes, item);
     const fallback = widths.filter((width) => width <= FALLBACK_WIDTH).pop() ?? widths[0];
     const src = `${origin}${variantUrl(item, fallback as number)}`;
-    const srcset = widths
-      .map((width) => `${origin}${variantUrl(item, width)} ${width}w`)
-      .join(", ");
+    const srcset = srcsetOf(item, widths, origin);
     const sizes =
-      size === "logo"
+      attributes.get("data-sizes") ??
+      (size === "logo"
         ? `${Math.round((LOGO_HEIGHT_PX * item.width) / item.height)}px`
-        : (SIZES[size] as string);
-    const eager = first && size !== "logo";
+        : (SIZES[size] as string));
+    const asked = attributes.get("data-priority");
+    const eager = asked ? asked === "high" : first && size !== "logo";
     if (size !== "logo") first = false;
     const priority = eager ? ' fetchpriority="high"' : size === "logo" ? "" : ' loading="lazy"';
     // A colour to show while it loads. Media keeps none for a picture with see-through parts,
@@ -112,8 +142,16 @@ export function imagePlaceholder(input: {
   size: string;
   alt?: string | null;
   decorative?: boolean;
+  /** How wide it's shown, as the sizes attribute says it. */
+  sizes?: string | null;
+  /** Whether it's fetched first, or only when nearly on screen. Null decides by itself. */
+  priority?: boolean | null;
 }): string {
   const parts = [`data-id="${escapeHtml(input.id)}"`, `data-size="${escapeHtml(input.size)}"`];
+  if (input.sizes) parts.push(`data-sizes="${escapeHtml(input.sizes)}"`);
+  if (typeof input.priority === "boolean") {
+    parts.push(`data-priority="${input.priority ? "high" : "low"}"`);
+  }
   if (input.alt) parts.push(`data-alt="${escapeHtml(input.alt)}"`);
   if (input.decorative) parts.push('data-decorative=""');
   return `<tend-image ${parts.join(" ")}></tend-image>`;

@@ -1,6 +1,17 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
-import { createEntry, expect, photo, type Site, test, upload } from "./fixtures.ts";
+import {
+  copyTheme,
+  createEntry,
+  expect,
+  photo,
+  pretendDataIsAtRisk,
+  type Site,
+  test,
+  upload,
+} from "./fixtures.ts";
 
 async function expectNoViolations(
   page: Page,
@@ -157,6 +168,8 @@ async function richPage(page: Page, site: Site, publish = true) {
 async function adminScreens(page: Page, site: Site): Promise<[string, string][]> {
   const post = await createEntry(page, site, { title: "A post", publish: true });
   await upload(page, site, await photo(page, 900, 600), "In the library.jpg");
+  // So Design has themes to choose between.
+  copyTheme(site);
   return [
     ["overview", "/admin/"],
     ["posts", "/admin/posts"],
@@ -172,6 +185,10 @@ async function adminScreens(page: Page, site: Site): Promise<[string, string][]>
     ["settings: backups", "/admin/settings/backups"],
     ["people", "/admin/people"],
     ["account", "/admin/account"],
+    ["help", "/admin/help"],
+    ["put your site online", "/admin/online"],
+    ["connect your domain", "/admin/domain"],
+    ["an address that isn't anything", "/admin/nothing-here"],
   ];
 }
 
@@ -243,6 +260,102 @@ for (const colorScheme of ["light", "dark"] as const) {
         await page.waitForLoadState("networkidle");
         await expectNoViolations(page, name);
       }
+    });
+
+    test("Overview, Help and the menus have no accessibility violations, whatever's open", async ({
+      page,
+      signedIn,
+    }) => {
+      await createEntry(page, signedIn, { title: "Draft" });
+      const post = await createEntry(page, signedIn, { title: "Opening day", publish: true });
+      const { rev } = await (
+        await page.request.get(`${signedIn.base}/api/admin/entries/${post.id}`)
+      ).json();
+      await page.request.patch(`${signedIn.base}/api/admin/entries/${post.id}`, {
+        headers: { "If-Match": String(rev) },
+        data: { title: "Opening week" },
+      });
+      await page.goto(`${signedIn.base}/admin/`);
+      await expect(page.getByRole("region", { name: "Recent activity" })).toBeVisible();
+      await expectNoViolations(page, "overview, with something in every part");
+      await page.getByRole("button", { name: "Hide names" }).click();
+      await expectNoViolations(page, "the narrow menu");
+
+      await page.goto(`${signedIn.base}/admin/help`);
+      await expect(page.getByRole("heading", { name: "Help", level: 1 })).toBeVisible();
+      for (const summary of await page.locator("summary").all()) await summary.click();
+      await expect(page.getByText(/gets security fixes until/)).toBeVisible();
+      await expectNoViolations(page, "help, with everything open");
+
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.goto(`${signedIn.base}/admin/`);
+      await expect(page.getByRole("region", { name: "Recent activity" })).toBeVisible();
+      await expectNoViolations(page, "overview on a phone");
+      await page.getByRole("button", { name: "Menu", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Menu" })).toBeVisible();
+      await expectNoViolations(page, "the menu on a phone");
+
+      // Where the connection isn't private, and the address isn't known.
+      const base = signedIn.base.replace("//localhost:", "//rise.localhost:");
+      await page.goto(`${base}/admin/login`);
+      await expect(
+        page.getByRole("region", { name: "This connection isn't private" }),
+      ).toBeVisible();
+      await expectNoViolations(page, "sign in, over plain http");
+    });
+
+    test("account and people have no accessibility violations, whatever's open", async ({
+      page,
+      browser,
+      signedIn,
+    }) => {
+      const reply = await page.request.post(`${signedIn.base}/api/admin/people/invites`, {
+        data: { email: "ed@example.com", role: "editor" },
+      });
+      const { token } = await reply.json();
+      const context = await browser.newContext({ colorScheme });
+      const invitee = await context.newPage();
+      await invitee.goto(`${signedIn.base}/admin/invite#${token}`);
+      await invitee.getByLabel("Your name").fill("Ed Ward");
+      await invitee.getByRole("button", { name: "Suggest a passphrase" }).click();
+      await invitee.getByRole("button", { name: "Create my account" }).click();
+      await expect(invitee.getByRole("heading", { name: "Save your recovery kit" })).toBeVisible();
+      await expectNoViolations(invitee, "a new recovery kit");
+      await context.close();
+
+      await page.goto(`${signedIn.base}/admin/account`);
+      await page.getByText("Change your email").click();
+      await page.getByRole("button", { name: "Change email" }).click();
+      await page.getByText("Change your password", { exact: true }).click();
+      await page.getByRole("button", { name: "Change password" }).click();
+      await expect(page.getByText("Type your email address.")).toBeVisible();
+      await expectNoViolations(page, "account, with every form open and errors showing");
+
+      await page.goto(`${signedIn.base}/admin/people`);
+      await page.getByRole("button", { name: "Make a new-password link" }).click();
+      await expect(page.getByLabel("Link for a new password")).toBeVisible();
+      await expectNoViolations(page, "people, with a link to send");
+      await page.getByRole("button", { name: "Stop them signing in" }).click();
+      await expect(page.getByText("Can't sign in for now", { exact: false })).toBeVisible();
+      await expectNoViolations(page, "people, with someone kept out");
+      await page.getByRole("button", { name: "Let them sign in again" }).click();
+      await page.getByRole("button", { name: "Make them the Owner" }).click();
+      await expectNoViolations(page, "handing the site over");
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Remove Ed Ward?" })).toBeVisible();
+      await expectNoViolations(page, "removing someone");
+    });
+
+    test("the warning that a site could be lost has no accessibility violations", async ({
+      page,
+      signedIn,
+    }) => {
+      await pretendDataIsAtRisk(page, { why: "unnamed", path: "/data", platform: "docker" });
+      await page.goto(`${signedIn.base}/admin/`);
+      await expect(page.getByRole("region", { name: "Your site could be lost" })).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await expectNoViolations(page, "at risk");
     });
 
     test("the editor has no accessibility violations, whatever's open", async ({
@@ -336,7 +449,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Move to Trash" }).click();
       await expect(page.getByText("Moved to the Trash")).toBeVisible();
       await expectNoViolations(page, "a toast");
-      await page.getByRole("button", { name: "Trash", exact: true }).click();
+      await page.getByRole("button", { name: /^Trash/ }).click();
       await expect(page.getByRole("button", { name: "Delete forever" })).toBeVisible();
       await expectNoViolations(page, "the Trash");
       await page.getByRole("button", { name: "Delete forever" }).click();
@@ -455,6 +568,8 @@ test.describe("at phone widths", () => {
     });
     const rich = await richPage(page, signedIn);
     await upload(page, signedIn, await photo(page, 900, 600), `${UNBROKEN}.jpg`);
+    const theme = copyTheme(signedIn);
+    writeFileSync(join(theme, "theme.json"), JSON.stringify({ name: UNBROKEN.slice(0, 60) }));
     await page.setViewportSize({ width: 320, height: 640 });
     for (const path of [
       "/admin/",
@@ -467,6 +582,13 @@ test.describe("at phone widths", () => {
       "/admin/settings/general",
       "/admin/settings/business",
       "/admin/settings/search",
+      "/admin/settings/advanced",
+      "/admin/settings/backups",
+      "/admin/people",
+      "/admin/account",
+      "/admin/help",
+      "/admin/online",
+      "/admin/domain",
       "/",
       "/blog",
       "/contact",
@@ -478,6 +600,15 @@ test.describe("at phone widths", () => {
       await page.waitForLoadState("networkidle");
       await expectNoSidewaysScrolling(page, path);
     }
+
+    await pretendDataIsAtRisk(page, {
+      why: "unmounted",
+      path: `/${UNBROKEN}`,
+      platform: "docker",
+    });
+    await page.goto(`${signedIn.base}/admin/`);
+    await expect(page.getByRole("region", { name: "Your site could be lost" })).toBeVisible();
+    await expectNoSidewaysScrolling(page, "the warning that a site could be lost");
   });
 
   /** Links inside written text are exempt in WCAG, because they sit among the words. */
@@ -509,12 +640,52 @@ test.describe("at phone widths", () => {
       "/admin/settings/business",
       "/admin/settings/search",
       "/admin/settings/advanced",
+      "/admin/settings/backups",
+      "/admin/pages",
+      "/admin/people",
+      "/admin/account",
+      "/admin/help",
+      "/admin/online",
+      "/admin/domain",
     ]) {
       await page.goto(`${signedIn.base}${path}`);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await page.waitForLoadState("networkidle");
       expect(await tooSmallTargets(page), path).toEqual([]);
     }
+  });
+
+  test("the screens for getting in fit at 320 px, and everything tappable is 44 px", async ({
+    page,
+    browser,
+    newSite,
+    signedIn,
+  }) => {
+    const invite = await page.request.post(`${signedIn.base}/api/admin/people/invites`, {
+      data: { email: `${UNBROKEN}@example.com`, role: "editor" },
+    });
+    const { token } = await invite.json();
+    const context = await browser.newContext({ viewport: { width: 320, height: 640 } });
+    const visitor = await context.newPage();
+    for (const url of [
+      `${signedIn.base}/admin/login`,
+      `${signedIn.base}/admin/login/forgot`,
+      `${signedIn.base}/admin/recover`,
+      `${signedIn.base}/admin/reset#not-a-real-link-at-all`,
+      `${signedIn.base}/admin/invite#${token}`,
+      `${newSite.base}/admin/setup`,
+      newSite.link,
+      `${newSite.base}/admin/setup/name`,
+      `${newSite.base}/admin/setup/backup`,
+    ]) {
+      await visitor.goto("about:blank");
+      await visitor.goto(url);
+      await expect(visitor.getByRole("heading", { level: 1 })).toBeVisible();
+      await visitor.waitForLoadState("networkidle");
+      await expectNoSidewaysScrolling(visitor, url);
+      expect(await tooSmallTargets(visitor), url).toEqual([]);
+    }
+    await context.close();
   });
 
   test("the editor's controls are all at least 44 px, on a page with everything", async ({

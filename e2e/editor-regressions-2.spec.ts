@@ -869,7 +869,7 @@ test.describe("lists", () => {
       await page.request.post(`${signedIn.base}/api/admin/entries/${post.id}/trash`, { data: {} });
     }
     await page.goto(`${signedIn.base}/admin/posts`);
-    await page.getByRole("button", { name: "Trash", exact: true }).click();
+    await page.getByRole("button", { name: /^Trash/ }).click();
     const restore = page.getByRole("button", { name: "Restore" });
     await restore.nth(20).focus();
     await page.keyboard.press("Enter");

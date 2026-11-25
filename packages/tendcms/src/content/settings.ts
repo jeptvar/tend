@@ -56,12 +56,23 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const hoursSchema = z
   .array(
-    z.object({
-      day: z.enum(DAYS),
-      closed: z.boolean(),
-      opens: z.string().regex(TIME, "Use a time like 09:00."),
-      closes: z.string().regex(TIME, "Use a time like 17:30."),
-    }),
+    z
+      .object({
+        day: z.enum(DAYS),
+        closed: z.boolean(),
+        opens: z.string().max(5),
+        closes: z.string().max(5),
+      })
+      .transform((day, context) => {
+        if (TIME.test(day.opens) && TIME.test(day.closes)) return day;
+        // Nobody sees a closed day's times, so one left empty is no reason to refuse the rest.
+        if (day.closed) return { ...day, opens: "09:00", closes: "17:00" };
+        context.addIssue({
+          code: "custom",
+          message: "Give each open day a time it opens and a time it closes, like 09:00 and 17:30.",
+        });
+        return z.NEVER;
+      }),
   )
   .length(7, "Every day of the week needs a row, Monday first.")
   .refine(
@@ -155,8 +166,12 @@ export const designSchema = z.object({
       links.flatMap((link) => (link.url ? [{ network: link.network, url: link.url }] : [])),
     ),
   customCss: blankIsNull(100_000, "That's too much CSS: keep it under 100,000 characters."),
-  /** The theme's own choices, checked against its theme.json when saved. */
-  theme: z.record(z.string(), z.string().max(200)),
+  /** The theme of someone's own the site uses. Null is the one Tend comes with. */
+  themeId: z.string().max(64).nullable().default(null),
+  /** Each theme's own choices, checked against the chosen one's theme.json when saved. */
+  theme: z
+    .record(z.string().regex(/^[a-z][a-z0-9_]{0,31}$/), z.string().max(200))
+    .refine((choices) => Object.keys(choices).length <= 200, "That's too many design choices."),
 });
 export type DesignSettings = z.output<typeof designSchema>;
 
@@ -218,7 +233,15 @@ export const DEFAULTS: { [K in Exclude<SettingKey, "site">]: SettingTypes[K] } =
   business: { address: null, phone: null, email: null, mapUrl: null, hours: null, hoursNote: null },
   visibility: { mode: "public" },
   seo: { description: null, imageId: null },
-  design: { logoId: null, iconId: null, footerText: null, social: [], customCss: null, theme: {} },
+  design: {
+    logoId: null,
+    iconId: null,
+    footerText: null,
+    social: [],
+    customCss: null,
+    themeId: null,
+    theme: {},
+  },
   "menu:main": { items: [] },
   "menu:footer": { items: [] },
   code_injection: { head: null, bodyEnd: null },

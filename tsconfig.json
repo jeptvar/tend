@@ -8,6 +8,9 @@
       "path": "packages/admin"
     },
     {
+      "path": "packages/admin/test"
+    },
+    {
       "path": "packages/create-tend"
     },
     {

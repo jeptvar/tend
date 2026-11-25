@@ -1,7 +1,12 @@
 # Build from the repository root:
 #   docker build -f docker/Dockerfile -t tend .
+#
+# A release's image has the package that's on npm in it, put in pack/ first, rather than one
+# made here (.github/workflows/docker.yml):
+#   docker build -f docker/Dockerfile --build-arg PACKAGE=published -t tend .
+ARG PACKAGE=built
 
-FROM node:26-slim AS build
+FROM node:26-slim AS built
 WORKDIR /repo
 RUN npm install --global --ignore-scripts pnpm@12.14.0
 COPY . .
@@ -11,6 +16,11 @@ RUN pnpm build
 # same versions of everything.
 RUN node scripts/shrinkwrap.mjs
 RUN mkdir /pack && cd packages/tendcms && npm pack --pack-destination /pack
+
+FROM scratch AS published
+COPY pack/ /pack/
+
+FROM ${PACKAGE} AS package
 
 # The final image installs the packed package, the same way a person's npm install
 # does, so it proves what's published works. Native modules ship prebuilt, so no
@@ -26,7 +36,7 @@ WORKDIR /opt/tend
 RUN apt-get update \
     && apt-get upgrade --yes --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /pack/ /tmp/pack/
+COPY --from=package /pack/ /tmp/pack/
 # npm installs Tend here and then goes: nothing needs it to run Tend, and what isn't in
 # the image can't have a vulnerability.
 RUN npm init --yes >/dev/null \

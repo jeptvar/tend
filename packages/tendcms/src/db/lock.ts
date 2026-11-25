@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
+import { PlainError } from "../plain-error.ts";
 
 export interface LockInfo {
   pid: number;
@@ -12,7 +13,7 @@ export interface Lock {
   release(): void;
 }
 
-export class LockError extends Error {
+export class LockError extends PlainError {
   readonly holder: LockInfo | undefined;
 
   constructor(holder: LockInfo | undefined) {
@@ -66,6 +67,26 @@ function takeOsLock(path: string): Database.Database | undefined {
     if (attempt < ATTEMPTS - 1) sleepSync(RETRY_MIN_MS + Math.random() * RETRY_JITTER_MS);
   }
   return undefined;
+}
+
+/**
+ * Whether Tend is running with a data folder, and as which process if that's known. Found
+ * by reading, because taking the lock, even for a moment, could stop a Tend from starting.
+ * Not for the process that holds it: see acquireLock.
+ */
+export function findRunning(dataDir: string): { holder: LockInfo | undefined } | undefined {
+  const path = join(dataDir, ".lock.db");
+  if (!existsSync(path)) return undefined;
+  const db = new Database(path, { readonly: true, fileMustExist: true, timeout: 0 });
+  try {
+    db.prepare("SELECT count(*) FROM sqlite_master").get();
+    return undefined;
+  } catch (error) {
+    if (!isBusy(error)) throw error;
+    return { holder: readInfo(join(dataDir, ".lock")) };
+  } finally {
+    db.close();
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +26,8 @@ export interface Site {
   /** The setup link Tend printed, with the code in it. */
   link: string;
   code: string;
+  /** The folder it runs in, with its data folder inside. */
+  folder: string;
   /** Stops Tend with no warning at all, like a crash or a power cut. */
   crash(): Promise<void>;
   /** Starts it again on the same address and data, after a crash. */
@@ -40,7 +42,7 @@ export interface Entry {
   dirty: boolean;
 }
 
-type Running = Omit<Site, "crash" | "restart">;
+type Running = Omit<Site, "folder" | "crash" | "restart">;
 
 function startServer(dataDir: string, port = "0"): Promise<{ child: ChildProcess; site: Running }> {
   if (!existsSync(CLI)) throw new Error(`${CLI} doesn't exist. Run pnpm build first.`);
@@ -107,6 +109,7 @@ async function runSite(use: (site: Site) => Promise<void>): Promise<void> {
   let { child } = first;
   await use({
     ...first.site,
+    folder: dataDir,
     crash: async () => {
       await stopped(child, "SIGKILL");
     },
@@ -209,6 +212,40 @@ export async function holdRequests(page: Page, url: string, method?: string): Pr
     await route.fallback();
   });
   return release;
+}
+
+/** Starts a theme of someone's own in a site's folder, as a developer does. Returns its folder. */
+export function copyTheme(site: Site, name = "my-theme"): string {
+  execFileSync(process.execPath, [CLI, "theme", "copy", "meadow", name], {
+    cwd: site.folder,
+    env: { ...process.env, TEND_DATA_DIR: join(site.folder, "data") },
+  });
+  return join(site.folder, "themes", name);
+}
+
+export interface DataRisk {
+  why: "unmounted" | "unnamed";
+  path: string;
+  platform: "railway" | "render" | "fly" | "docker";
+}
+
+/**
+ * Has Tend tell the admin its site would be lost, as it does in a container whose data folder
+ * isn't on a volume that's kept. Tend can't be in one here, so this changes what it answers.
+ */
+export async function pretendDataIsAtRisk(
+  page: Page,
+  risk: DataRisk,
+  user: { isOwner?: boolean } = {},
+): Promise<void> {
+  await page.route("**/api/auth/me", async (route) => {
+    const reply = await route.fetch();
+    const me = await reply.json();
+    await route.fulfill({
+      response: reply,
+      json: { ...me, dataRisk: risk, user: { ...me.user, ...user } },
+    });
+  });
 }
 
 /**

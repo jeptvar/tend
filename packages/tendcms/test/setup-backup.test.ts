@@ -1,9 +1,10 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { unzipSync, zipSync } from "fflate";
 import sharp from "sharp";
 import { describe, expect, test } from "vitest";
+import { readSecretKey } from "../src/config.ts";
 import { getSetting, putSetting } from "../src/db/repo/settings.ts";
 import {
   browser,
@@ -122,9 +123,10 @@ describe("Start from a backup", () => {
       password: GOOD_PASSWORD,
     });
     expect(signIn.status).toBe(200);
-    // It uses the old site's key from now on, in memory and on disk.
+    // It uses the old site's key from now on, in memory and on disk, as the next start reads it.
     expect(site.secretKey.equals(old.secretKey)).toBe(true);
-    expect(readFileSync(join(site.root, "secret.key")).equals(old.secretKey)).toBe(true);
+    const onDisk = readSecretKey({ secretKeyPath: join(site.root, "secret.key") });
+    expect(onDisk.equals(old.secretKey)).toBe(true);
     // Its pages and pictures are the old site's.
     const home = await (await site.app.request("/")).text();
     expect(home).toContain("Rise Bakery");

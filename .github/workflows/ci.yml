@@ -64,6 +64,26 @@ jobs:
       - run: pnpm build
       - run: pnpm shrinkwrap
       - run: pnpm smoke:create
+      # The release's last check before publishing, so that it's known to work by then.
+      - name: Check npm create tend with a release that's an hour old
+        shell: bash
+        run: |
+          mkdir packed
+          npm pack ./packages/tendcms ./packages/create-tend --pack-destination packed
+          node scripts/smoke-registry.mjs --packages packed
+      # The installer has to run on a Node.js that's too old for Tend, to say so.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 18
+      - name: Check an old Node.js is told what to install
+        shell: bash
+        run: |
+          if node packages/create-tend/dist/index.mjs too-old > old.log 2>&1; then
+            echo "create-tend went on with Node.js $(node --version)."
+            exit 1
+          fi
+          grep --quiet 'Tend needs Node.js 24 or newer' old.log
+          test ! -e too-old
 
   # One job per browser, side by side: the tests take most of a quarter of an hour in each.
   browser:
@@ -194,6 +214,12 @@ jobs:
             echo "npm is still in the image."
             exit 1
           fi
+      # What's downloaded, with each layer compressed (PLAN.md §11).
+      - name: Check the image's size
+        run: |
+          bytes=$(docker save tend:test | gzip | wc --bytes)
+          echo "$((bytes / 1000000)) MB compressed"
+          test "$bytes" -le 200000000
       # A folder from the server, or a volume a host makes (Railway's), belongs to root.
       - name: Boot against a data folder that belongs to root
         run: |
@@ -204,6 +230,13 @@ jobs:
             exit 1
           fi
           grep --quiet 'sudo chown -R 1000:1000' refused.log
+          # tendcms doctor explains it too, and fails, without starting Tend.
+          if docker run --rm --volume /srv/tend-data:/data tend:test tendcms doctor > doctor.log 2>&1
+          then
+            echo "tendcms doctor found nothing to fix in a data folder Tend can't write to."
+            exit 1
+          fi
+          grep --quiet '^FIX .*sudo chown -R 1000:1000' doctor.log
           # As root, the way Railway runs it with RAILWAY_RUN_UID=0, it works.
           docker run --detach --name tend-root --user 0 --publish 3001:3000 \
             --volume /srv/tend-data:/data tend:test
@@ -213,6 +246,81 @@ jobs:
           done
           curl --fail --silent --show-error http://127.0.0.1:3001/admin/setup | grep --quiet 'id="root"'
           sudo test -f /srv/tend-data/tend.db
+      # Two containers on one volume would write over each other's changes. The lock is the
+      # operating system's, so it has to hold between containers too (PLAN.md §11).
+      - name: Check two containers can't use one volume
+        run: |
+          docker run --detach --name tend-first --publish 3004:3000 \
+            --volume tend-shared:/data tend:test
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:3004/healthz
+          if timeout 60 docker run --rm --volume tend-shared:/data tend:test > second.log 2>&1; then
+            echo "A second container started on a volume that's in use."
+            exit 1
+          fi
+          grep --quiet 'Tend is already running with this data folder' second.log
+          # The first one didn't notice, and stops the way a host asks it to, in its own time.
+          curl --fail --silent --show-error http://127.0.0.1:3004/healthz
+          docker stop tend-first
+          test "$(docker inspect --format '{{.State.ExitCode}}' tend-first)" = 0
+          # Then the volume is free.
+          docker run --detach --name tend-next --publish 3005:3000 \
+            --volume tend-shared:/data tend:test
+          curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
+            http://127.0.0.1:3005/healthz
+          docker stop tend-next
+      # A container's own files go when it's replaced, and so can a volume with no name, which
+      # is what Docker makes for the image's /data when it isn't given one. Each container is
+      # stopped before its log is read, so it has nothing left to write.
+      - name: Check it says when the site could be lost
+        run: |
+          # The admin tells an Admin, so there has to be one.
+          cat > setup.json <<JSON
+          {
+            "code": "$(docker exec tend tendcms setup-code)",
+            "site": { "name": "Test", "tagline": "", "locale": "en", "timezone": "UTC" },
+            "owner": {
+              "name": "Sam Lee",
+              "email": "sam@example.com",
+              "password": "maple-river-candle-stone-orbit"
+            },
+            "starter": "blank"
+          }
+          JSON
+          curl --fail --silent --show-error --output /dev/null --cookie-jar cookies.txt \
+            --header 'Content-Type: application/json' --data @setup.json \
+            http://127.0.0.1:3000/api/auth/setup
+          curl --fail --silent --show-error --cookie cookies.txt http://127.0.0.1:3000/api/auth/me |
+            grep --quiet '"dataRisk":{"why":"unnamed","path":"/data","platform":"docker"}'
+          # A theme of someone's own goes on the volume, and Design offers it.
+          docker exec tend tendcms theme copy meadow my-theme
+          docker exec tend test -f /data/themes/my-theme/theme.json
+          curl --fail --silent --show-error --cookie cookies.txt http://127.0.0.1:3000/api/admin/design |
+            grep --quiet '"id":"my-theme","name":"My theme"'
+          docker run --detach --name tend-unmounted --publish 3002:3000 \
+            --env TEND_DATA_DIR=/tmp/site tend:test
+          docker run --detach --name tend-named --publish 3003:3000 \
+            --volume tend-data:/data tend:test
+          for port in 3002 3003; do
+            curl --fail --silent --show-error --retry 30 --retry-delay 1 --retry-all-errors \
+              "http://127.0.0.1:$port/healthz"
+          done
+          # Beside a running Tend, tendcms doctor says the same.
+          docker exec tend tendcms doctor | grep '^FIX .*/data is on a volume with no name'
+          docker exec tend-unmounted tendcms doctor | grep "^FIX .*/tmp/site isn't on a volume"
+          docker exec tend-named tendcms doctor | tee doctor-named.log
+          grep --quiet '^OK .*The site is kept' doctor-named.log
+          grep --quiet '^OK .*Tend is running here' doctor-named.log
+          docker stop tend tend-root tend-unmounted tend-named
+          docker logs tend 2>&1 | grep --quiet 'WARNING: /data is on a volume with no name'
+          docker logs tend-unmounted 2>&1 | grep --quiet "WARNING: /tmp/site isn't on a volume"
+          # A folder of the server's and a volume with a name are both kept.
+          for kept in tend-root tend-named; do
+            if docker logs "$kept" 2>&1 | grep WARNING; then
+              echo "$kept was warned about a data folder that's kept."
+              exit 1
+            fi
+          done
       # A scan that always passes looks the same as a clean image, so first it has to find
       # lodash 4.17.4, which has known vulnerabilities with fixes. The exit code is one Trivy
       # doesn't use for its own errors, like a database it couldn't download.
@@ -248,9 +356,10 @@ jobs:
       - name: Show what Tend printed, if that failed
         if: failure()
         run: |
-          docker logs tend || true
-          docker logs tend-root || true
-          cat refused.log || true
+          for name in tend tend-root tend-first tend-next tend-unmounted tend-named; do
+            docker logs "$name" || true
+          done
+          cat refused.log doctor.log second.log || true
 
   # main's rules require one check called docker, and this is it: it passes only if both
   # processors' images did. Without always() it would be skipped when one fails, and GitHub

@@ -1,5 +1,6 @@
 import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { describe, expect, test, vi } from "vitest";
 import { defaultThemeDir } from "../src/paths.ts";
 import { PageCache } from "../src/site/cache.ts";
@@ -8,8 +9,12 @@ import { tempDir } from "./helpers.ts";
 
 const ENTRIES = "/api/admin/entries";
 
-function withoutStructuredData(html: string): string {
-  return html.replace(/<script type="application\/ld\+json">[^<]*<\/script>/g, "");
+/** Without the two kinds of script element that are data, which browsers read and never run. */
+function withoutData(html: string): string {
+  return html.replace(
+    /<script type="(?:application\/ld\+json|speculationrules)">[^<]*<\/script>/g,
+    "",
+  );
 }
 
 function doc(text: string) {
@@ -96,8 +101,7 @@ describe("public pages", () => {
     await setUp(made);
     for (const path of ["/", "/contact", "/does-not-exist"]) {
       const html = await (await made.app.request(path)).text();
-      // Structured data for search engines is a script element, but nothing ever runs it.
-      expect(withoutStructuredData(html), path).not.toContain("<script");
+      expect(withoutData(html), path).not.toContain("<script");
       expect(html, path).toContain('href="#content"');
       expect(html, path).toContain('lang="en-PH"');
       expect(html, path).toContain('name="viewport"');
@@ -196,7 +200,7 @@ describe("public pages", () => {
       expect(reply.status).toBe(404);
       const html = await reply.text();
       expect(html).toContain("Page not found");
-      expect(withoutStructuredData(html)).not.toContain("<script");
+      expect(withoutData(html)).not.toContain("<script");
     },
   );
 
@@ -348,7 +352,7 @@ describe("the page cache", () => {
     owner: Awaited<ReturnType<typeof setUp>>;
   }> {
     // With a known address, as a hosted site has, so pages are made ahead in the background.
-    const made = await makeApp({ pageCacheBytes: 1024 * 1024, siteUrl: "http://localhost" });
+    const made = await makeApp({ pageCacheBytes: 1024 * 1024, publicUrl: "http://localhost" });
     const owner = await setUp(made);
     return { made, owner };
   }
@@ -477,6 +481,59 @@ describe("the page cache", () => {
     await publishPost(owner, "New page", "Words", "page");
     const changed = await made.app.request("/contact", { headers: { "If-None-Match": etag } });
     expect(changed.status).toBe(200);
+  });
+
+  test("a page's tag counts however a proxy wrote it, alone or among others", async () => {
+    const { made } = await cachedSite();
+    const etag = (await made.app.request("/contact")).headers.get("etag") as string;
+    // The same tag stands for the page however it's encoded, so it's a weak one.
+    expect(etag).toMatch(/^W\/"[\w-]{22}"$/);
+    const strong = etag.replace("W/", "");
+    for (const sent of [strong, `"other", ${etag}`, `W/"other",${strong}`, "*"]) {
+      const reply = await made.app.request("/contact", { headers: { "If-None-Match": sent } });
+      expect(reply.status, sent).toBe(304);
+    }
+    for (const sent of ['"other"', '"other", "another"', strong.slice(1, -1)]) {
+      const reply = await made.app.request("/contact", { headers: { "If-None-Match": sent } });
+      expect(reply.status, sent).toBe(200);
+    }
+  });
+
+  test("says how long a page took, whether it was kept or not", async () => {
+    const { made } = await cachedSite();
+    for (const state of ["miss", "hit"]) {
+      const timing = (await made.app.request("/contact")).headers.get("server-timing") as string;
+      const took = timing.match(/^cache;desc="(\w+)", total;dur=(\d+\.\d\d)$/);
+      expect(took?.[1]).toBe(state);
+      expect(Number(took?.[2])).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  test("the theme's stylesheet is compressed, and not sent again to who has it", async () => {
+    const made = await makeApp();
+    await setUp(made);
+    const home = await (await made.app.request("/")).text();
+    const url = home.match(/\/assets\/meadow\/[0-9a-f]+\/theme\.css/)?.[0] as string;
+    const plain = await made.app.request(url);
+    const css = await plain.text();
+    expect(plain.headers.get("content-encoding")).toBeNull();
+    expect(plain.headers.get("vary")).toBe("Accept-Encoding");
+    for (const encoding of ["br", "gzip"] as const) {
+      const reply = await made.app.request(url, { headers: { "Accept-Encoding": encoding } });
+      expect(reply.headers.get("content-encoding")).toBe(encoding);
+      expect(reply.headers.get("cache-control")).toContain("immutable");
+      const body = Buffer.from(await reply.arrayBuffer());
+      expect(reply.headers.get("content-length")).toBe(String(body.length));
+      expect(body.length).toBeLessThan(css.length / 2);
+      const back = encoding === "br" ? brotliDecompressSync(body) : gunzipSync(body);
+      expect(back.toString()).toBe(css);
+    }
+    const etag = plain.headers.get("etag") as string;
+    const again = await made.app.request(url, { headers: { "If-None-Match": etag } });
+    expect(again.status).toBe(304);
+    const head = await made.app.request(url, { method: "HEAD" });
+    expect(head.headers.get("content-length")).toBe(String(Buffer.byteLength(css)));
+    expect(await head.text()).toBe("");
   });
 
   test("every missing address shares one stored page, so typos can't fill the cache", async () => {

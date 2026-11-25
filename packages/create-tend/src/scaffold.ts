@@ -62,6 +62,11 @@ See https://tendcms.dev/online
 
 \`npm run backup\` saves everything in one zip file. Keep it private: it holds everyone's
 sign-in details. In the admin, Settings → Backups does the same.
+
+## If something's wrong
+
+\`npx tendcms doctor\` checks what Tend needs to run here, and says how to fix what's wrong.
+It changes nothing.
 `;
 }
 
@@ -70,8 +75,22 @@ const THEMES_README = `# Themes
 Your site uses Meadow, the theme that comes with Tend. You can choose its colours, fonts and
 logo in the admin, under Design.
 
-Making a theme of your own, from a copy of Meadow, comes in a later version of Tend. Its files
-will go in this folder.
+To make a theme of your own, start from a copy of Meadow, in your site's folder:
+
+\`\`\`
+npx tendcms theme copy meadow my-theme
+\`\`\`
+
+Choose it in the admin, under Design. Then change its files here, in \`my-theme\`, and reload the
+page to see what they do:
+
+- \`theme.json\`: its name, and the choices it adds to the Design screen.
+- \`templates\`: one for each kind of page, in Liquid. They share \`layout.liquid\`.
+- \`partials\`: the pieces templates share, such as the header and footer.
+- \`assets\`: its stylesheet and pictures.
+
+A file you delete from your copy comes from Meadow instead, so keep only what you change. An
+update of Tend never changes your theme.
 `;
 
 /** The files of a new site, by path. `tendcms` is the exact version it depends on. */

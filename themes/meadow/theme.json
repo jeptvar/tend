@@ -8,7 +8,8 @@
       "type": "color",
       "label": "Accent colour",
       "hint": "Links, buttons and other highlights use it.",
-      "default": "#1f6f4a"
+      "default": "#1f6f4a",
+      "contrastAgainst": ["#ffffff", "#f1f2f2"]
     },
     {
       "id": "fonts",

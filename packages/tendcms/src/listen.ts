@@ -1,3 +1,4 @@
+import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createAdaptorServer, type ServerType } from "@hono/node-server";
 import { ConfigError } from "./config.ts";
@@ -7,6 +8,32 @@ type Fetch = Parameters<typeof createAdaptorServer>[0]["fetch"];
 export interface Listening {
   port: number;
   close(): void;
+  /** Takes nothing new, and gives what's being answered this long before ending it. */
+  stop(drainMs: number): Promise<void>;
+}
+
+/** How often connections that have nothing left to say are looked for, while stopping. */
+const IDLE_CHECK_MS = 50;
+
+async function stopServers(servers: ServerType[], drainMs: number): Promise<void> {
+  const open = servers as Server[];
+  const closed = Promise.all(
+    open.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
+  );
+  // One kept open for a next request would hold the server up after its answer is sent.
+  const closeIdle = () => {
+    for (const server of open) server.closeIdleConnections();
+  };
+  closeIdle();
+  const checking = setInterval(closeIdle, IDLE_CHECK_MS);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tooLong = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, drainMs);
+  });
+  await Promise.race([closed, tooLong]);
+  clearTimeout(timer);
+  clearInterval(checking);
+  for (const server of open) server.closeAllConnections();
 }
 
 /** The address to print: one that actually reaches Tend from this computer. */
@@ -88,6 +115,7 @@ export async function listen(fetch: Fetch, ports: number[], hosts: string[]): Pr
         close() {
           for (const server of servers) server.close();
         },
+        stop: (drainMs) => stopServers(servers, drainMs),
       };
     } catch (error) {
       for (const server of servers) server.close();

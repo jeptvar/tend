@@ -8,11 +8,12 @@ import {
   pendingInvites,
   RESET_LINK_MS,
   type Role,
+  revokeResetLinks,
   revokeToken,
   type Token,
 } from "../../db/repo/tokens.ts";
 import { findUserByEmail, type User } from "../../db/repo/users.ts";
-import { users } from "../../db/schema.ts";
+import { sessions, users } from "../../db/schema.ts";
 import { ApiError } from "../errors.ts";
 import { type AdminOptions, parseBody, type Routing, readJson } from "./routing.ts";
 
@@ -35,9 +36,16 @@ const inviteSchema = z.object({
   role: z.enum(ROLES, { error: "Choose what they can do." }),
 });
 
-const roleSchema = z.object({
-  role: z.enum(ROLES, { error: "Choose what they can do." }),
-});
+const changeSchema = z
+  .object({
+    role: z.enum(ROLES, { error: "Choose what they can do." }).optional(),
+    /** Whether they're kept from signing in, for now. */
+    disabled: z.boolean().optional(),
+  })
+  .refine(
+    ({ role, disabled }) => role !== undefined || disabled !== undefined,
+    "Say what to change.",
+  );
 
 function personJson(person: User, actor: Actor) {
   return {
@@ -48,6 +56,7 @@ function personJson(person: User, actor: Actor) {
     isOwner: person.isOwner === 1,
     lastSeenAt: person.lastSeenAt,
     createdAt: person.createdAt,
+    disabled: person.disabledAt !== null,
     canManage: canManagePerson(actor, person),
   };
 }
@@ -139,16 +148,36 @@ export function registerPeopleRoutes(routing: Routing, options: AdminOptions): v
   });
 
   route("patch", "/people/:pid", "people:manage", async (c, user) => {
-    const { role } = parseBody(roleSchema, await readJson(c));
+    const { role, disabled } = parseBody(changeSchema, await readJson(c));
     const person = manageable(user, c.req.param("pid") ?? "");
-    if (!canManagePerson(user, { role, isOwner: false })) throw notYours(role);
-    // Permissions are read from this row at every request, so the change applies at once.
-    const changed = orm
-      .update(users)
-      .set({ role })
-      .where(eq(users.id, person.id))
-      .returning()
-      .get();
+    if (role && !canManagePerson(user, { role, isOwner: false })) throw notYours(role);
+    const changed = orm.transaction(
+      (tx) => {
+        const before = tx.select().from(users).where(eq(users.id, person.id)).get();
+        // Looked at again here: they may have become the Owner meanwhile.
+        if (!before || before.isOwner || !canManagePerson(user, before)) return undefined;
+        const after = tx
+          .update(users)
+          .set({
+            ...(role ? { role } : {}),
+            ...(disabled === undefined
+              ? {}
+              : { disabledAt: disabled ? (before.disabledAt ?? now()) : null }),
+          })
+          .where(eq(users.id, person.id))
+          .returning()
+          .get();
+        // Permissions are read from this row at every request, so a change applies at once.
+        // A session from before it ends all the same (PLAN.md §12), and so does any reset
+        // link: it was made by someone who could act on the role they had.
+        if (after.role !== before.role || after.disabledAt !== null) {
+          tx.delete(sessions).where(eq(sessions.userId, person.id)).run();
+          revokeResetLinks(tx, person.id, now());
+        }
+        return after;
+      },
+      { behavior: "immediate" },
+    );
     if (!changed) throw noOne();
     return c.json(personJson(changed, user));
   });
@@ -157,6 +186,11 @@ export function registerPeopleRoutes(routing: Routing, options: AdminOptions): v
   // lets them choose a new one. It takes the place of any earlier link.
   route("post", "/people/:pid/reset-link", "people:manage", async (c, user) => {
     const person = manageable(user, c.req.param("pid") ?? "");
+    if (person.disabledAt !== null) {
+      throw new ApiError(409, "kept_out", `${person.name} can't sign in for now.`, {
+        fix: "Let them sign in again first.",
+      });
+    }
     const { token, expiresAt } = createResetLink(orm, {
       userId: person.id,
       createdBy: user.id,

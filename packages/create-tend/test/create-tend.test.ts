@@ -74,6 +74,8 @@ describe("what create-tend writes", () => {
     expect(files[".npmrc"]).toBe("save-exact=true\n");
     expect(files[".gitignore"]).toBe("data/\nnode_modules/\n.env\n");
     expect(files["README.md"]).toContain("## Where can this run?");
+    expect(files["README.md"]).toContain("`npx tendcms doctor` checks");
+    expect(files["themes/README.md"]).toContain("npx tendcms theme copy meadow my-theme");
   });
 
   test("never over a file that's there", () => {

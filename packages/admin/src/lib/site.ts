@@ -38,7 +38,15 @@ export interface MenusReply {
 export const MENUS_KEY = ["menus"];
 
 export type ThemeSetting =
-  | { id: string; type: "color"; label: string; hint?: string; default: string }
+  | {
+      id: string;
+      type: "color";
+      label: string;
+      hint?: string;
+      default: string;
+      /** The backgrounds words in this colour go on. */
+      contrastAgainst?: string[];
+    }
   | {
       id: string;
       type: "select";
@@ -70,12 +78,27 @@ export interface Design {
   footerText: string | null;
   social: { network: SocialNetwork; url: string | null }[];
   customCss: string | null;
+  /** The theme of someone's own the site uses. Null is the one Tend comes with. */
+  themeId: string | null;
   theme: Record<string, string>;
+}
+
+export interface ThemeChoice {
+  id: string | null;
+  name: string;
+  settings: ThemeSetting[];
+  problem: string | null;
+  usable: boolean;
 }
 
 export interface DesignReply {
   value: Design;
-  schema: ThemeSetting[];
+  /** Every theme there is, the one Tend comes with first. */
+  themes: [ThemeChoice, ...ThemeChoice[]];
+  /** The theme that was chosen, if it isn't here any more. */
+  missing: string | null;
+  /** Where Tend runs, which decides how a theme of someone's own is started. */
+  platform: "railway" | "render" | "fly" | "docker" | "local";
   updatedAt: number | null;
   undoId: string | null;
   canUndo: boolean;
@@ -84,6 +107,17 @@ export interface DesignReply {
 }
 
 export const DESIGN_KEY = ["design"];
+
+/** The choice made for a theme's setting, or the theme's own if that isn't one it offers. */
+export function themeValue(setting: ThemeSetting, chosen: Record<string, string>): string {
+  const value = chosen[setting.id];
+  if (value === undefined) return setting.default;
+  const offered =
+    setting.type === "color"
+      ? /^#[0-9a-f]{6}$/i.test(value)
+      : setting.options.some((option) => option.value === value);
+  return offered ? value : setting.default;
+}
 
 export interface Stored<T> {
   value: T;
@@ -153,16 +187,6 @@ export function newLinkId(): string {
 // WCAG contrast, the same rule as the site's: text needs 4.5:1.
 const READABLE = 4.5;
 
-/**
- * The light backgrounds Meadow puts words in the accent colour on: the page, and sections with
- * a Soft background, which lay 6% of the text colour (#1d2420) over the page. Buttons need no
- * entry: their words are the page's colour on the accent, the same pair as a link on the page.
- * The site works out its own dark-mode accent. If theme.css changes these, change them here
- * too; test/accent.test.ts reads it and fails until they match.
- */
-export const LIGHT_BACKGROUNDS = { page: "#ffffff", soft: "#f1f2f2" } as const;
-export type LightBackground = keyof typeof LIGHT_BACKGROUNDS;
-
 function channels(hex: string): [number, number, number] | undefined {
   const match = hex.match(/^#([0-9a-f]{6})$/i)?.[1];
   if (!match) return undefined;
@@ -192,44 +216,40 @@ export function contrast(a: string, b: string): number {
   return (light + 0.05) / (dark + 0.05);
 }
 
-/**
- * The first light background words in this colour would be hard to read on, or null if they
- * read on all of them. A colour that only just reads on white is under 4.5:1 on the grey of a
- * Soft section, so white alone isn't enough.
- */
-export function hardToReadOn(color: string): LightBackground | null {
-  for (const [name, background] of Object.entries(LIGHT_BACKGROUNDS)) {
-    if (contrast(color, background) < READABLE) return name as LightBackground;
-  }
-  return null;
+/** The first of these backgrounds words in this colour would be hard to read on, if any. */
+export function hardToReadOn(color: string, backgrounds: readonly string[]): string | null {
+  return backgrounds.find((background) => contrast(color, background) < READABLE) ?? null;
 }
 
 /**
- * The colour darkened just enough to read on every light background, for the "Use … instead?"
- * suggestion. One that reads on all of them already comes back as it was.
+ * The colour darkened or lightened just enough to read on every one of these backgrounds, for
+ * the "Use … instead?" suggestion. One that reads on all of them already comes back as it was.
  */
-export function readableOnLight(color: string): string {
+export function readableOn(color: string, backgrounds: readonly string[]): string {
   const start = channels(color);
-  if (!start || hardToReadOn(color) === null) return color.toLowerCase();
+  if (!start || hardToReadOn(color, backgrounds) === null) return color.toLowerCase();
+  // Towards whichever end reads on them: black on light ones, white on dark ones.
+  const [end, hex] =
+    hardToReadOn("#000000", backgrounds) === null ? [0, "#000000"] : [255, "#ffffff"];
   for (let step = 1; step <= 20; step++) {
-    const mix = 1 - step / 20;
+    const mix = step / 20;
     const candidate = `#${start
       .map((value) =>
-        Math.round(value * mix)
+        Math.round(value * (1 - mix) + end * mix)
           .toString(16)
           .padStart(2, "0"),
       )
       .join("")}`;
-    if (hardToReadOn(candidate) === null) return candidate;
+    if (hardToReadOn(candidate, backgrounds) === null) return candidate;
   }
-  return "#000000";
+  return hex;
 }
 
 /** Settings → Backups: the copies Tend keeps, the disk, and the last download. */
 export interface BackupsInfo {
   snapshots: {
     id: string;
-    kind: "daily" | "update" | "restore";
+    kind: "daily" | "update" | "restore" | "manual";
     takenAt: number;
     bytes: number;
   }[];
@@ -242,3 +262,8 @@ export const BACKUPS_KEY = ["backups"];
 
 /** Where the browser downloads the whole site from. Only the Owner may. */
 export const BACKUP_DOWNLOAD_URL = "/api/admin/backups/download";
+
+/** Where one of the copies kept on the server is downloaded from. Only the Owner may. */
+export function copyDownloadUrl(id: string): string {
+  return `/api/admin/backups/${encodeURIComponent(id)}/download`;
+}

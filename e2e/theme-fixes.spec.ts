@@ -726,3 +726,81 @@ test.describe("business details", () => {
     ).toEqual(["H2", "H2", "H2"]);
   });
 });
+
+test.describe("the second layout of a section", () => {
+  test("a Big intro can go right across the page, with its words as wide as the rest", async ({
+    page,
+    signedIn,
+  }) => {
+    for (const tone of ["none", "muted", "accent"]) {
+      const url = await publishPage(page, signedIn, `Wide ${tone}`, [
+        section("intro", tone, [heading(2, "Fresh bread"), paragraph(text("Every day"))], "2"),
+        paragraph(text("The rest of the page")),
+      ]);
+      for (const width of [320, 800, 1400]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(`${signedIn.base}${url}`);
+        const shown = await page.evaluate(() => {
+          const edges = (selector: string) => {
+            const { left, right } = (
+              document.querySelector(selector) as Element
+            ).getBoundingClientRect();
+            return { left, right };
+          };
+          return {
+            intro: edges(".t-intro"),
+            words: edges(".t-intro h2"),
+            rest: edges(".t-body > p"),
+            window: innerWidth,
+            scrolls: document.documentElement.scrollWidth,
+          };
+        });
+        const label = `${tone} at ${width} px`;
+        expect(shown.intro.left, label).toBeLessThanOrEqual(0.5);
+        expect(shown.intro.right, label).toBeGreaterThanOrEqual(shown.window - 0.5);
+        expect(shown.words.left, label).toBeCloseTo(shown.rest.left, 0);
+        expect(shown.scrolls, `${label}: sideways scrolling`).toBeLessThanOrEqual(shown.window);
+      }
+    }
+  });
+
+  test("Contact & hours can have the details beside the words, where there's room", async ({
+    page,
+    signedIn,
+  }) => {
+    await setBusinessDetails(page, signedIn);
+    const url = await publishPage(page, signedIn, "Beside", [
+      section(
+        "contact",
+        "muted",
+        [
+          heading(2, "Visit us"),
+          paragraph(text("We're on the corner, across from the park.")),
+          paragraph(text("Come early for the rye.")),
+        ],
+        "2",
+      ),
+    ]);
+    const boxes = () =>
+      page.evaluate(() =>
+        [...(document.querySelector(".t-contact") as Element).children].map((child) => {
+          const { left, top, right, bottom } = child.getBoundingClientRect();
+          return { name: child.className || child.tagName, left, top, right, bottom };
+        }),
+      );
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto(`${signedIn.base}${url}`);
+    const wide = await boxes();
+    const details = wide.find(({ name }) => name === "t-business") as Box;
+    for (const box of wide) {
+      if (box.name === "t-business") continue;
+      expect(box.right, box.name).toBeLessThanOrEqual(details.left);
+    }
+    expect(details.top).toBeCloseTo((wide[0] as Box).top, -1);
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    const narrow = await boxes();
+    const below = narrow.find(({ name }) => name === "t-business") as Box;
+    expect(below.top).toBeGreaterThanOrEqual((narrow[2] as Box).bottom);
+  });
+});

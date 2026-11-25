@@ -4,10 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="{{ 'theme.css' | asset_url }}">
-  {%- if design.accent_dark %}
-  <style>:root { --tend-accent: {{ design.accent }}; } @media (prefers-color-scheme: dark) { :root { --tend-accent: {{ design.accent_dark }}; } }</style>
-  {%- endif %}
-  {{ tend.head | raw }}
+  {% seo %}
 </head>
 <body>
   <main class="t-coming-soon">
@@ -15,7 +12,7 @@
       {% if site.logo %}<p class="t-coming-soon-logo">{% image site.logo, size: "logo", alt: site.name %}</p>{% endif %}
       <h1>{{ site.name }}</h1>
       {% if site.tagline != blank %}<p class="t-lead">{{ site.tagline }}</p>{% endif %}
-      <p>This site is coming soon.</p>
+      <p>{{ "coming_soon" | t }}</p>
       {% if site.business.has_any %}{% render "business", business: site.business, level: 2 %}{% endif %}
     </div>
   </main>

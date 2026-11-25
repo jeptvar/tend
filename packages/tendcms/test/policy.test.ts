@@ -24,10 +24,18 @@ const ALL_ACTIONS: Action[] = [
   "menu:manage",
   "design:manage",
   "settings:manage",
+  "people:manage",
+  "ownership:transfer",
   "backup:download",
 ];
-const ADMIN_ONLY: Action[] = ["entry:delete", "media:delete", "design:manage", "settings:manage"];
-const OWNER_ONLY: Action[] = ["backup:download"];
+const ADMIN_ONLY: Action[] = [
+  "entry:delete",
+  "media:delete",
+  "design:manage",
+  "settings:manage",
+  "people:manage",
+];
+const OWNER_ONLY: Action[] = ["backup:download", "ownership:transfer"];
 
 function actor(role: Actor["role"], id = "me"): Actor {
   return { id, role, isOwner: 0 };
@@ -49,7 +57,7 @@ describe("can", () => {
     }
   });
 
-  test("only the Owner can download a backup: it holds everyone's sign-in details", () => {
+  test("only the Owner can download a backup, or hand the site over", () => {
     for (const action of OWNER_ONLY) {
       expect(can({ id: "me", role: "admin", isOwner: 1 }, action)).toBe(true);
       expect(can(actor("admin"), action)).toBe(false);
@@ -58,7 +66,7 @@ describe("can", () => {
     }
   });
 
-  test("only an admin can delete forever, or change the design and settings", () => {
+  test("only an admin can delete forever, or change people, the design and settings", () => {
     for (const action of ADMIN_ONLY) {
       expect(can(actor("admin"), action, { authorId: "me" })).toBe(true);
       expect(can(actor("editor"), action, { authorId: "me" })).toBe(false);
@@ -116,6 +124,7 @@ describe("can", () => {
  */
 type Who = "anyone" | "own" | "editors" | "admins" | "owner";
 const WHO: Record<string, Who> = {
+  "GET /overview": "anyone",
   "GET /link-targets": "anyone",
   "GET /entries": "anyone",
   "POST /entries": "anyone",
@@ -159,7 +168,10 @@ const WHO: Record<string, Who> = {
   "POST /redirects": "admins",
   "DELETE /redirects": "admins",
   "GET /backups": "admins",
+  "POST /backups": "admins",
   "GET /backups/download": "owner",
+  "GET /backups/:bid/download": "owner",
+  "GET /health": "admins",
   "GET /people": "admins",
   "POST /people/invites": "admins",
   "DELETE /people/invites/:iid": "admins",
@@ -195,7 +207,8 @@ describe("every admin route", () => {
   const options = {
     orm: undefined as never,
     store: undefined as never,
-    secureCookies: false,
+    address: undefined as never,
+    themes: undefined as never,
     onSiteChanged: () => {},
   };
   const { app, policies } = createAdminRoutes(options);
@@ -362,6 +375,113 @@ describe("every admin route", () => {
       }
     },
   );
+});
+
+/**
+ * Every route about a person or an invite, against each kind of person it could be about
+ * (PLAN.md §12): the Owner can act on anyone but the Owner, and an Admin only on Editors and
+ * Writers. Taken from the routes themselves, so a new one is checked too.
+ */
+describe("every route about a person", () => {
+  const { policies } = createAdminRoutes({
+    orm: undefined as never,
+    store: undefined as never,
+    address: undefined as never,
+    themes: undefined as never,
+    onSiteChanged: () => {},
+  });
+  const about = policies.filter(({ path }) => /:pid|:iid/.test(path));
+
+  function mayActOn(actor: Role, subject: Role): boolean {
+    if (subject === "owner" || actor === "editor" || actor === "writer") return false;
+    return actor === "owner" || subject === "editor" || subject === "writer";
+  }
+
+  test("is here", () => {
+    expect(about.map(key).sort()).toEqual([
+      "DELETE /people/:pid",
+      "DELETE /people/invites/:iid",
+      "PATCH /people/:pid",
+      "POST /people/:pid/reset-link",
+    ]);
+  });
+
+  test.each(about.map((policy) => [key(policy), policy] as const))(
+    "%s lets each role act only on the people it may",
+    async (_name, policy) => {
+      const made = await makeApp();
+      const owner = await setUp(made);
+      const ownerId = (await (await owner.get("/api/auth/me")).json()).user.id as string;
+      const clients: Record<Role, ReturnType<typeof browser>> = {
+        writer: (await signedInAs(made, "writer")).client,
+        editor: (await signedInAs(made, "editor")).client,
+        admin: (await signedInAs(made, "admin")).client,
+        owner,
+      };
+      let count = 0;
+
+      /** A new person, or an invite for one, so nobody's turn depends on someone else's. */
+      function subjectOf(role: Role): string {
+        if (role === "owner") return ownerId;
+        const id = `subject-${count++}`;
+        if (policy.path.includes(":iid")) {
+          made.db
+            .prepare(
+              "INSERT INTO tokens (id, kind, email, role, created_at, expires_at) VALUES (?, 'invite', ?, ?, ?, ?)",
+            )
+            .run(id, `${id}@example.com`, role, made.clock.time, made.clock.time + 1_000_000);
+        } else {
+          made.db
+            .prepare(
+              "INSERT INTO users (id, email, name, role, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .run(id, `${id}@example.com`, "Someone", role, "hash", made.clock.time);
+        }
+        return id;
+      }
+
+      for (const subject of ROLES) {
+        // Nobody can be invited as the Owner.
+        if (subject === "owner" && policy.path.includes(":iid")) continue;
+        for (const actor of ROLES) {
+          const id = subjectOf(subject);
+          const url = `/api/admin${policy.path.replace(":pid", id).replace(":iid", id)}`;
+          const client = clients[actor];
+          const { status } =
+            policy.method === "DELETE"
+              ? await client.delete(url)
+              : policy.method === "PATCH"
+                ? await client.patch(url, { disabled: true })
+                : await client.post(url);
+          const label = `${actor} on ${subject}`;
+          if (mayActOn(actor, subject)) expect([200, 201, 204], label).toContain(status);
+          else expect(status, label).toBe(403);
+        }
+      }
+      // And nobody was made an Admin, or anything else, by someone who may not.
+      expect((await owner.get("/api/auth/me")).status).toBe(200);
+    },
+  );
+
+  test("only the Owner can make someone an Admin, by role or by invite", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const admin = (await signedInAs(made, "admin")).client;
+    const { id } = await signedInAs(made, "editor");
+    for (const [client, role, allowed] of [
+      [admin, "admin", false],
+      [admin, "writer", true],
+      [owner, "admin", true],
+    ] as const) {
+      const changed = await client.patch(`/api/admin/people/${id}`, { role });
+      expect(changed.status, role).toBe(allowed ? 200 : 403);
+      const invited = await client.post("/api/admin/people/invites", {
+        email: `${role}-${allowed}@example.com`,
+        role,
+      });
+      expect(invited.status, role).toBe(allowed ? 201 : 403);
+    }
+  });
 });
 
 describe("a writer in practice", () => {

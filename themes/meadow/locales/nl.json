@@ -1,0 +1,23 @@
+{
+  "skip": "Naar de inhoud",
+  "main_menu": "Hoofdmenu",
+  "footer_menu": "Voettekst",
+  "elsewhere": "Elders",
+  "tags": "Labels",
+  "blog": "Blog",
+  "no_posts": "Er zijn nog geen berichten.",
+  "no_posts_tagged": "Er zijn nog geen berichten met dit label.",
+  "more_posts": "Meer berichten",
+  "newer": "Nieuwere berichten",
+  "older": "Oudere berichten",
+  "not_found": "Pagina niet gevonden",
+  "not_found_body": "Op dit adres staat niets. Misschien is de pagina verplaatst, of zit er een typefout in de link.",
+  "go_home": "Naar de homepage",
+  "coming_soon": "Deze website komt binnenkort.",
+  "address": "Adres",
+  "directions": "Routebeschrijving",
+  "contact": "Contact",
+  "call": "Bel {phone}",
+  "hours": "Openingstijden",
+  "closed": "Gesloten"
+}
