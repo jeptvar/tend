@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import {
@@ -7,6 +7,9 @@ import {
   secondaryButtonClass,
   textLinkClass,
 } from "../components/AuthLayout.tsx";
+import { optionClass, radioClass } from "../components/fields.tsx";
+import { Icon } from "../components/icons.tsx";
+import { LivePreview } from "../components/LivePreview.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
@@ -14,9 +17,11 @@ import { Waiting } from "../components/Waiting.tsx";
 import { PreviewDialog } from "../editor/PreviewDialog.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { useMediaItems } from "../lib/media.ts";
+import { useMediaQuery } from "../lib/media-query.ts";
 import type { Me } from "../lib/queries.ts";
 import { settleScreenDraft, useScreenDraft } from "../lib/screen-drafts.ts";
 import {
+  ACCENTS,
   DESIGN_KEY,
   type Design,
   type DesignReply,
@@ -28,10 +33,13 @@ import {
   type ThemeSetting,
   themeValue,
 } from "../lib/site.ts";
+import { SITE_STYLE_KEY, SiteStyle } from "../lib/site-style.tsx";
 
+/** Where there's room for the site beside the form. */
+const ROOM_BESIDE = "(min-width: 80rem)";
 const smallButtonClass = `${secondaryButtonClass} aria-disabled:opacity-60`;
 const inputClass =
-  "min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-lg text-[#1d2420] placeholder:text-[#5b655f] focus-visible:outline-3 focus-visible:outline-brand";
+  "min-h-11 w-full rounded-xl border border-edge bg-field px-3 text-lg placeholder:text-muted focus-visible:outline-3 focus-visible:outline-brand";
 const SOCIAL_NAMES: Record<SocialNetwork, string> = {
   instagram: "Instagram",
   facebook: "Facebook",
@@ -46,6 +54,9 @@ const SOCIAL_NAMES: Record<SocialNetwork, string> = {
   whatsapp: "WhatsApp",
   other: "Other",
 };
+const detailsClass = "group border-y border-line";
+const summaryClass =
+  "flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 font-medium focus-visible:outline-3 focus-visible:outline-brand [&::-webkit-details-marker]:hidden";
 /** How a theme of one's own is started, where there's a terminal to do it in. */
 const COPY_COMMANDS: Partial<Record<DesignReply["platform"], string>> = {
   local: "npx tendcms theme copy meadow my-theme",
@@ -62,12 +73,15 @@ function PictureChoice({
   label,
   hint,
   empty,
+  instead,
   value,
   onChange,
 }: {
   label: string;
   hint: string;
   empty: string;
+  /** What shows where the picture would be, until there is one. */
+  instead?: ReactNode;
   value: string | null;
   onChange: (id: string | null) => void;
 }) {
@@ -76,34 +90,43 @@ function PictureChoice({
   const { found, isPending, isError } = useMediaItems(value ? [value] : []);
   const item = value ? found.get(value) : undefined;
   return (
-    <fieldset className="grid gap-2">
+    <fieldset>
       <legend className="mb-2 font-medium">{label}</legend>
-      <p className="text-sm text-muted">{hint}</p>
-      {value === null ? (
-        <p className="text-sm">{empty}</p>
-      ) : item ? (
-        <img
-          src={item.previewUrl ?? item.thumbUrl ?? undefined}
-          alt={item.alt ?? ""}
-          className="max-h-24 w-fit max-w-full rounded border border-ink/10 bg-white object-contain p-2"
-        />
-      ) : (
-        <p className="text-sm text-muted">
-          <FormattedMessage
-            id={isPending ? "common.loading" : isError ? "image.cantLoad" : "design.pictureGone"}
-          />
-        </p>
-      )}
-      <div className="flex flex-wrap gap-3">
-        <button type="button" onClick={() => setPicking(true)} className={smallButtonClass}>
-          <FormattedMessage id={value ? "design.change" : "design.choose"} />
-        </button>
-        {value && (
-          <button type="button" onClick={() => onChange(null)} className={smallButtonClass}>
-            <FormattedMessage id="design.remove" />
+      <div className="dashed flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
+        <div className="min-w-0 flex-1 basis-32">
+          {value === null ? (
+            <>
+              {instead}
+              <p className="text-sm">{empty}</p>
+            </>
+          ) : item ? (
+            <img
+              src={item.previewUrl ?? item.thumbUrl ?? undefined}
+              alt={item.alt ?? ""}
+              className="max-h-20 w-fit max-w-full rounded-lg border border-line bg-white object-contain p-2"
+            />
+          ) : (
+            <p className="text-sm text-muted">
+              <FormattedMessage
+                id={
+                  isPending ? "common.loading" : isError ? "image.cantLoad" : "design.pictureGone"
+                }
+              />
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setPicking(true)} className={smallButtonClass}>
+            <FormattedMessage id={value ? "design.change" : "design.choose"} />
           </button>
-        )}
+          {value && (
+            <button type="button" onClick={() => onChange(null)} className={smallButtonClass}>
+              <FormattedMessage id="design.remove" />
+            </button>
+          )}
+        </div>
       </div>
+      <p className="mt-2 text-sm text-muted">{hint}</p>
       {picking && (
         <MediaPicker
           heading={intl.formatMessage({ id: "design.pickHeading" }, { what: label })}
@@ -150,6 +173,33 @@ function ColorChoice({
           {setting.hint}
         </p>
       )}
+      {setting.id === "accent" && (
+        <fieldset className="flex flex-wrap gap-1">
+          <legend className="sr-only">
+            <FormattedMessage id="design.colors" />
+          </legend>
+          {ACCENTS.map((accent) => (
+            <button
+              key={accent.id}
+              type="button"
+              aria-label={intl.formatMessage({ id: `design.color.${accent.id}` })}
+              title={intl.formatMessage({ id: `design.color.${accent.id}` })}
+              aria-pressed={value === accent.value}
+              onClick={() => {
+                setTyped(accent.value);
+                onChange(accent.value);
+              }}
+              className="grid size-11 place-items-center rounded-full border-2 border-transparent focus-visible:outline-3 focus-visible:outline-brand aria-pressed:border-ink"
+            >
+              <span
+                aria-hidden="true"
+                className="size-8.5 rounded-full"
+                style={{ background: accent.value }}
+              />
+            </button>
+          ))}
+        </fieldset>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <input
           type="color"
@@ -159,7 +209,7 @@ function ColorChoice({
             setTyped(event.target.value);
             onChange(event.target.value);
           }}
-          className="h-11 w-16 cursor-pointer rounded border border-muted bg-white p-1"
+          className="h-11 w-14 cursor-pointer rounded-xl border border-edge bg-field p-1.5 focus-visible:outline-3 focus-visible:outline-brand"
         />
         <input
           id={inputId}
@@ -173,7 +223,7 @@ function ColorChoice({
             const full = next.startsWith("#") ? next : `#${next}`;
             if (/^#[0-9a-f]{6}$/i.test(full)) onChange(full.toLowerCase());
           }}
-          className={`${inputClass.replace("w-full", "w-36")} font-mono`}
+          className={`${inputClass.replace("w-full", "w-32")} font-mono text-base`}
         />
         <button
           type="button"
@@ -189,11 +239,11 @@ function ColorChoice({
       {/* Always mounted, so the warning is announced as soon as it appears. */}
       <div role="status" className="empty:sr-only">
         {hardToRead && (
-          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-danger p-3">
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-wait-line bg-wait-soft p-4">
             <span className="flex items-center gap-2">
               <span
                 aria-hidden="true"
-                className="inline-block h-6 w-6 rounded border border-ink/20"
+                className="inline-block size-6 shrink-0 rounded-full border border-ink/20"
                 style={{ background: suggestion }}
               />
               <FormattedMessage
@@ -218,38 +268,111 @@ function ColorChoice({
   );
 }
 
+/** Over all of what it's for, which shows whether it's chosen. */
+const hiddenRadioClass = "absolute inset-0 size-full cursor-pointer opacity-0";
+
+/** How a header is laid out, drawn small. */
+function HeaderPicture({ centered }: { centered: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 120 44" className="mb-1 h-11 w-full max-w-36">
+      <rect
+        x={centered ? 42 : 4}
+        y={centered ? 8 : 18}
+        width="36"
+        height="8"
+        rx="3"
+        className="fill-ink"
+      />
+      <rect
+        x={centered ? 30 : 64}
+        y={centered ? 26 : 19.5}
+        width={centered ? 60 : 52}
+        height="5"
+        rx="2.5"
+        className="fill-edge"
+      />
+    </svg>
+  );
+}
+
+/** A choice as a picture of what it does, for the ones Tend knows. */
+function pictureOf(
+  settingId: string,
+  value: string,
+  fonts: Record<string, string> | undefined,
+): ReactNode {
+  if (settingId === "fonts" && fonts) {
+    return (
+      <span
+        aria-hidden="true"
+        data-font-choice={value}
+        className="tend-font text-3xl leading-tight"
+      >
+        Aa
+      </span>
+    );
+  }
+  if (settingId === "header" && (value === "simple" || value === "centered")) {
+    return <HeaderPicture centered={value === "centered"} />;
+  }
+  return null;
+}
+
+const FONT_VALUES = ["font-body", "font-heading", "heading-weight", "heading-tracking"]
+  .map((name) => `--tend-${name}: initial;`)
+  .join(" ");
+
+/** Each choice of fonts, only where it's shown, so it's the same as it'd be on the site. */
+function FontChoicesStyle({ fonts }: { fonts: Record<string, string> }) {
+  const css = Object.entries(fonts).map(([value, own]) =>
+    own.replaceAll(":root", `[data-font-choice="${CSS.escape(value)}"]`),
+  );
+  // Each starts from nothing, rather than from the fonts the site has now.
+  return <style>{`[data-font-choice] { ${FONT_VALUES} }\n${css.join("\n")}`}</style>;
+}
+
 function SelectChoice({
   setting,
   value,
+  fonts,
   onChange,
 }: {
   setting: Extract<ThemeSetting, { type: "select" }>;
   value: string;
+  /** What each choice of fonts is, once that's here. */
+  fonts: Record<string, string> | undefined;
   onChange: (value: string) => void;
 }) {
   const name = useId();
+  const pictures = setting.options.map((option) => pictureOf(setting.id, option.value, fonts));
+  // Side by side if each is drawn, and otherwise in a list, each with what it means.
+  const drawn = pictures.every(Boolean);
   return (
-    <fieldset className="grid gap-2">
+    <fieldset>
       <legend className="mb-2 font-medium">{setting.label}</legend>
-      {setting.options.map((option) => (
-        <label
-          key={option.value}
-          className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border p-3 ${value === option.value ? "border-brand" : "border-muted"}`}
-        >
-          <input
-            type="radio"
-            name={name}
-            value={option.value}
-            checked={value === option.value}
-            onChange={() => onChange(option.value)}
-            className="mt-1 h-5 w-5 accent-brand"
-          />
-          <span className="grid">
-            <span className="font-medium">{option.label}</span>
-            {option.hint && <span className="text-sm text-muted">{option.hint}</span>}
-          </span>
-        </label>
-      ))}
+      <div
+        className={`grid gap-2.5 ${drawn ? "grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))]" : ""}`}
+      >
+        {setting.options.map((option, index) => (
+          <label key={option.value} className={optionClass}>
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              checked={value === option.value}
+              onChange={() => onChange(option.value)}
+              className={drawn ? hiddenRadioClass : radioClass}
+            />
+            <span className="grid min-w-0 gap-1">
+              {drawn && pictures[index]}
+              <span className="font-semibold">{option.label}</span>
+              {option.hint && (
+                <span className={drawn ? "sr-only" : "text-sm text-muted"}>{option.hint}</span>
+              )}
+            </span>
+          </label>
+        ))}
+      </div>
     </fieldset>
   );
 }
@@ -272,17 +395,14 @@ function ThemePicker({
         <FormattedMessage id="design.theme" />
       </legend>
       {themes.map((theme) => (
-        <label
-          key={theme.id ?? ""}
-          className={`flex min-h-11 items-start gap-3 rounded-lg border p-3 [overflow-wrap:anywhere] ${theme.usable ? "cursor-pointer" : ""} ${value === theme.id ? "border-brand" : "border-muted"}`}
-        >
+        <label key={theme.id ?? ""} className={optionClass}>
           <input
             type="radio"
             name={name}
             checked={value === theme.id}
             disabled={!theme.usable}
             onChange={() => onChange(theme.id)}
-            className="mt-1 h-5 w-5 shrink-0 accent-brand"
+            className={radioClass}
           />
           <span className="grid">
             <span className="font-medium">{theme.name}</span>
@@ -308,7 +428,19 @@ function ThemePicker({
   );
 }
 
-function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
+function DesignForm({
+  me,
+  reply,
+  beside,
+  onDesign,
+}: {
+  me: Me;
+  reply: DesignReply;
+  /** Whether the site is beside it, so it needn't be asked for. */
+  beside: boolean;
+  /** The design as it is now, saved or not, for showing beside it. */
+  onDesign: (design: Design) => void;
+}) {
   const intl = useIntl();
   const queryClient = useQueryClient();
   // Unsaved changes wait here if someone goes to another screen, and come back with them.
@@ -323,6 +455,19 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
   const footerId = useId();
   const cssId = useId();
   const cssHintId = useId();
+  const hasFonts = theme.settings.some(({ id, type }) => id === "fonts" && type === "select");
+  const fonts = useQuery({
+    queryKey: ["design-fonts", theme.id],
+    queryFn: () =>
+      api<{ fonts: Record<string, string> }>(
+        `/admin/design/fonts${theme.id ? `?theme=${encodeURIComponent(theme.id)}` : ""}`,
+      ),
+    enabled: hasFonts,
+    // The choices have their names without it.
+    retry: false,
+  }).data?.fonts;
+
+  useEffect(() => onDesign(design), [design, onDesign]);
 
   function change(patch: Partial<Design>) {
     draft.set((current) => ({ ...current, ...patch }));
@@ -339,6 +484,7 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
       // Anything changed while this was on its way stays, still to be saved.
       draft.saved(sent);
       settleScreenDraft("design", sent);
+      void queryClient.invalidateQueries({ queryKey: SITE_STYLE_KEY });
       if (!answer.saved) {
         showToast({ message: intl.formatMessage({ id: "settings.nothingChanged" }) });
         return;
@@ -354,6 +500,7 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
             })
               .then((undone) => {
                 queryClient.setQueryData(DESIGN_KEY, undone);
+                void queryClient.invalidateQueries({ queryKey: SITE_STYLE_KEY });
                 showToast({ message: intl.formatMessage({ id: "design.undone" }) });
               })
               .catch((error: unknown) =>
@@ -382,9 +529,14 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
   const error = save.error ?? preview.error;
 
   return (
-    <form onSubmit={onSubmit} className="mt-6 grid gap-8">
+    <form
+      onSubmit={onSubmit}
+      className="mt-6 grid grid-cols-1 gap-8 max-xl:card max-xl:px-5 max-xl:pt-6 sm:max-xl:px-7"
+    >
+      <SiteStyle />
+      {fonts && <FontChoicesStyle fonts={fonts} />}
       {reply.missing !== null && (
-        <p className="rounded-lg border border-danger p-3 [overflow-wrap:anywhere]">
+        <p className="rounded-2xl border border-danger bg-danger-soft p-4 [overflow-wrap:anywhere]">
           <FormattedMessage
             id="design.themeMissing"
             values={{ name: reply.missing, bundled: bundled.name }}
@@ -402,6 +554,11 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
         label={intl.formatMessage({ id: "design.logo" })}
         hint={intl.formatMessage({ id: "design.logoHint" })}
         empty={intl.formatMessage({ id: "design.noLogo" })}
+        instead={
+          <p className="tend-font mb-1 text-2xl leading-tight [overflow-wrap:anywhere]">
+            {me.site.name}
+          </p>
+        }
         value={design.logoId}
         onChange={(logoId) => change({ logoId })}
       />
@@ -425,6 +582,7 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
             key={`${theme.id}:${setting.id}`}
             setting={setting}
             value={themeValue(setting, design.theme)}
+            fonts={fonts}
             onChange={(value) => setTheme(setting.id, value)}
           />
         ),
@@ -462,7 +620,7 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
                   social[index] = { ...link, network: event.target.value as SocialNetwork };
                   change({ social });
                 }}
-                className="min-h-11 rounded-lg border border-muted bg-white px-2 text-[#1d2420] focus-visible:outline-3 focus-visible:outline-brand"
+                className="min-h-11 rounded-xl border border-edge bg-field px-2 focus-visible:outline-3 focus-visible:outline-brand"
               >
                 {SOCIAL_NETWORKS.map((network) => (
                   <option key={network} value={network}>
@@ -512,11 +670,12 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
           </div>
         )}
       </fieldset>
-      <details className="rounded-lg border border-muted">
-        <summary className="flex min-h-11 cursor-pointer items-center px-3 font-medium focus-visible:outline-3 focus-visible:outline-brand">
+      <details className={detailsClass}>
+        <summary className={summaryClass}>
           <FormattedMessage id="design.advanced" />
+          <Icon name="right" className="size-5 text-muted group-open:rotate-90" />
         </summary>
-        <div className="grid gap-2 border-t border-muted p-3">
+        <div className="grid gap-2 pb-5">
           <label htmlFor={cssId} className="font-medium">
             <FormattedMessage id="design.css" />
           </label>
@@ -535,15 +694,16 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
         </div>
       </details>
       {copyCommand && (
-        <details className="rounded-lg border border-muted">
-          <summary className="flex min-h-11 cursor-pointer items-center px-3 font-medium focus-visible:outline-3 focus-visible:outline-brand">
+        <details className={`${detailsClass} -mt-8`}>
+          <summary className={summaryClass}>
             <FormattedMessage id="design.ownTheme" />
+            <Icon name="right" className="size-5 text-muted group-open:rotate-90" />
           </summary>
-          <div className="grid gap-2 border-t border-muted p-3">
+          <div className="grid gap-2 pb-5">
             <p>
               <FormattedMessage id={`design.ownThemeHint.${reply.platform}`} />
             </p>
-            <pre className="rounded-lg border border-muted/50 bg-white/60 p-3 text-sm break-all whitespace-pre-wrap dark:bg-white/5">
+            <pre className="rounded-xl bg-sunken p-3 text-sm break-all whitespace-pre-wrap">
               <code>{copyCommand}</code>
             </pre>
             <p className="text-sm text-muted">
@@ -556,24 +716,27 @@ function DesignForm({ me, reply }: { me: Me; reply: DesignReply }) {
       <p role="alert" className="font-medium text-danger empty:sr-only">
         {error && <Problem error={error} />}
       </p>
-      <div className="sticky bottom-(--tend-bar) -mx-4 flex flex-wrap items-center gap-3 border-t border-ink/10 bg-paper px-4 py-3">
+      <div className="sticky bottom-(--tend-bar) z-10 -mx-5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line bg-surface px-5 py-4 max-xl:rounded-b-[1.125rem] sm:-mx-7 sm:px-7">
         <button
           type="submit"
           aria-disabled={!changed || save.isPending}
-          className={`${primaryButtonClass} aria-disabled:opacity-60`}
+          className={`${primaryButtonClass} aria-disabled:opacity-60 ${beside ? "flex-1" : ""}`}
         >
           <FormattedMessage id={save.isPending ? "design.saving" : "design.save"} />
         </button>
-        <button
-          type="button"
-          aria-disabled={preview.isPending}
-          onClick={() => {
-            if (!preview.isPending) preview.mutate();
-          }}
-          className={smallButtonClass}
-        >
-          <FormattedMessage id="design.preview" />
-        </button>
+        {!beside && (
+          <button
+            type="button"
+            aria-disabled={preview.isPending}
+            onClick={() => {
+              if (!preview.isPending) preview.mutate();
+            }}
+            className={smallButtonClass}
+          >
+            <Icon name="eye" />
+            <FormattedMessage id="design.preview" />
+          </button>
+        )}
         {changed && (
           <span className="text-sm text-muted">
             <FormattedMessage id="design.unsaved" />
@@ -594,12 +757,21 @@ function DesignScreen({ me }: { me: Me }) {
     // What's on screen is someone's work in progress, so it isn't swapped under them.
     refetchOnWindowFocus: false,
   });
+  const room = useMediaQuery(ROOM_BESIDE);
+  const [now, setNow] = useState<Design | null>(null);
   return (
-    <AdminLayout me={me} screen="design">
-      <p className="mt-2 text-muted">
-        <FormattedMessage id="design.hint" />
-      </p>
-      {design.data ? <DesignForm me={me} reply={design.data} /> : <Waiting query={design} />}
+    <AdminLayout
+      me={me}
+      screen="design"
+      intro={<FormattedMessage id="design.hint" />}
+      // Its place is kept from the start, so nothing moves once there's something in it.
+      beside={room && (now ? <LivePreview design={now} name={me.site.name} /> : <span />)}
+    >
+      {design.data ? (
+        <DesignForm me={me} reply={design.data} beside={room} onDesign={setNow} />
+      ) : (
+        <Waiting query={design} />
+      )}
     </AdminLayout>
   );
 }

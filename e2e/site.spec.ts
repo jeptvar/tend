@@ -4,6 +4,7 @@ import {
   expect,
   holdRequests,
   OWNER,
+  openSettings,
   photo,
   readEntry,
   signIn,
@@ -46,7 +47,7 @@ test.describe("pictures in the editor (J2)", () => {
     await body(page).click();
     await page.keyboard.press("ControlOrMeta+End");
 
-    await page.getByRole("button", { name: "Insert +" }).click();
+    await page.getByRole("button", { name: "Insert", exact: true }).click();
     await page.getByRole("menuitem", { name: "Image" }).click();
     const picker = page.getByRole("dialog", { name: "Add an image" });
     await expect(picker).toBeVisible();
@@ -147,7 +148,7 @@ test.describe("pictures in the editor (J2)", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "Phone photo", body: "Words stay." });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await page.getByRole("button", { name: "Insert +" }).click();
+    await page.getByRole("button", { name: "Insert", exact: true }).click();
     await page.getByRole("menuitem", { name: "Image" }).click();
     const heic = Buffer.concat([
       Buffer.from([0, 0, 0, 24]),
@@ -175,7 +176,7 @@ test.describe("pictures in the editor (J2)", () => {
     });
     const post = await createEntry(page, signedIn, { title: "Grand opening", body: "We're open." });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     await expect(page.getByText("Automatic: the first image")).toBeVisible();
     await page.getByRole("button", { name: "Choose image" }).click();
     const picker = page.getByRole("dialog", { name: "Choose the featured image" });
@@ -356,15 +357,45 @@ test.describe("design (J3)", () => {
     await expect(accent).toHaveValue("#806600");
     await page.getByRole("radio", { name: /Classic/ }).check();
 
+    // The site is beside the form, with what isn't saved yet: its styles load there too.
+    const beside = page.getByRole("region", { name: "Preview" });
+    const chosen = () =>
+      beside
+        .frameLocator("iframe")
+        .last()
+        .locator("html")
+        .evaluate((element) => [
+          getComputedStyle(element).getPropertyValue("--tend-accent").trim(),
+          element.getAttribute("data-fonts"),
+        ]);
+    await expect.poll(chosen).toEqual(["#806600", "classic"]);
+    // Its fonts as well, though the frame counts as another site's.
+    const fonts = () =>
+      beside
+        .frameLocator("iframe")
+        .last()
+        .locator("html")
+        .evaluate(() =>
+          [...document.fonts].some(
+            ({ family, status }) => /^"?Fraunces"?$/.test(family) && status === "loaded",
+          ),
+        );
+    await expect.poll(fonts).toBe(true);
+    await beside.getByRole("button", { name: "Phone" }).click();
+    await expect.poll(chosen).toEqual(["#806600", "classic"]);
+
+    // Where there's no room beside it, it's behind a button.
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(beside).toHaveCount(0);
     await page.getByRole("button", { name: "Preview" }).click();
     const frame = page.frameLocator("dialog iframe[title]");
     await expect(frame.getByRole("heading", { level: 1 })).toBeVisible();
-    // The theme's styles load in the preview, with the colour that isn't saved yet.
     const accentInPreview = await frame
       .locator("body")
       .evaluate((element) => getComputedStyle(element).getPropertyValue("--tend-accent").trim());
     expect(accentInPreview).toBe("#806600");
     await page.getByRole("button", { name: "Close" }).click();
+    await page.setViewportSize({ width: 1280, height: 720 });
 
     await page.getByRole("button", { name: "Save design" }).click();
     await expect(page.getByText("Design saved.")).toBeVisible();
@@ -561,7 +592,7 @@ test.describe("fixes from review", () => {
     const post = await createEntry(page, signedIn, { title: "Changed my mind", body: "Words." });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
     const finishUpload = await holdUploads(page);
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     await page.getByRole("button", { name: "Choose image" }).click();
     const picker = page.getByRole("dialog", { name: "Choose the featured image" });
     await picker.locator('input[type="file"]').setInputFiles({

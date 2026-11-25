@@ -108,6 +108,16 @@ export interface DesignReply {
 
 export const DESIGN_KEY = ["design"];
 
+/** Colours to start from, each of which reads wherever Meadow puts it. */
+export const ACCENTS = [
+  { id: "brown", value: "#8a4b1f" },
+  { id: "green", value: "#1f6f4a" },
+  { id: "teal", value: "#0f6b75" },
+  { id: "blue", value: "#2451b8" },
+  { id: "purple", value: "#6b3fa0" },
+  { id: "rose", value: "#b03a5b" },
+] as const;
+
 /** The choice made for a theme's setting, or the theme's own if that isn't one it offers. */
 export function themeValue(setting: ThemeSetting, chosen: Record<string, string>): string {
   const value = chosen[setting.id];

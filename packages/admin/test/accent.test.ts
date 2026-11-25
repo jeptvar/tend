@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { contrast, hardToReadOn, readableOn } from "../src/lib/site.ts";
+import { ACCENTS, contrast, hardToReadOn, readableOn } from "../src/lib/site.ts";
 
 // The Design screen checks a colour against the backgrounds the theme says it goes on
 // (contrastAgainst), so the colour it suggests is readable wherever a link is, not only on white.
@@ -78,6 +78,11 @@ describe("the accent colour on the Design screen", () => {
   test("with nothing said about where it goes isn't checked", () => {
     expect(hardToReadOn("#ffffff", [])).toBeNull();
     expect(readableOn("#FFFFFF", [])).toBe("#ffffff");
+  });
+
+  test("that's offered to start from reads everywhere", () => {
+    const backgrounds = saidBackgrounds();
+    for (const { id, value } of ACCENTS) expect(hardToReadOn(value, backgrounds), id).toBeNull();
   });
 
   test("that reads everywhere is left as it is", () => {

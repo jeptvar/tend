@@ -348,4 +348,25 @@ test.describe("the rest of the admin", () => {
     await row.click({ position: { x: 40, y: 40 } });
     await expect(title(page)).toHaveValue("Rye");
   });
+
+  test("Design's choices look like what they choose", async ({ page, signedIn }) => {
+    await page.goto(`${signedIn.base}/admin/design`);
+    const accent = page.getByRole("textbox", { name: "Accent colour", exact: true });
+    const blue = page.getByRole("button", { name: "Blue" });
+    await blue.click();
+    await expect(accent).toHaveValue("#2451b8");
+    await expect(blue).toHaveAttribute("aria-pressed", "true");
+
+    const sample = (value: string) => page.locator(`[data-font-choice="${value}"]`);
+    await expect(sample("classic")).toHaveCSS("font-family", /^Fraunces/);
+    await expect(sample("friendly")).toHaveCSS("font-family", /^Nunito/);
+    await expect(sample("clean")).toHaveCSS("font-family", /system-ui/);
+    // Once Classic is the site's, the others still look like themselves.
+    await page.getByRole("radio", { name: "Classic" }).check();
+    await page.getByRole("button", { name: "Save design" }).click();
+    await expect(page.getByText("Design saved.")).toBeVisible();
+    await page.reload();
+    await expect(sample("friendly")).toHaveCSS("font-family", /^Nunito/);
+    await expect(sample("clean")).toHaveCSS("font-family", /system-ui/);
+  });
 });
