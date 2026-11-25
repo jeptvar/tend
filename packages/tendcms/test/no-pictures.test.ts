@@ -51,7 +51,7 @@ function storedPicture(made: MadeApp): void {
 describe("without the picture component", () => {
   test("a picture is refused, with what to do, and a PDF is taken", async () => {
     const made = await makeApp();
-    const owner = await setUp(made);
+    const owner = await setUp(made, { starter: "blank" });
     const refused = await owner.upload(MEDIA, PNG, "loaf.png");
     expect(refused.status).toBe(503);
     expect((await refused.json()).error).toEqual({
@@ -69,6 +69,17 @@ describe("without the picture component", () => {
     // Nothing of the refused one stays, and the next thing asked of Media is answered.
     const list = await (await owner.get(MEDIA)).json();
     expect(list.media.map((item: { name: string }) => item.name)).toEqual(["menu.pdf"]);
+  });
+
+  test("a starting point's pictures are sent as they are", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made, { starter: "business" });
+    const home = await (await made.app.request("/")).text();
+    const size = home.match(/\/media\/[^ "]+\/960\.webp/)?.[0] as string;
+    const sent = await owner.get(size);
+    expect(sent.status).toBe(200);
+    expect(sent.headers.get("content-type")).toBe("image/jpeg");
+    expect(sent.headers.get("cache-control")).toBe("no-store");
   });
 
   test("a picture's missing sizes are sent as it was uploaded, and nobody keeps that", async () => {

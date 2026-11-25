@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { parseDoc, textToDoc } from "../content/doc.ts";
-import { type StarterEntry, seedStarterEntries } from "../content/entries.ts";
+import { textToDoc } from "../content/doc.ts";
+import { seedStarterEntries } from "../content/entries.ts";
+import { addStarterPictures, type StarterContent } from "../content/starters.ts";
 import type { Orm } from "../db/client.ts";
 import type { SetupSettings, SiteSettings, Starter } from "../db/repo/settings.ts";
 import { settings, users } from "../db/schema.ts";
@@ -15,24 +14,8 @@ export interface CompleteSetupInput {
   site: { name: string; tagline: string; locale: string; timezone: string };
   owner: { name: string; email: string; passwordHash: string };
   starter: Starter;
-  starterEntries: StarterEntry[];
+  content: StarterContent;
   now: number;
-}
-
-/** Reads a starting point's example content from the theme, with the site's name filled in. */
-export function loadStarter(themeDir: string, starter: Starter, siteName: string): StarterEntry[] {
-  const file = readFileSync(join(themeDir, "starters", `${starter}.json`), "utf8");
-  // Every string in it, wherever it is, with the name put in after it's been read: a name with
-  // a quote in it can't change what the file says.
-  const { entries } = JSON.parse(file, (_key, value) =>
-    // A function, because a plain replacement string gives "$&" and friends special meanings.
-    typeof value === "string" ? value.replaceAll("{site}", () => siteName) : value,
-  ) as { entries: StarterEntry[] };
-  return entries.map((entry) =>
-    entry.doc
-      ? { ...entry, doc: parseDoc(entry.doc, { allowSections: entry.type === "page" }) }
-      : entry,
-  );
 }
 
 /** Creates the Owner, the site's settings and its first content together: all of it or none. */
@@ -71,8 +54,13 @@ export function completeSetup(orm: Orm, input: CompleteSetupInput): string {
           { key: "setup", value: setup, updatedAt: input.now, updatedBy: userId },
         ])
         .run();
+      addStarterPictures(tx, {
+        pictures: input.content.pictures,
+        uploadedBy: userId,
+        now: input.now,
+      });
       seedStarterEntries(tx, {
-        entries: input.starterEntries,
+        entries: input.content.entries,
         toDoc: textToDoc,
         authorId: userId,
         now: input.now,

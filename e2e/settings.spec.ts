@@ -47,7 +47,7 @@ test("screens that can't load say why, and try again", async ({ page, signedIn }
     ["/admin/design", "**/api/admin/design", "Accent colour"],
     ["/admin/menu", "**/api/admin/menus", "Add link"],
     ["/admin/people", "**/api/admin/people", "Sam Lee"],
-    ["/admin/media", "**/api/admin/media?*", "Nothing here yet."],
+    ["/admin/media", "**/api/admin/media?*", "table.jpg"],
     ["/admin/account", "**/api/auth/recovery-kit", "You have 8 recovery codes left"],
   ] as const) {
     const works = await failing(page, url);

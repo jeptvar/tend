@@ -1,10 +1,20 @@
 {
+  "pictures": {
+    "coffee": {
+      "file": "coffee.jpg",
+      "alt": "A cup of coffee beside two buns",
+      "width": 1600,
+      "height": 1200,
+      "color": "#c8b898"
+    }
+  },
   "entries": [
     {
       "type": "post",
       "title": "Welcome to {site}",
       "slug": "welcome",
-      "body": "This is your first post. Edit it, or move it to the Trash and write your own.\n\nEach new post appears at the top of your homepage, with the newest first."
+      "body": "This is your first post. Edit it, or move it to the Trash and write your own.\n\nEach new post appears at the top of your homepage, with the newest first.",
+      "featuredImage": "{picture:coffee}"
     }
   ]
 }

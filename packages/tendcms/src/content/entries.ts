@@ -1402,6 +1402,7 @@ export interface StarterEntry {
   /** What it says: plain words, or a document of its own, sections and all. */
   body?: string;
   doc?: Doc;
+  featuredImage?: FeaturedImage;
   /** Ends with a Contact & hours section, showing the business details from Settings. */
   contact?: boolean;
 }
@@ -1443,9 +1444,12 @@ export function seedStarterEntries(
         slug: starter.slug,
         isHome: starter.isHome ? 1 : 0,
         isExample: 1,
-        data: newEntryData(
-          withContactSection(starter.doc ?? input.toDoc(starter.body ?? ""), starter.contact),
-        ),
+        data: {
+          ...newEntryData(
+            withContactSection(starter.doc ?? input.toDoc(starter.body ?? ""), starter.contact),
+          ),
+          featuredImage: starter.featuredImage ?? null,
+        },
         authorId: input.authorId,
         createdAt: input.now,
         updatedAt: input.now,

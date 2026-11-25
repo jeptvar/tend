@@ -87,7 +87,11 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* On a short page, the footer is still at the bottom of the window. */
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
   margin: 0;
   background: var(--tend-paper);
   color: var(--tend-ink);
@@ -151,6 +155,10 @@ h3 {
 h4,
 h5 {
   font-size: 1.25rem;
+}
+
+.t-main {
+  flex: 1;
 }
 
 .t-skip {
@@ -1285,7 +1293,7 @@ h5 {
 
 /* The details beside the words, on a screen with room for both. */
 @media (min-width: 60rem) {
-  .t-contact[data-preset="2"] {
+  .t-contact[data-preset="2"]:has(> .t-business) {
     display: grid;
     grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
     grid-template-rows: repeat(18, auto) 1fr;
@@ -1609,8 +1617,8 @@ h5 {
 /* Coming soon */
 
 .t-coming-soon {
+  flex: 1;
   display: grid;
-  min-height: 100dvh;
   place-items: center;
   padding-block: 3rem;
   background:

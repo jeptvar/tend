@@ -504,7 +504,7 @@ describe("a Business site's homepage", () => {
       site: { name: 'Rise "& Shine" {site}', tagline: "", locale: "en", timezone: "UTC" },
     });
     const html = await (await made.app.request("/")).text();
-    expect(html).toContain('<section class="t-intro t-tone-muted t-align-left" data-preset="1">');
+    expect(html).toContain('<section class="t-intro t-tone-none t-align-left" data-preset="2">');
     expect(html).toContain("<h2>Welcome to Rise &quot;&amp; Shine&quot; {site}</h2>");
     expect(html).toContain('<a class="t-button" href="/contact">Get in touch</a>');
   });

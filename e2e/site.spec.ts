@@ -197,7 +197,10 @@ test.describe("pictures in the editor (J2)", () => {
 test.describe("the Media screen", () => {
   test("upload, describe, trash with Undo, and see what uses it", async ({ page, signedIn }) => {
     await page.goto(`${signedIn.base}/admin/media`);
-    await expect(page.getByText("Nothing here yet")).toBeVisible();
+    // The pictures the Business starting point comes with, to be replaced with the owner's own.
+    for (const name of [/table\.jpg/, /bowl\.jpg/, /leaves\.jpg/]) {
+      await expect(page.getByRole("button", { name })).toBeVisible();
+    }
     await page.locator('input[type="file"]').setInputFiles({
       name: "counter.jpg",
       mimeType: "image/jpeg",

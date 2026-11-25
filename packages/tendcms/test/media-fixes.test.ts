@@ -516,7 +516,7 @@ describe("media-9: long file names", () => {
 describe("media-11: replacing while something else changes the same picture", () => {
   test("two replaces at once leave only the files of the one that's kept", async () => {
     const made = await makeApp();
-    const owner = await setUp(made);
+    const owner = await setUp(made, { starter: "blank" });
     const item = await (await owner.upload(MEDIA, await png(1000, 700), "A.png")).json();
     const store = new MediaStore(made.uploadsDir);
     const results = await Promise.allSettled([
@@ -543,7 +543,7 @@ describe("media-11: replacing while something else changes the same picture", ()
 
   test("deleting forever during a replace leaves nothing behind", async () => {
     const made = await makeApp();
-    const owner = await setUp(made);
+    const owner = await setUp(made, { starter: "blank" });
     const item = await (await owner.upload(MEDIA, await png(1000, 700), "A.png")).json();
     await trashMedia(made.orm, { id: item.id, now: made.clock.time });
     const store = new MediaStore(made.uploadsDir);
@@ -562,7 +562,7 @@ describe("media-11: replacing while something else changes the same picture", ()
 
   test("a replace finishing while Delete forever looks up the uses leaves nothing behind", async () => {
     const made = await makeApp();
-    const owner = await setUp(made);
+    const owner = await setUp(made, { starter: "blank" });
     const item = await (await owner.upload(MEDIA, await png(1000, 700), "A.png")).json();
     await trashMedia(made.orm, { id: item.id, now: made.clock.time });
     const store = new MediaStore(made.uploadsDir);
