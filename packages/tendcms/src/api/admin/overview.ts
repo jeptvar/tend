@@ -14,7 +14,7 @@ import { recoveryKitSaved } from "../../db/repo/tokens.ts";
 import type { User } from "../../db/repo/users.ts";
 import { diskSpace, isRunningLow } from "../../disk.ts";
 import { isHostingAddress } from "../../site-address.ts";
-import { summaryJson } from "./entries.ts";
+import { listJson } from "./entries.ts";
 import type { AdminOptions, Routing } from "./routing.ts";
 
 /** How many of each list Overview shows. The rest are a link away. */
@@ -69,7 +69,7 @@ export function registerOverviewRoutes(routing: Routing, options: OverviewRouteO
   route("get", "/overview", "entry:list", async (c, user) => {
     const authorId = seesOnlyOwnEntries(user) ? user.id : undefined;
     const part = async (view: EntryView) =>
-      (await listEntries(orm, { view, authorId, offset: 0, limit: SHOWN })).map(summaryJson);
+      listJson(orm, await listEntries(orm, { view, authorId, offset: 0, limit: SHOWN }));
     const counts = await countEntries(orm, { authorId });
     const setup = await getSetting(orm, "setup");
     const isAdmin = user.role === "admin";
