@@ -6,6 +6,7 @@ import { Dialog } from "../components/Dialog.tsx";
 import { Field } from "../components/fields.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { toHref } from "../lib/href.ts";
+import { linkTargets } from "../lib/link-targets.ts";
 import type { LinkTarget } from "../lib/queries.ts";
 
 const ENTRY_PREFIX = "entry:";
@@ -62,15 +63,7 @@ export function LinkDialog({
   });
   const chosen = picked ?? (unpickedInitial ? null : (current.data ?? null));
 
-  const search = useQuery({
-    queryKey: ["link-targets", query.trim()],
-    enabled: chosen === null,
-    staleTime: 10_000,
-    queryFn: () =>
-      api<{ targets: LinkTarget[] }>(
-        `/admin/link-targets?q=${encodeURIComponent(query.trim())}`,
-      ).then((reply) => reply.targets),
-  });
+  const search = useQuery({ ...linkTargets(query.trim()), enabled: chosen === null });
   const results = search.data ?? [];
 
   // What was just pressed has been replaced, and focus shouldn't vanish with it. The opening
@@ -196,7 +189,7 @@ export function LinkDialog({
               }}
             />
             <p role="status" className="sr-only">
-              {search.data && query.trim() !== ""
+              {search.data && !search.isPlaceholderData && query.trim() !== ""
                 ? intl.formatMessage({ id: "link.found" }, { count: results.length })
                 : ""}
             </p>

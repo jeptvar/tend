@@ -15,7 +15,8 @@ import { dismissToast, showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { toHref } from "../lib/href.ts";
-import type { LinkTarget, Me } from "../lib/queries.ts";
+import { linkTargets } from "../lib/link-targets.ts";
+import type { Me } from "../lib/queries.ts";
 import { type ScreenDraft, settleScreenDraft, useScreenDraft } from "../lib/screen-drafts.ts";
 import {
   MENUS_KEY,
@@ -83,11 +84,7 @@ function AddLinkDialog({
     return () => clearTimeout(timer);
   }, [typed]);
 
-  const found = useQuery({
-    queryKey: ["link-targets", query],
-    queryFn: () =>
-      api<{ targets: LinkTarget[] }>(`/admin/link-targets?q=${encodeURIComponent(query)}`),
-  });
+  const found = useQuery(linkTargets(query));
   const tags = useQuery({
     queryKey: ["tags"],
     queryFn: () => api<{ tags: Tag[] }>("/admin/tags"),
@@ -134,7 +131,7 @@ function AddLinkDialog({
       known: { title: "Blog", url: "/blog" },
     });
   }
-  for (const target of found.data?.targets ?? []) {
+  for (const target of found.data ?? []) {
     options.push({
       key: target.id,
       label: target.title || intl.formatMessage({ id: "list.untitled" }),
@@ -178,7 +175,9 @@ function AddLinkDialog({
           />
         </div>
         <p role="status" className="sr-only">
-          <FormattedMessage id="link.found" values={{ count: options.length }} />
+          {!found.isPlaceholderData && (
+            <FormattedMessage id="link.found" values={{ count: options.length }} />
+          )}
         </p>
         <ul className="grid max-h-80 gap-1 overflow-y-auto">
           {options.map((option) => (

@@ -182,6 +182,8 @@ for (const size of SIZES) {
       await page.getByRole("button", { name: "Add link" }).click();
       const add = page.getByRole("dialog", { name: "Add a link" });
       await add.getByLabel(/Search your pages/).fill("story");
+      // It moves up the list as the list is cut down to it, and people press what they can see.
+      await expect(add.getByText("1 found")).toBeAttached();
       await add.getByRole("button", { name: /Our story/ }).click();
       await page.getByRole("button", { name: 'Move "Our story" up' }).click();
       await page.getByRole("button", { name: "Save menu" }).click();

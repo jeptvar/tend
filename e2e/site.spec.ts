@@ -265,6 +265,46 @@ test.describe("the site menu (J4)", () => {
     await expect(menu.getByRole("link")).toHaveText(["About", "Contact"]);
   });
 
+  test("looking for a page to link to works here, then in the editor, then here again", async ({
+    page,
+    signedIn,
+  }) => {
+    await createEntry(page, signedIn, { type: "page", title: "Our story", publish: true });
+    const post = await createEntry(page, signedIn, { title: "Fresh loaves", body: "Words" });
+    const go = (name: string) =>
+      page
+        .getByRole("navigation", { name: "Main" })
+        .getByRole("link", { name, exact: true })
+        .click();
+    const add = page.getByRole("dialog", { name: "Add a link" });
+    const story = add.getByRole("button", { name: /Our story/ });
+    await page.goto(`${signedIn.base}/admin/menu`);
+    for (const again of [false, true]) {
+      await page.getByRole("button", { name: "Add link" }).click();
+      await expect(story).toBeVisible();
+      await page.keyboard.press("Escape");
+      if (again) break;
+      // From one screen to the next, so what's been found is still there.
+      await go("Posts");
+      await page.getByRole("link", { name: /Fresh loaves/ }).click();
+      await expect(page).toHaveURL(new RegExp(post.id));
+      await body(page).click();
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(story).toBeVisible();
+      const answer = await holdRequests(page, "**/api/admin/link-targets?q=story");
+      const asked = page.waitForRequest("**/api/admin/link-targets?q=story");
+      await add.getByLabel(/Search your pages/).fill("story");
+      await asked;
+      await expect(story).toBeVisible();
+      answer();
+      await expect(add.getByRole("status").filter({ hasText: "1 found" })).toHaveCount(1);
+      await page.keyboard.press("Escape");
+      await expect(add).toBeHidden();
+      await go("Site menu");
+    }
+  });
+
   test("a removed link can be put back where it was, until the screen is left", async ({
     page,
     signedIn,
