@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { loadStarter } from "../src/content/starters.ts";
 import { media, users } from "../src/db/schema.ts";
 import { processImage } from "../src/media/process.ts";
+import { MediaStore } from "../src/media/store.ts";
 import { defaultThemeDir } from "../src/paths.ts";
 import { makeApp, setUp } from "./auth-helpers.ts";
 import { tempDir } from "./helpers.ts";
@@ -122,6 +123,23 @@ describe("a site set up from a starting point", () => {
       expect.stringContaining("pictures couldn't be kept"),
       expect.anything(),
     );
+  });
+
+  test("is set up even when the ones that were kept can't be removed again", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    // A disk that fills up on the second one, in a folder where nothing can be removed.
+    vi.spyOn(MediaStore.prototype, "write")
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(() => {
+        throw Object.assign(new Error("no space left on device"), { code: "ENOSPC" });
+      });
+    vi.spyOn(MediaStore.prototype, "removeOriginal").mockImplementation(() => {
+      throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+    });
+    const made = await makeApp();
+    await setUp(made, { starter: "business" });
+    expect(await html(made, "/")).toContain("Welcome to Rise Bakery");
+    expect(made.orm.select().from(media).all()).toEqual([]);
   });
 
   test("leaves no files behind when someone else finished setup first", async () => {

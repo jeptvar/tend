@@ -138,8 +138,15 @@ export function keepPictures(store: MediaStore, pictures: StarterPicture[]): boo
   }
 }
 
+/** As far as they can be: what stopped them being kept can stop them being removed too. */
 export function removePictures(store: MediaStore, pictures: StarterPicture[]): void {
-  for (const { id, sha256 } of pictures) store.removeOriginal(id, shortHash(sha256), "jpg");
+  for (const { id, sha256 } of pictures) {
+    try {
+      store.removeOriginal(id, shortHash(sha256), "jpg");
+    } catch {
+      // A file nothing uses is left behind. The failure that matters is the one before this.
+    }
+  }
 }
 
 /**
