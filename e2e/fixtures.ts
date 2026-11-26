@@ -278,6 +278,20 @@ export async function typeAddress(dialog: Locator, address: string): Promise<voi
   await expect(dialog.getByText("Nothing found")).toBeAttached();
 }
 
+/**
+ * Clicks into the writing, and waits as long as a person would before pressing a key. 20 ms after
+ * the writing gains focus, ProseMirror puts back its own idea of where the cursor is, if the page's
+ * is somewhere else by then. WebKit tells it a moment late that a key like End moved the cursor, so
+ * on a slow computer a key pressed sooner is undone. A timer started now runs after ProseMirror's.
+ */
+export async function clickInto(
+  target: Locator,
+  options?: Parameters<Locator["click"]>[0],
+): Promise<void> {
+  await target.click(options);
+  await target.page().evaluate(() => new Promise((resolve) => setTimeout(resolve, 20)));
+}
+
 /** How Overview greets whoever it's for, whatever the time is where they are. */
 export const GREETING = /^Good (morning|afternoon|evening), /;
 

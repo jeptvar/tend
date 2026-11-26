@@ -1,5 +1,6 @@
 import type { Page, Request } from "@playwright/test";
 import {
+  clickInto,
   createEntry,
   expect,
   holdRequests,
@@ -44,7 +45,7 @@ test.describe("pictures in the editor (J2)", () => {
     });
     const picture = await photo(page);
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await body(page).click();
+    await clickInto(body(page));
     await page.keyboard.press("ControlOrMeta+End");
 
     await page.getByRole("button", { name: "Insert", exact: true }).click();

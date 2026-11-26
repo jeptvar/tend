@@ -1,6 +1,7 @@
 import type { Page, Route } from "@playwright/test";
 import {
   bodyText,
+  clickInto,
   closeWhileDown,
   createEntry,
   expect,
@@ -688,7 +689,7 @@ test.describe("saving as you type", () => {
     await expect(saveStatus(page)).toHaveText("Not saved yet");
 
     // Cutting it down is the fix. Nobody should have to know to press Ctrl+S after that.
-    await body(page).click();
+    await clickInto(body(page));
     await page.keyboard.press("End");
     await page.keyboard.type(", cut down");
     await expect(saveStatus(page)).toHaveText("Saved", { timeout: 5000 });
@@ -815,7 +816,7 @@ test.describe("never losing what's typed", () => {
     await page.getByRole("button", { name: "Publish post now" }).click();
     await page.getByRole("dialog", { name: "Your post is on your site." }).waitFor();
     await page.getByRole("button", { name: "Keep editing" }).click();
-    await body(page).click();
+    await clickInto(body(page));
     await page.keyboard.press("End");
     await page.keyboard.type(" fixed a typo");
     await expect(saveStatus(page)).toContainText("not on your site yet", { timeout: 5000 });

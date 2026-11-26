@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import {
+  clickInto,
   copyTheme,
   createEntry,
   expect,
@@ -381,7 +382,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoViolations(page, "with the Insert menu open");
       await page.keyboard.press("Escape");
 
-      await body.locator("p").last().click();
+      await clickInto(body.locator("p").last());
       await page.keyboard.press("End");
       await page.keyboard.press("Enter");
       await page.keyboard.type("/");
@@ -744,7 +745,7 @@ test.describe("at phone widths", () => {
     await page.keyboard.press("Escape");
 
     const body = page.getByRole("textbox", { name: "Text" });
-    await body.click();
+    await clickInto(body);
     await page.keyboard.press("End");
     await page.keyboard.type(" more");
     await expect(page.getByRole("button", { name: "Publish changes" })).toBeVisible();

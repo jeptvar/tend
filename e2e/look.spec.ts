@@ -1,5 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import {
+  clickInto,
   createEntry,
   expect,
   openSettings,
@@ -207,7 +208,7 @@ test.describe("what's being written", () => {
       })
       .toBe(true);
     // The words are in front, so they're what a press lands on.
-    await words.click({ position: { x: 12, y: 12 } });
+    await clickInto(words, { position: { x: 12, y: 12 } });
     await page.keyboard.press("Home");
     await page.keyboard.type("Good ");
     await expect(words).toHaveText("Good Bread that takes its time");

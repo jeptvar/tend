@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import {
   bodyText,
+  clickInto,
   closeWhileDown,
   createEntry,
   expect,
@@ -165,7 +166,7 @@ test.describe("what's typed, when things go wrong", () => {
       await gate;
       return route.abort();
     });
-    await body(page).click();
+    await clickInto(body(page));
     await page.keyboard.press("ControlOrMeta+End");
     await page.keyboard.type(" SECRET");
     await page.waitForRequest((request) => request.method() === "PATCH");
@@ -192,7 +193,7 @@ test.describe("what's typed, when things go wrong", () => {
       await gate;
       return route.abort();
     });
-    await body(page).click();
+    await clickInto(body(page));
     await page.keyboard.press("ControlOrMeta+End");
     await page.keyboard.type(" x");
     await page.waitForRequest((request) => request.method() === "PATCH");
@@ -596,7 +597,7 @@ test.describe("the editor itself", () => {
   test("the status settles after an action with nothing to save", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "T", body: "Base" });
     await openPost(page, signedIn, post.id);
-    await body(page).click();
+    await clickInto(body(page));
     await page.keyboard.press("ControlOrMeta+End");
     await page.keyboard.type("y");
     await page.keyboard.press("Backspace");
@@ -701,7 +702,7 @@ test.describe("the editor itself", () => {
       await expect(body(page)).toBeFocused();
       expect(await page.evaluate(() => scrollY)).toBe(scrolled);
     };
-    await body(page).click();
+    await clickInto(body(page));
     await page.keyboard.press("ControlOrMeta+End");
     await expect.poll(paragraphWithCursor).toBe(29);
     await dismissed();

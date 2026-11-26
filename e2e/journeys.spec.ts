@@ -1,5 +1,6 @@
 import type { Browser, Page } from "@playwright/test";
 import {
+  clickInto,
   createEntry,
   expect,
   GREETING,
@@ -538,7 +539,7 @@ test("nothing is asked of anyone else's server, by the admin or the site (P7)", 
   }
   // Writing, with a picture, and looking at it before it's published.
   await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-  await body(page).click();
+  await clickInto(body(page));
   await page.keyboard.press("ControlOrMeta+End");
   await page.getByRole("button", { name: "Insert", exact: true }).click();
   await page.getByRole("menuitem", { name: "Image" }).click();
