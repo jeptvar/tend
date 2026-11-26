@@ -321,6 +321,8 @@ export interface MediaPatch {
   decorative?: boolean | undefined;
   caption?: string | null | undefined;
   credit?: string | null | undefined;
+  focalX?: number | undefined;
+  focalY?: number | undefined;
 }
 
 function cleanText(value: string | null | undefined): string | null | undefined {
@@ -339,6 +341,8 @@ export async function updateMedia(
   if (patch.caption !== undefined) values.caption = cleanText(patch.caption) ?? null;
   if (patch.credit !== undefined) values.credit = cleanText(patch.credit) ?? null;
   if (patch.decorative !== undefined) values.decorative = patch.decorative ? 1 : 0;
+  if (patch.focalX !== undefined) values.focalX = patch.focalX;
+  if (patch.focalY !== undefined) values.focalY = patch.focalY;
   const row = orm.update(media).set(values).where(eq(media.id, input.id)).returning().get();
   if (!row) throw gone();
   return row;

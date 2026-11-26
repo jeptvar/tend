@@ -15,6 +15,9 @@ export interface MediaItem {
   decorative: boolean;
   caption: string | null;
   credit: string | null;
+  /** What stays in sight where it's cropped: 0 to 1, across and down. */
+  focalX: number;
+  focalY: number;
   dominantColor: string | null;
   /** The file as uploaded. */
   url: string;

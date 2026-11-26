@@ -211,6 +211,36 @@ test.describe("pictures in the editor (J2)", () => {
     expect((await found("NOISE")).sizeBytes).toBeLessThanOrEqual(20 * 1024 * 1024);
   });
 
+  test("what stays in sight of a cropped picture is chosen by pressing on it, or by keyboard", async ({
+    page,
+    signedIn,
+  }) => {
+    const picture = await upload(page, signedIn, await photo(page), "Shop front.jpg");
+    await page.goto(`${signedIn.base}/admin/media`);
+    await page.getByRole("button", { name: /Shop front\.jpg/ }).click();
+    const details = page.getByRole("dialog", { name: "Shop front.jpg" });
+    const across = details.getByRole("slider", { name: "From the left" });
+    const down = details.getByRole("slider", { name: "From the top" });
+    await expect(across).toHaveValue("50");
+
+    // It has no description yet, so it isn't an image to a screen reader.
+    const shown = details.locator("img").first();
+    const box = (await shown.boundingBox()) as { width: number; height: number };
+    await shown.click({ position: { x: box.width * 0.25, y: box.height * 0.75 } });
+    await expect(across).toHaveValue("25");
+    await expect(down).toHaveValue("75");
+    // And by keyboard, a step at a time.
+    await across.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(across).toHaveValue("26");
+    await details.getByRole("button", { name: "Save" }).click();
+    await expect(details.getByText(/^Saved\./)).toBeVisible();
+    const saved = await (
+      await page.request.get(`${signedIn.base}/api/admin/media/${picture.id}`)
+    ).json();
+    expect([saved.focalX, saved.focalY]).toEqual([0.26, 0.75]);
+  });
+
   test("the featured image is chosen in settings, and shows on the blog list", async ({
     page,
     signedIn,

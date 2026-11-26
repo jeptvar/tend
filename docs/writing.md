@@ -29,6 +29,8 @@ Point at a picture, or tap it, for its width, its description, another picture i
 
 Describe each one, for people who can't see it. If it's only decoration, tick **Image is decorative**. Tend asks again before you publish if you missed one.
 
+Where a picture is cropped to fit, as on a card on the blog or behind a Big intro's words, the middle of it stays in sight. To keep another part in sight, open the picture in **Media** and click or tap that part, under **What stays in sight**. It changes everywhere the picture is used.
+
 JPG, PNG, WebP, GIF and AVIF work, and so do PDFs, up to 20 MB and 50 megapixels. A photo bigger than that is made smaller as it's added, rather than refused: to 16 megapixels, which is more than visitors ever get.
 
 **iPhone photos (HEIC):** Safari makes them JPGs as they're added. Most other browsers can't read them, so there Tend asks for another kind. On the iPhone, open **Settings**, then **Camera**, then **Formats**, and choose **Most Compatible**: new photos are JPGs. For one you have already, [the error's page](errors/heic_photo.md) has steps.
