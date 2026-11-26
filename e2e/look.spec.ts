@@ -118,6 +118,11 @@ test.describe("what's being written", () => {
     await accept(title(page));
     await title(page).press("Enter");
     await expect(body(page)).toBeFocused();
+    // In Safari, Tiptap focuses the writing at once and again a frame later. Tags waits for that
+    // frame, or the second focus takes the keyboard back from it.
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    );
 
     await tags.fill("ライ麦");
     await accept(tags);
