@@ -8,6 +8,7 @@ import {
 import { useEffect } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { type MediaItem, uploadWords, useMediaItems } from "../lib/media.ts";
+import { MoveButtons } from "./move.tsx";
 import { forgetUpload, retryUpload, useUpload } from "./uploads.ts";
 
 /** Marks the editor's own changes for uploads, so they don't count as someone typing. */
@@ -220,6 +221,15 @@ function ImageView({
             >
               <FormattedMessage id="image.change" />
             </button>
+            <MoveButtons
+              editor={editor}
+              getPos={getPos}
+              labels={{
+                up: intl.formatMessage({ id: "image.moveUp" }),
+                down: intl.formatMessage({ id: "image.moveDown" }),
+              }}
+              className={overClass}
+            />
             <button type="button" onClick={remove} className={overClass}>
               <FormattedMessage id="image.remove" />
             </button>

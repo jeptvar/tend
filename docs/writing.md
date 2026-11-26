@@ -21,13 +21,13 @@ What you write stays off your site until you publish it. While you write, it's i
 
 **Tables** are for prices, opening hours and the like: words, a paragraph or more in each cell. A new one has a row of headings and two columns. **Tab** goes to the next cell, and from the last one adds a row. In a table, the toolbar's table button adds and removes rows and columns, or the whole table. On a phone the columns share the width equally.
 
-**Sections** are for pages: **Big intro**, **Picture and text**, and **Contact & hours**. Each has two layouts, three backgrounds and two alignments, in the bar above it. **Add a photo** gives a Big intro the photo the page opens with, beside the words or behind them. Contact & hours shows the business details from Settings, so you change them in one place.
+**Sections** are for pages: **Big intro**, **Picture and text**, and **Contact & hours**. Each has two layouts, three backgrounds and two alignments, in the bar above it, and the arrows beside its name move it up or down the page. **Add a photo** gives a Big intro the photo the page opens with, beside the words or behind them. Contact & hours shows the business details from Settings, so you change them in one place.
 
 ## Photos
 
 Drag a photo in, paste it, or choose **Image**. Tend makes the sizes each screen needs, turns it the right way up, and removes what the camera wrote in it, such as where you were.
 
-Point at a picture, or tap it, for its width, its description, another picture in its place, or to remove it. Its caption is under it.
+Point at a picture, or tap it, for its width, its description, another picture in its place, arrows that move it up or down, or to remove it. A picture in a section moves within that section. Its caption is under it.
 
 Describe each one, for people who can't see it. If it's only decoration, tick **Image is decorative**. Tend asks again before you publish if you missed one.
 

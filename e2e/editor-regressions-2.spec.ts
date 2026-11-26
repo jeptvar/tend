@@ -8,9 +8,11 @@ import {
   holdRequests,
   openHistory,
   openSettings,
+  photo,
   readEntry,
   type Site,
   test,
+  upload,
 } from "./fixtures.ts";
 
 // What the second independent review found going wrong, kept so it can't come back.
@@ -914,5 +916,94 @@ test.describe("lists", () => {
     await expect(page.getByRole("heading", { name: "Posts" })).not.toBeFocused();
     expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Restore");
     expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+  });
+});
+
+test.describe("moving with buttons, in place of dragging", () => {
+  const intro = (words: string) => ({
+    type: "section",
+    attrs: { kind: "intro" },
+    content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: words }] }],
+  });
+  /** What the writing holds, top to bottom: a section by its heading. */
+  const order = (page: Page) =>
+    body(page).evaluate((element) =>
+      [...element.children]
+        .map((child) => (child.querySelector("h2") ?? child).textContent?.trim() ?? "")
+        .filter(Boolean),
+    );
+  /** The section the keyboard is in, by its heading, and which way its button moves it. */
+  const focused = (page: Page) =>
+    page.evaluate(() => {
+      const button = document.activeElement;
+      const section = button?.closest(".tend-section");
+      return `${section?.querySelector("h2")?.textContent} ${button?.getAttribute("data-move")}`;
+    });
+
+  test("a section goes down twice from its own button, the keyboard staying on it, and Undo takes it back", async ({
+    page,
+    signedIn,
+  }) => {
+    const entry = await createEntry(page, signedIn, { type: "page", title: "Order", body: "" });
+    await patch(page, signedIn, entry.id, entry.rev, {
+      doc: doc(intro("First"), paragraph("Middle"), intro("Second")),
+    });
+    await openPost(page, signedIn, entry.id, "pages");
+    await expect.poll(() => order(page)).toEqual(["First", "Middle", "Second"]);
+    const up = page.getByRole("button", { name: "Move section up" });
+    const down = page.getByRole("button", { name: "Move section down" });
+    // The first can't go up, and the last can't go down past the line kept at the end.
+    await expect(up.first()).toHaveAttribute("aria-disabled", "true");
+    await expect(down.last()).toHaveAttribute("aria-disabled", "true");
+
+    await down.first().click();
+    await expect.poll(() => order(page)).toEqual(["Middle", "First", "Second"]);
+    await expect.poll(() => focused(page)).toBe("First down");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => order(page)).toEqual(["Middle", "Second", "First"]);
+    await expect.poll(() => focused(page)).toBe("First down");
+    await expect(down.last()).toHaveAttribute("aria-disabled", "true");
+
+    await page.locator("fieldset").getByRole("button", { name: "Undo" }).click();
+    await expect.poll(() => order(page)).toEqual(["Middle", "First", "Second"]);
+    await expect(saveStatus(page)).toHaveText("Saved", { timeout: 5000 });
+  });
+
+  test("a picture moves up past the words before it", async ({ page, signedIn }) => {
+    const picture = await upload(page, signedIn, await photo(page), "Loaf.jpg");
+    const post = await createEntry(page, signedIn, { title: "Pictures", body: "" });
+    await patch(page, signedIn, post.id, post.rev, {
+      doc: doc(paragraph("Words first"), { type: "image", attrs: { mediaId: picture.id } }),
+    });
+    await openPost(page, signedIn, post.id);
+    const shown = body(page).locator(".tend-image");
+    await shown.hover();
+    await expect(page.getByRole("button", { name: "Move picture down" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await page.getByRole("button", { name: "Move picture up" }).click();
+    await expect(body(page).locator("> *").first().locator(".tend-image")).toHaveCount(1);
+    await expect(body(page).locator("> p").first()).toHaveText("Words first");
+  });
+
+  test("a picture in a list can't go above the words its item starts with", async ({
+    page,
+    signedIn,
+  }) => {
+    const picture = await upload(page, signedIn, await photo(page), "Loaf.jpg");
+    const post = await createEntry(page, signedIn, { title: "Listed", body: "" });
+    const item = {
+      type: "listItem",
+      content: [paragraph("Bread"), { type: "image", attrs: { mediaId: picture.id } }],
+    };
+    await patch(page, signedIn, post.id, post.rev, {
+      doc: doc({ type: "bulletList", content: [item] }),
+    });
+    await openPost(page, signedIn, post.id);
+    await body(page).locator(".tend-image").hover();
+    for (const name of ["Move picture up", "Move picture down"]) {
+      await expect(page.getByRole("button", { name })).toHaveAttribute("aria-disabled", "true");
+    }
   });
 });
