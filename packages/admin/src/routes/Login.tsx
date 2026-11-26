@@ -163,36 +163,36 @@ const COMMANDS = [
 export function ForgotPassword() {
   return (
     <AuthLayout screen="forgot">
-      <ol className="mt-6 grid list-decimal gap-6 pl-6 text-lg">
-        <li>
-          <Link href="/recover" className={`${textLinkClass} font-medium underline`}>
+      <ol className="mt-6 grid gap-4">
+        <li className="card p-5">
+          <Link href="/recover" className={`${textLinkClass} text-lg font-semibold underline`}>
             <FormattedMessage id="forgot.code" />
           </Link>
-          <p className="mt-1 text-base text-muted">
+          <p className="text-muted">
             <FormattedMessage id="forgot.codeHint" />
           </p>
         </li>
-        <li>
-          <span className="font-medium">
+        <li className="card p-5">
+          <span className="text-lg font-semibold">
             <FormattedMessage id="forgot.someone" />
           </span>
-          <p className="mt-1 text-base text-muted">
+          <p className="mt-1 text-muted">
             <FormattedMessage id="forgot.someoneHint" />
           </p>
         </li>
-        <li>
-          <span className="font-medium">
+        <li className="card p-5">
+          <span className="text-lg font-semibold">
             <FormattedMessage id="forgot.developer" />
           </span>
-          <p className="mt-1 text-base text-muted">
+          <p className="mt-1 text-muted">
             <FormattedMessage id="forgot.developerHint" />
           </p>
           {COMMANDS.map(({ id, command }) => (
-            <div key={id} className="mt-2">
-              <p className="text-base">
+            <div key={id} className="mt-3">
+              <p className="text-sm">
                 <FormattedMessage id={id} />
               </p>
-              <pre className="mt-1 rounded-lg border border-muted/50 bg-white/60 p-3 text-sm break-all whitespace-pre-wrap dark:bg-white/5">
+              <pre className="mt-1 rounded-xl bg-sunken p-3 text-sm break-all whitespace-pre-wrap">
                 <code>{command}</code>
               </pre>
             </div>

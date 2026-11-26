@@ -9,6 +9,7 @@ import { imagePlaceholder, resolveMediaPlaceholders } from "../src/site/placehol
 import { darkAccent } from "../src/site/router.ts";
 import { type MadeApp, makeApp, setUp } from "./auth-helpers.ts";
 import { tempDir } from "./helpers.ts";
+import { type Color, everyAccent, meadowColors } from "./meadow-colors.ts";
 
 // Every icon made, with what it was made from, so a test can see how many were made and how
 // big a picture each one had to open. Icons are still made for real.
@@ -299,55 +300,29 @@ describe("site-3: words the theme gives a picture win over Media's decorative ma
   });
 });
 
-/** Two colours mixed the way the browser does, from 0 (all of b) to 1 (all of a). */
-function mix(a: string, b: string, share: number): string {
-  const channels = (hex: string) =>
-    [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
-  const [first, second] = [channels(a), channels(b)];
-  return `#${first
-    .map((value, index) =>
-      Math.round(value * share + (second[index] as number) * (1 - share))
-        .toString(16)
-        .padStart(2, "0"),
-    )
-    .join("")}`;
-}
-
-/**
- * The dark backgrounds links sit on, read from Meadow's own stylesheet: the page, and every
- * tone that lays a little of the text colour over it.
- */
-function darkBackgrounds(): string[] {
-  const css = readFileSync(join(defaultThemeDir, "assets", "theme.css"), "utf8");
-  const dark = css.match(/prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^}]*)\}/)?.[1] ?? "";
-  const paper = dark.match(/--tend-paper:\s*(#[0-9a-f]{6})/i)?.[1] as string;
-  const ink = dark.match(/--tend-ink:\s*(#[0-9a-f]{6})/i)?.[1] as string;
-  expect([paper, ink]).toEqual([expect.any(String), expect.any(String)]);
-  const tones = [
-    ...css.matchAll(
-      /\.t-tone-[a-z-]+\s*\{\s*background:\s*color-mix\(in srgb, var\(--tend-ink\) (\d+)%, transparent\)/g,
-    ),
-  ].map((match) => mix(ink, paper, Number(match[1]) / 100));
-  return [paper, ...tones];
+/** The dark backgrounds links sit on: the page, Muted sections, and cards. */
+function darkBackgrounds(accent: string): string[] {
+  const colors = meadowColors("dark", accent);
+  return ["paper", "tint", "card"].map((name) => {
+    const channels = colors[name] as Color;
+    return `#${channels
+      .map((value) =>
+        Math.round(value * 255)
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")}`;
+  });
 }
 
 describe("site-4: a changed accent in dark mode", () => {
   test("is readable on the page and in every tinted section, whatever the colour", () => {
-    const backgrounds = darkBackgrounds();
-    // The page and Muted, at least.
-    expect(backgrounds.length).toBeGreaterThanOrEqual(2);
-    const levels = Array.from({ length: 18 }, (_, index) => index * 15);
     const failing: string[] = [];
-    for (const r of levels) {
-      for (const g of levels) {
-        for (const b of levels) {
-          const accent = `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
-          const dark = darkAccent(accent);
-          for (const behind of backgrounds) {
-            const ratio = contrast(dark, behind);
-            if (ratio < 4.5) failing.push(`${accent} → ${dark}: ${ratio.toFixed(2)} on ${behind}`);
-          }
-        }
+    for (const accent of everyAccent()) {
+      const dark = darkAccent(accent);
+      for (const behind of darkBackgrounds(dark)) {
+        const found = contrast(dark, behind);
+        if (found < 4.5) failing.push(`${accent} → ${dark}: ${found.toFixed(2)} on ${behind}`);
       }
     }
     expect(failing.length, failing.slice(0, 5).join("; ")).toBe(0);
@@ -376,7 +351,7 @@ describe("site-4: a changed accent in dark mode", () => {
       /prefers-color-scheme: dark\)\s*\{\s*:root\s*\{\s*--tend-accent:\s*(#[0-9a-f]{6})/,
     )?.[1] as string;
     expect(dark).toBeTruthy();
-    for (const behind of darkBackgrounds()) {
+    for (const behind of darkBackgrounds(dark)) {
       expect(contrast(dark, behind), behind).toBeGreaterThanOrEqual(4.5);
     }
   });
@@ -396,7 +371,7 @@ describe("site-5: links to other sites", () => {
     });
     const { html } = await page(made, "/");
     const list = html.match(/<ul class="t-social"[\s\S]*?<\/ul>/)?.[0] ?? "";
-    expect(list).toMatch(/href="https:\/\/instagram\.com\/rise"[^>]*>Instagram</);
+    expect(list).toMatch(/href="https:\/\/instagram\.com\/rise"[^>]*>.*>Instagram<\/span><\/a>/s);
     expect(list).toMatch(/href="https:\/\/ko-fi\.com\/rise"[^>]*>ko-fi\.com</);
     expect(list).toMatch(/href="https:\/\/www\.yelp\.com\/biz\/rise"[^>]*>yelp\.com</);
     expect(list).toMatch(/>bäckerei\.example</);

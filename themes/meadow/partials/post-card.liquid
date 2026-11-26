@@ -1,6 +1,11 @@
 <article class="t-card">
-  {% if post.image %}{% image post.image, size: "card", decorative: true %}{% endif %}
-  <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
-  <p class="t-meta"><time datetime="{{ post.published_at | iso_date }}">{{ post.published_at | date }}</time></p>
-  {% if post.summary != blank %}<p>{{ post.summary }}</p>{% endif %}
+  {% if post.image -%}
+  {%- if first %}{% assign sizes = "(min-width: 82rem) 44rem, (min-width: 56rem) 56vw, 100vw" %}{% else %}{% assign sizes = "(min-width: 82rem) 24rem, (min-width: 46rem) 46vw, 100vw" %}{% endif -%}
+  <div class="t-card-picture">{% image post.image, size: "card", sizes: sizes, decorative: true %}</div>
+  {%- endif %}
+  <div>
+    <p class="t-meta"><time datetime="{{ post.published_at | iso_date }}">{{ post.published_at | date: "long" }}</time></p>
+    <h2><a href="{{ post.url }}">{{ post.title }}</a></h2>
+    {% if post.summary != blank %}<p class="t-card-summary">{{ post.summary }}</p>{% endif %}
+  </div>
 </article>

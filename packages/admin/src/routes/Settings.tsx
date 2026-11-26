@@ -9,7 +9,8 @@ import {
   secondaryButtonClass,
   textLinkClass,
 } from "../components/AuthLayout.tsx";
-import { Field } from "../components/fields.tsx";
+import { Field, optionClass, radioClass } from "../components/fields.tsx";
+import { Icon, type IconName } from "../components/icons.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
@@ -42,8 +43,11 @@ const SECTIONS = ["general", "business", "search", "advanced", "backups"] as con
 type Section = (typeof SECTIONS)[number];
 
 const inputClass =
-  "min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-lg text-[#1d2420] placeholder:text-[#5b655f] focus-visible:outline-3 focus-visible:outline-brand";
+  "min-h-11 w-full rounded-xl border border-edge bg-field px-3 text-lg placeholder:text-muted focus-visible:outline-3 focus-visible:outline-brand";
 const smallButtonClass = `${secondaryButtonClass} aria-disabled:opacity-60`;
+const cardClass = "card grid grid-cols-1 gap-4 p-5 sm:p-7";
+const formClass = "card grid grid-cols-1 gap-6 p-5 sm:p-7";
+const warningClass = "rounded-2xl border border-wait-line bg-wait-soft p-4";
 
 /** Loads one setting, and saves it with an Undo toast, like every other site-wide change. */
 function useSetting<T>(name: string) {
@@ -118,7 +122,7 @@ function SaveRow({
   const general =
     error instanceof ApiError && error.field && fields.includes(error.field) ? null : error;
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-2 border-t border-line pt-5 sm:col-span-full">
       <p role="alert" className="font-medium text-danger empty:sr-only">
         {general ? <Problem error={general} /> : null}
       </p>
@@ -160,7 +164,7 @@ function GeneralForm({
   const languages = siteLanguages(intl.locale, form.locale);
   return (
     <form
-      className="grid gap-6"
+      className={`${formClass} items-end sm:grid-cols-2 sm:*:first:col-span-full`}
       onSubmit={(event) => {
         event.preventDefault();
         if (changed && !busy) onSave(form, () => draft.saved(form));
@@ -174,14 +178,16 @@ function GeneralForm({
         error={fieldError(error, "name")}
         onChange={(event) => setForm({ ...form, name: event.target.value })}
       />
-      <Field
-        label={intl.formatMessage({ id: "settings.tagline" })}
-        hint={intl.formatMessage({ id: "settings.taglineHint" })}
-        value={form.tagline}
-        maxLength={200}
-        error={fieldError(error, "tagline")}
-        onChange={(event) => setForm({ ...form, tagline: event.target.value })}
-      />
+      <div className="sm:col-span-full">
+        <Field
+          label={intl.formatMessage({ id: "settings.tagline" })}
+          hint={intl.formatMessage({ id: "settings.taglineHint" })}
+          value={form.tagline}
+          maxLength={200}
+          error={fieldError(error, "tagline")}
+          onChange={(event) => setForm({ ...form, tagline: event.target.value })}
+        />
+      </div>
       <label className="grid gap-2">
         <span className="font-medium">
           <FormattedMessage id="settings.language" />
@@ -222,6 +228,12 @@ function GeneralForm({
   );
 }
 
+const VISIBILITIES = [
+  { option: "public", icon: "world" },
+  { option: "coming_soon", icon: "clock" },
+  { option: "private", icon: "lock" },
+] as const satisfies { option: Visibility["mode"]; icon: IconName }[];
+
 function VisibilityForm({
   value,
   onSave,
@@ -241,38 +253,38 @@ function VisibilityForm({
   const { changed } = draft;
   return (
     <form
-      className="grid gap-4"
+      className={formClass}
       onSubmit={(event) => {
         event.preventDefault();
         if (changed && !busy) onSave({ mode }, () => draft.saved({ mode }));
       }}
     >
-      <fieldset className="grid gap-2">
-        <legend className="mb-2 text-xl font-semibold">
+      <fieldset>
+        <legend className="mb-4 text-xl font-bold">
           <FormattedMessage id="settings.visibility" />
         </legend>
-        {(["public", "coming_soon", "private"] as const).map((option) => (
-          <label
-            key={option}
-            className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border p-3 ${mode === option ? "border-brand" : "border-muted"}`}
-          >
-            <input
-              type="radio"
-              name={name}
-              checked={mode === option}
-              onChange={() => setMode(option)}
-              className="mt-1 h-5 w-5 accent-brand"
-            />
-            <span className="grid">
-              <span className="font-medium">
-                {intl.formatMessage({ id: `settings.visibility.${option}` })}
+        <div className="grid gap-3 md:grid-cols-3">
+          {VISIBILITIES.map(({ option, icon }) => (
+            <label key={option} className={optionClass}>
+              <input
+                type="radio"
+                name={name}
+                checked={mode === option}
+                onChange={() => setMode(option)}
+                className={radioClass}
+              />
+              <span className="grid min-w-0 flex-1 gap-0.5">
+                <span className="flex items-center justify-between gap-2 font-semibold">
+                  {intl.formatMessage({ id: `settings.visibility.${option}` })}
+                  <Icon name={icon} className="size-5 text-muted" />
+                </span>
+                <span className="text-sm text-muted">
+                  {intl.formatMessage({ id: `settings.visibility.${option}Hint` })}
+                </span>
               </span>
-              <span className="text-sm text-muted">
-                {intl.formatMessage({ id: `settings.visibility.${option}Hint` })}
-              </span>
-            </span>
-          </label>
-        ))}
+            </label>
+          ))}
+        </div>
       </fieldset>
       <SaveRow busy={busy} changed={changed} error={error} />
     </form>
@@ -282,8 +294,8 @@ function VisibilityForm({
 function AddressSection({ me }: { me: Me }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="grid gap-3">
-      <h2 id={id} className="text-xl font-semibold">
+    <section aria-labelledby={id} className={cardClass}>
+      <h2 id={id} className="text-xl font-bold">
         <FormattedMessage id="address.heading" />
       </h2>
       <AddressChoice me={me} />
@@ -300,7 +312,7 @@ function GeneralSection({ me }: { me: Me }) {
   const general = useSetting<General>("general");
   const visibility = useSetting<Visibility>("visibility");
   return (
-    <div className="grid gap-10">
+    <div className="grid grid-cols-1 gap-5">
       {general.query.data ? (
         <GeneralForm
           value={general.query.data.value}
@@ -368,16 +380,16 @@ function BusinessForm({
 
   return (
     <form
-      className="grid gap-6"
+      className={`${formClass} items-start sm:grid-cols-2`}
       onSubmit={(event: FormEvent) => {
         event.preventDefault();
         if (changed && !busy) onSave(form, () => draft.saved(form));
       }}
     >
-      <p className="text-muted">
+      <p className="text-muted sm:col-span-full">
         <FormattedMessage id="business.hint" />
       </p>
-      <div className="grid gap-2">
+      <div className="grid gap-2 sm:col-span-full">
         <label htmlFor={addressId} className="font-medium">
           <FormattedMessage id="business.address" />
         </label>
@@ -406,17 +418,19 @@ function BusinessForm({
         error={fieldError(error, "email")}
         onChange={(event) => setForm({ ...form, email: event.target.value || null })}
       />
-      <Field
-        label={intl.formatMessage({ id: "business.map" })}
-        hint={intl.formatMessage({ id: "business.mapHint" })}
-        inputMode="url"
-        autoCapitalize="none"
-        value={form.mapUrl ?? ""}
-        error={fieldError(error, "mapUrl")}
-        onChange={(event) => setForm({ ...form, mapUrl: event.target.value || null })}
-      />
-      <fieldset className="grid gap-3">
-        <legend className="mb-1 font-medium">
+      <div className="sm:col-span-full">
+        <Field
+          label={intl.formatMessage({ id: "business.map" })}
+          hint={intl.formatMessage({ id: "business.mapHint" })}
+          inputMode="url"
+          autoCapitalize="none"
+          value={form.mapUrl ?? ""}
+          error={fieldError(error, "mapUrl")}
+          onChange={(event) => setForm({ ...form, mapUrl: event.target.value || null })}
+        />
+      </div>
+      <fieldset className="min-w-0 sm:col-span-full">
+        <legend className="mb-2 font-medium">
           <FormattedMessage id="business.hours" />
         </legend>
         {form.hours === null ? (
@@ -431,50 +445,59 @@ function BusinessForm({
           </div>
         ) : (
           <>
-            {form.hours.map((day, index) => (
-              <div key={day.day} className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="w-28 font-medium">{dayName(index)}</span>
-                <label className="flex min-h-11 items-center gap-2">
-                  <input
-                    type="checkbox"
-                    aria-label={intl.formatMessage(
-                      { id: "business.closedOn" },
-                      { day: dayName(index) },
-                    )}
-                    checked={day.closed}
-                    onChange={(event) => setDay(index, { closed: event.target.checked })}
-                    className="h-5 w-5 accent-brand"
-                  />
-                  <FormattedMessage id="business.closed" />
-                </label>
-                {!day.closed && (
-                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="divide-y divide-line rounded-2xl border border-line">
+              {form.hours.map((day, index) => (
+                <div
+                  key={day.day}
+                  className="flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 sm:min-h-16"
+                >
+                  <span className="w-28 font-semibold">{dayName(index)}</span>
+                  <label className="flex min-h-11 items-center gap-2">
                     <input
-                      type="time"
-                      value={day.opens}
+                      type="checkbox"
                       aria-label={intl.formatMessage(
-                        { id: "business.opens" },
+                        { id: "business.closedOn" },
                         { day: dayName(index) },
                       )}
-                      onChange={(event) => setDay(index, { opens: event.target.value })}
-                      className={inputClass.replace("w-full", "w-32 min-w-0")}
+                      checked={day.closed}
+                      onChange={(event) => setDay(index, { closed: event.target.checked })}
+                      className="h-5 w-5 accent-brand"
                     />
-                    <span aria-hidden="true">–</span>
-                    <input
-                      type="time"
-                      value={day.closes}
-                      aria-label={intl.formatMessage(
-                        { id: "business.closes" },
-                        { day: dayName(index) },
-                      )}
-                      onChange={(event) => setDay(index, { closes: event.target.value })}
-                      className={inputClass.replace("w-full", "w-32 min-w-0")}
-                    />
-                  </span>
-                )}
-              </div>
-            ))}
-            <div>
+                    <FormattedMessage id="business.closed" />
+                  </label>
+                  {!day.closed && (
+                    <span className="flex min-w-0 flex-wrap items-center gap-2">
+                      <input
+                        type="time"
+                        value={day.opens}
+                        aria-label={intl.formatMessage(
+                          { id: "business.opens" },
+                          { day: dayName(index) },
+                        )}
+                        onChange={(event) => setDay(index, { opens: event.target.value })}
+                        className={inputClass
+                          .replace("w-full", "w-36 min-w-0")
+                          .replace("text-lg", "text-base")}
+                      />
+                      <span aria-hidden="true">–</span>
+                      <input
+                        type="time"
+                        value={day.closes}
+                        aria-label={intl.formatMessage(
+                          { id: "business.closes" },
+                          { day: dayName(index) },
+                        )}
+                        onChange={(event) => setDay(index, { closes: event.target.value })}
+                        className={inputClass
+                          .replace("w-full", "w-36 min-w-0")
+                          .replace("text-lg", "text-base")}
+                      />
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-1">
               <button
                 type="button"
                 onClick={() => setForm({ ...form, hours: null })}
@@ -486,7 +509,7 @@ function BusinessForm({
           </>
         )}
       </fieldset>
-      <div className="grid gap-2">
+      <div className="grid gap-2 sm:col-span-full">
         <label htmlFor={noteId} className="font-medium">
           <FormattedMessage id="business.note" />
         </label>
@@ -538,7 +561,7 @@ function SearchForm({
   const image = form.imageId ? lookup.found.get(form.imageId) : undefined;
   return (
     <form
-      className="grid gap-6"
+      className={formClass}
       onSubmit={(event) => {
         event.preventDefault();
         if (changed && !busy) onSave(form, () => draft.saved(form));
@@ -563,7 +586,7 @@ function SearchForm({
           <img
             src={image.thumbUrl ?? undefined}
             alt={image.alt ?? ""}
-            className="h-24 w-fit rounded object-cover"
+            className="aspect-[1.91] w-full max-w-72 rounded-xl object-cover"
           />
         )}
         <div className="flex flex-wrap gap-3">
@@ -651,8 +674,8 @@ function Redirects() {
   });
   const rows = list.data?.redirects;
   return (
-    <section aria-labelledby="redirects-heading" className="grid gap-4">
-      <h2 id="redirects-heading" className="text-xl font-semibold">
+    <section aria-labelledby="redirects-heading" className={cardClass}>
+      <h2 id="redirects-heading" className="text-xl font-bold">
         <FormattedMessage id="redirects.heading" />
       </h2>
       <p className="text-muted">
@@ -668,7 +691,7 @@ function Redirects() {
           <FormattedMessage id="redirects.none" />
         </p>
       ) : (
-        <ul className="divide-y divide-ink/10 border-y border-ink/10">
+        <ul className="divide-y divide-line border-y border-line">
           {rows.map((redirect) => (
             <li
               key={redirect.fromPath}
@@ -699,7 +722,7 @@ function Redirects() {
         </ul>
       )}
       <form
-        className="grid gap-4 rounded-lg border border-muted p-3"
+        className="grid gap-4 rounded-2xl bg-sunken/60 p-5"
         onSubmit={(event) => {
           event.preventDefault();
           if (from.trim() && to.trim() && !add.isPending) add.mutate();
@@ -741,7 +764,7 @@ function Redirects() {
 function SearchSection() {
   const seo = useSetting<SearchSettings>("seo");
   return (
-    <div className="grid gap-10">
+    <div className="grid grid-cols-1 gap-5">
       {seo.query.data ? (
         <SearchForm
           value={seo.query.data.value}
@@ -776,16 +799,16 @@ function CodeForm({
   const { changed } = draft;
   return (
     <form
-      className="grid gap-6"
+      className={formClass}
       onSubmit={(event) => {
         event.preventDefault();
         if (changed && !busy) onSave(form, () => draft.saved(form));
       }}
     >
-      <h2 className="text-xl font-semibold">
+      <h2 className="text-xl font-bold">
         <FormattedMessage id="code.heading" />
       </h2>
-      <p className="rounded-lg border border-danger p-3">
+      <p className={warningClass}>
         <FormattedMessage id="code.warning" />
       </p>
       <div className="grid gap-2">
@@ -866,24 +889,21 @@ function BackupsSection({ me }: { me: Me }) {
   const used = Math.max(0, disk.total - disk.free);
   const share = disk.total > 0 ? used / disk.total : 0;
   return (
-    <div className="grid gap-10">
-      <section aria-labelledby={downloadId} className="grid gap-3">
-        <h2 id={downloadId} className="text-xl font-semibold">
+    <div className="grid grid-cols-1 gap-5">
+      <section aria-labelledby={downloadId} className={cardClass}>
+        <h2 id={downloadId} className="text-xl font-bold">
           <FormattedMessage id="backups.download.heading" />
         </h2>
         <p>
           <FormattedMessage id="backups.download.body" />
         </p>
-        <p className="rounded-lg border border-danger p-3">
+        <p className={warningClass}>
           <FormattedMessage id="backups.download.private" />
         </p>
         {me.user.isOwner ? (
           <div>
-            <a
-              href={BACKUP_DOWNLOAD_URL}
-              download
-              className={`${primaryButtonClass} inline-flex items-center`}
-            >
+            <a href={BACKUP_DOWNLOAD_URL} download className={primaryButtonClass}>
+              <Icon name="download" className="size-4.5" />
               <FormattedMessage id="backups.download.button" />
             </a>
           </div>
@@ -904,14 +924,14 @@ function BackupsSection({ me }: { me: Me }) {
         </p>
       </section>
 
-      <section aria-labelledby={diskId} className="grid gap-3">
-        <h2 id={diskId} className="text-xl font-semibold">
+      <section aria-labelledby={diskId} className={cardClass}>
+        <h2 id={diskId} className="text-xl font-bold">
           <FormattedMessage id="backups.disk.heading" />
         </h2>
         {/* The sentence below says the same, so the bar is only for the eye. */}
-        <div aria-hidden="true" className="h-3 w-full overflow-hidden rounded bg-muted/30">
+        <div aria-hidden="true" className="h-3 w-full overflow-hidden rounded-full bg-sunken">
           <div
-            className={`h-full ${share >= LOW_DISK ? "bg-danger" : "bg-brand"}`}
+            className={`h-full rounded-full ${share >= LOW_DISK ? "bg-danger" : "bg-brand"}`}
             style={{ width: `${Math.round(share * 100)}%` }}
           />
         </div>
@@ -934,8 +954,8 @@ function BackupsSection({ me }: { me: Me }) {
         )}
       </section>
 
-      <section aria-labelledby={copiesId} className="grid gap-3">
-        <h2 id={copiesId} className="text-xl font-semibold">
+      <section aria-labelledby={copiesId} className={cardClass}>
+        <h2 id={copiesId} className="text-xl font-bold">
           <FormattedMessage id="backups.copies.heading" />
         </h2>
         <p>
@@ -961,7 +981,7 @@ function BackupsSection({ me }: { me: Me }) {
             <FormattedMessage id="backups.copies.none" />
           </p>
         ) : (
-          <ul className="divide-y divide-ink/10 border-y border-ink/10">
+          <ul className="divide-y divide-line border-y border-line">
             {snapshots.map((snapshot) => {
               const when = intl.formatDate(snapshot.takenAt, {
                 dateStyle: "medium",
@@ -1009,14 +1029,18 @@ function SettingsScreen({ me, section }: { me: Me; section: Section }) {
       screen="settings"
       title={intl.formatMessage({ id: `settings.${section}` })}
     >
-      <nav aria-label={intl.formatMessage({ id: "settings.sections" })} className="mt-4">
-        <ul className="-ml-2 flex flex-wrap">
+      <nav aria-label={intl.formatMessage({ id: "settings.sections" })} className="mt-5">
+        <ul className="flex w-fit max-w-full flex-wrap gap-1 rounded-2xl bg-sunken p-1">
           {SECTIONS.map((name) => (
             <li key={name}>
               <Link
                 href={`/settings/${name}`}
                 aria-current={name === section ? "page" : undefined}
-                className={`inline-flex min-h-11 items-center rounded px-2 hover:underline focus-visible:outline-3 focus-visible:outline-brand ${name === section ? "font-semibold" : "text-muted"}`}
+                className={`inline-flex min-h-11 items-center rounded-xl px-4 focus-visible:outline-3 focus-visible:outline-brand ${
+                  name === section
+                    ? "bg-surface font-semibold shadow-xs ring-1 ring-line"
+                    : "font-medium text-muted hover:text-ink"
+                }`}
               >
                 <FormattedMessage id={`settings.${name}`} />
               </Link>
@@ -1024,7 +1048,7 @@ function SettingsScreen({ me, section }: { me: Me; section: Section }) {
           ))}
         </ul>
       </nav>
-      <div className="mt-6">
+      <div className="mt-5">
         {section === "general" && <GeneralSection me={me} />}
         {section === "business" && <BusinessSection />}
         {section === "search" && <SearchSection />}

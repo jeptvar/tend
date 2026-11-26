@@ -15,12 +15,12 @@ export const BUSINESS_PLACEHOLDER = "<tend-business></tend-business>";
 
 /** How wide each kind of picture is shown, to match the theme, so phones get small files. */
 const SIZES: Record<string, string> = {
-  normal: "(min-width: 46rem) 44rem, 100vw",
-  half: "(min-width: 46rem) 22rem, 100vw",
-  wide: "(min-width: 66rem) 64rem, 100vw",
+  normal: "(min-width: 46rem) 42rem, 100vw",
+  half: "(min-width: 82rem) 41rem, (min-width: 46rem) 52vw, 100vw",
+  wide: "(min-width: 82rem) 76rem, 100vw",
   full: "100vw",
-  card: "(min-width: 46rem) 44rem, 100vw",
-  cover: "(min-width: 66rem) 64rem, 100vw",
+  card: "(min-width: 82rem) 24rem, (min-width: 46rem) 46vw, 100vw",
+  cover: "(min-width: 82rem) 76rem, 100vw",
 };
 /** Pictures in the text, which get a frame and can have a caption. */
 const IN_TEXT = new Set(["normal", "half", "wide", "full"]);

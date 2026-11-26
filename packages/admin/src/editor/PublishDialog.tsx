@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { Icon } from "../components/icons.tsx";
 import { onThisComputer } from "../lib/hosts.ts";
 import { useMediaItems } from "../lib/media.ts";
 import type { EntryFull, EntryType, Me } from "../lib/queries.ts";
@@ -117,16 +118,21 @@ export function PublishDialog({
   if (done) {
     return (
       <Dialog labelledBy={headingId} onClose={onClose}>
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 gap-4">
+          <span className="grid size-14 place-items-center rounded-full bg-mint text-brand">
+            <Icon name="done" className="size-7" />
+          </span>
           <h2
             ref={headingRef}
             id={headingId}
             tabIndex={-1}
-            className="text-xl font-semibold outline-none"
+            className="text-2xl font-bold outline-none"
           >
             <FormattedMessage id={type === "post" ? "publish.donePost" : "publish.donePage"} />
           </h2>
-          <p className="[overflow-wrap:anywhere]">{fullAddress}</p>
+          <p className="rounded-xl bg-sunken px-4 py-3 font-medium [overflow-wrap:anywhere]">
+            {fullAddress}
+          </p>
           <p className="text-muted empty:hidden">
             <WhoSees me={me} />
           </p>
@@ -142,7 +148,7 @@ export function PublishDialog({
               href={entry.url ?? entry.address.path}
               target="_blank"
               rel="noopener"
-              className={`${primaryButtonClass} inline-flex items-center`}
+              className={primaryButtonClass}
             >
               <FormattedMessage id={type === "post" ? "publish.viewPost" : "publish.viewPage"} />
             </a>
@@ -174,8 +180,8 @@ export function PublishDialog({
   const blocked = noTitle || addressProblem !== null;
   return (
     <Dialog labelledBy={headingId} onClose={onClose}>
-      <div className="grid gap-4">
-        <h2 id={headingId} className="text-xl font-semibold">
+      <div className="grid grid-cols-1 gap-5">
+        <h2 id={headingId} className="text-2xl font-bold">
           <FormattedMessage id="publish.heading" />
         </h2>
 
@@ -183,7 +189,7 @@ export function PublishDialog({
           <p className="text-sm text-muted">
             <FormattedMessage id="publish.address" />
           </p>
-          <p className="font-medium [overflow-wrap:anywhere]">
+          <p className="text-lg font-semibold [overflow-wrap:anywhere]">
             {new URL(entry.address.path, origin).href}
           </p>
           <p className="text-sm text-muted empty:hidden">
@@ -195,7 +201,7 @@ export function PublishDialog({
           <p className="text-sm text-muted">
             <FormattedMessage id="publish.social" />
           </p>
-          <div className="mt-1 overflow-hidden rounded-lg border border-muted">
+          <div className="mt-2 overflow-hidden rounded-2xl border border-line bg-paper">
             {picture?.previewUrl && picture.trashedAt === null && (
               <img
                 src={picture.previewUrl}
@@ -204,8 +210,8 @@ export function PublishDialog({
                 className="aspect-[1.91] w-full object-cover"
               />
             )}
-            <div className="p-3">
-              <p className="font-medium [overflow-wrap:anywhere]">
+            <div className="px-4 py-3">
+              <p className="font-semibold [overflow-wrap:anywhere]">
                 {shareTitle || entry.title || intl.formatMessage({ id: "list.untitled" })}
               </p>
               {summary && <p className="mt-1 line-clamp-3 text-sm text-muted">{summary}</p>}
@@ -217,7 +223,7 @@ export function PublishDialog({
         </div>
 
         {noTitle && (
-          <div className="grid gap-2 rounded-lg border border-danger p-3">
+          <div className="grid gap-2 rounded-2xl border border-danger bg-danger-soft p-4">
             <p>
               <FormattedMessage id="publish.needsTitle" />
             </p>
@@ -229,7 +235,7 @@ export function PublishDialog({
           </div>
         )}
         {addressProblem && (
-          <div className="grid gap-2 rounded-lg border border-danger p-3">
+          <div className="grid gap-2 rounded-2xl border border-danger bg-danger-soft p-4">
             <p>
               {addressProblem.message} {addressProblem.fix}
             </p>
@@ -242,8 +248,8 @@ export function PublishDialog({
         )}
 
         {checks.length > 0 && (
-          <div>
-            <p className="font-medium">
+          <div className="rounded-2xl border border-wait-line bg-wait-soft p-4">
+            <p className="font-semibold">
               <FormattedMessage id="publish.checks" />
             </p>
             <ul className="mt-1 grid gap-2">

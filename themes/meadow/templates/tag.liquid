@@ -1,9 +1,8 @@
 {% layout "layout" %}
 {% block content %}
-<div class="t-wrap">
+<div class="t-page-head">
   <h1>{{ tag.name }}</h1>
   {% if tag.description != blank %}<p class="t-lead">{{ tag.description }}</p>{% endif %}
-  {% for post in posts %}{% render "post-card", post: post %}{% else %}<p>{{ "no_posts_tagged" | t }}</p>{% endfor %}
-  {% render "pagination", pagination: pagination %}
 </div>
+{% render "posts", posts: posts, pagination: pagination, none: "no_posts_tagged" %}
 {% endblock %}

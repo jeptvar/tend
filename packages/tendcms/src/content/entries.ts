@@ -32,7 +32,7 @@ import {
   usedMediaIds,
 } from "./doc.ts";
 import { addRedirect, clearRedirectFrom } from "./redirects.ts";
-import { leadText, renderDoc } from "./render-doc.ts";
+import { leadText, renderDoc, summarize } from "./render-doc.ts";
 import { syncLiveTags } from "./tags.ts";
 
 export type EntryType = "post" | "page";
@@ -340,6 +340,56 @@ export async function listEntries(
     .limit(input.limit)
     .offset(input.offset)
     .all();
+}
+
+/** What a list shows of something besides its title. */
+export interface EntryGlance {
+  /** Its picture: the one chosen, or else the first in its text, as on the site. */
+  imageId: string | null;
+  /** Its summary, or else its first words. */
+  words: string;
+}
+
+/**
+ * A glance at each of these, as they're being written. SQLite looks through each document and
+ * gives back two short answers, so a list of long ones doesn't load all their text.
+ */
+export async function entryGlances(orm: Orm, ids: string[]): Promise<Map<string, EntryGlance>> {
+  if (ids.length === 0) return new Map();
+  const rows = orm.all<{ id: string; image: string | null; words: string | null }>(sql`
+    SELECT ${entries.id} AS id,
+      coalesce(
+        json_extract(${entries.data}, '$.featuredImage.mediaId'),
+        (
+          SELECT json_extract(part.value, '$.mediaId')
+          FROM json_tree(${entries.data}, '$.doc') AS part
+          WHERE part.key = 'attrs' AND part.type = 'object'
+            AND json_extract(part.value, '$.mediaId') IS NOT NULL
+          LIMIT 1
+        )
+      ) AS image,
+      coalesce(
+        nullif(trim(json_extract(${entries.data}, '$.summary')), ''),
+        (
+          SELECT (
+            SELECT group_concat(run.value, '') FROM json_tree(part.value) AS run
+            WHERE run.key = 'text'
+          )
+          FROM json_tree(${entries.data}, '$.doc') AS part
+          WHERE part.type = 'object' AND json_extract(part.value, '$.type') = 'paragraph'
+            AND EXISTS (
+              SELECT 1 FROM json_tree(part.value) AS run
+              WHERE run.key = 'text' AND trim(run.value) <> ''
+            )
+          LIMIT 1
+        )
+      ) AS words
+    FROM ${entries}
+    WHERE ${inArray(entries.id, ids)}
+  `);
+  return new Map(
+    rows.map(({ id, image, words }) => [id, { imageId: image, words: summarize(words ?? "") }]),
+  );
 }
 
 export type EntryCounts = Record<EntryView, number>;
@@ -1402,6 +1452,7 @@ export interface StarterEntry {
   /** What it says: plain words, or a document of its own, sections and all. */
   body?: string;
   doc?: Doc;
+  featuredImage?: FeaturedImage;
   /** Ends with a Contact & hours section, showing the business details from Settings. */
   contact?: boolean;
 }
@@ -1443,9 +1494,12 @@ export function seedStarterEntries(
         slug: starter.slug,
         isHome: starter.isHome ? 1 : 0,
         isExample: 1,
-        data: newEntryData(
-          withContactSection(starter.doc ?? input.toDoc(starter.body ?? ""), starter.contact),
-        ),
+        data: {
+          ...newEntryData(
+            withContactSection(starter.doc ?? input.toDoc(starter.body ?? ""), starter.contact),
+          ),
+          featuredImage: starter.featuredImage ?? null,
+        },
         authorId: input.authorId,
         createdAt: input.now,
         updatedAt: input.now,

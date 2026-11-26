@@ -125,6 +125,7 @@ describe("can", () => {
 type Who = "anyone" | "own" | "editors" | "admins" | "owner";
 const WHO: Record<string, Who> = {
   "GET /overview": "anyone",
+  "GET /overview/homepage": "anyone",
   "GET /link-targets": "anyone",
   "GET /entries": "anyone",
   "POST /entries": "anyone",
@@ -161,6 +162,8 @@ const WHO: Record<string, Who> = {
   "PUT /menus/:name": "editors",
   "POST /menus/:name/undo": "editors",
   "GET /design": "admins",
+  "GET /design/style": "anyone",
+  "GET /design/fonts": "admins",
   "PUT /design": "admins",
   "POST /design/undo": "admins",
   "POST /design/preview": "admins",

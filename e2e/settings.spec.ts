@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { expect, test } from "./fixtures.ts";
+import { expect, GREETING, test } from "./fixtures.ts";
 
 // Settings that can't be loaded or saved say so, and what to do (PLAN.md §4, P13).
 
@@ -47,7 +47,7 @@ test("screens that can't load say why, and try again", async ({ page, signedIn }
     ["/admin/design", "**/api/admin/design", "Accent colour"],
     ["/admin/menu", "**/api/admin/menus", "Add link"],
     ["/admin/people", "**/api/admin/people", "Sam Lee"],
-    ["/admin/media", "**/api/admin/media?*", "Nothing here yet."],
+    ["/admin/media", "**/api/admin/media?*", "table.jpg"],
     ["/admin/account", "**/api/auth/recovery-kit", "You have 8 recovery codes left"],
   ] as const) {
     const works = await failing(page, url);
@@ -103,7 +103,7 @@ test("screens for Admins send an Editor to Overview, and a mistyped address says
   await expect(editor.getByRole("heading", { name: "Save your recovery kit" })).toBeVisible();
   for (const path of ["people", "design", "settings/general"]) {
     await editor.goto(`${signedIn.base}/admin/${path}`);
-    await expect(editor.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+    await expect(editor.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
     await expect(editor).toHaveURL(`${signedIn.base}/admin/`);
   }
   await context.close();
@@ -111,5 +111,5 @@ test("screens for Admins send an Editor to Overview, and a mistyped address says
   await page.goto(`${signedIn.base}/admin/desing`);
   await expect(page.getByRole("heading", { name: "There's nothing here" })).toBeVisible();
   await page.getByRole("link", { name: "Go to Overview" }).click();
-  await expect(page.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
 });

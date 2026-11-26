@@ -130,7 +130,7 @@ describe("public pages", () => {
     const made = await makeApp();
     await setUp(made, { site: { name: "Rock $& Roll $$ $'" }, starter: "business" });
     const html = await (await made.app.request("/")).text();
-    expect(html).toContain("<h1>Rock $&amp; Roll $$ $&#39;</h1>");
+    expect(html).toContain('<h1 class="t-hidden">Rock $&amp; Roll $$ $&#39;</h1>');
   });
 
   test("dates carry a machine-readable time as well", async () => {

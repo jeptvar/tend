@@ -1,8 +1,14 @@
 import { forwardRef, type InputHTMLAttributes, type ReactNode, useId, useState } from "react";
 import { useIntl } from "react-intl";
+import { GrowingText } from "./GrowingText.tsx";
 
 const inputClass =
-  "min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-lg text-[#1d2420] placeholder:text-[#5b655f] focus-visible:outline-3 focus-visible:outline-brand";
+  "min-h-11 w-full rounded-xl border border-edge bg-field px-3 text-lg placeholder:text-muted focus-visible:outline-3 focus-visible:outline-brand";
+
+/** Around one of a few choices, with its radio button in it. */
+export const optionClass =
+  "relative flex min-h-11 cursor-pointer items-start gap-3 rounded-2xl border border-edge bg-surface p-3.5 [overflow-wrap:anywhere] has-checked:border-brand has-checked:bg-mint has-checked:ring-1 has-checked:ring-brand has-focus-visible:outline-3 has-focus-visible:outline-offset-2 has-focus-visible:outline-brand has-disabled:cursor-default";
+export const radioClass = "mt-0.5 size-5 shrink-0 accent-brand outline-none";
 
 interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
@@ -53,6 +59,45 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   );
 });
 
+/** The same for a sentence or two: the box grows with them. */
+export function SentenceField({
+  label,
+  hint,
+  value,
+  onChange,
+  ...input
+}: {
+  label: string;
+  hint: ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  maxLength: number;
+  readOnly: boolean;
+}) {
+  const inputId = useId();
+  const hintId = useId();
+  return (
+    <div className="grid gap-2">
+      <label htmlFor={inputId} className="font-medium">
+        {label}
+      </label>
+      <GrowingText
+        id={inputId}
+        aria-describedby={hintId}
+        value={value}
+        onChange={onChange}
+        boxClassName="tend-grow-field"
+        className="rounded-xl border border-edge bg-field placeholder:text-muted focus-visible:outline-3 focus-visible:outline-brand"
+        {...input}
+      />
+      <p id={hintId} className="text-sm text-muted">
+        {hint}
+      </p>
+    </div>
+  );
+}
+
 interface PasswordFieldProps extends Omit<FieldProps, "type" | "trailing"> {
   /** Lets a parent reveal the password, as Suggest a passphrase does. */
   visible?: boolean;
@@ -83,7 +128,7 @@ export const PasswordField = forwardRef<HTMLInputElement, PasswordFieldProps>(
               setOwnVisible(!shown);
               onVisibleChange?.(!shown);
             }}
-            className="min-h-11 min-w-16 rounded-lg border border-muted px-3 font-medium hover:border-brand focus-visible:outline-3 focus-visible:outline-brand"
+            className="min-h-11 min-w-18 shrink-0 rounded-xl border border-line bg-surface px-3 font-semibold whitespace-nowrap shadow-xs hover:border-brand focus-visible:outline-3 focus-visible:outline-brand"
           >
             {intl.formatMessage({ id: shown ? "common.hide" : "common.show" })}
           </button>

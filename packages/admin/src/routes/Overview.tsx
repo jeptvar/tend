@@ -3,14 +3,17 @@ import { type ReactNode, useId, useRef, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, useLocation } from "wouter";
 import { useConfirmAddress } from "../components/AddressChoice.tsx";
-import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
+import { AdminLayout, initials, SignedIn } from "../components/AdminLayout.tsx";
 import {
   primaryButtonClass,
   secondaryButtonClass,
   textLinkClass,
 } from "../components/AuthLayout.tsx";
+import { BrowserFrame } from "../components/BrowserFrame.tsx";
+import { EntryPicture } from "../components/EntryRow.tsx";
 import { Icon } from "../components/icons.tsx";
 import { OutLink } from "../components/OutLink.tsx";
+import { PageFrame } from "../components/PageFrame.tsx";
 import { PicturesNotice } from "../components/PicturesNotice.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { Waiting } from "../components/Waiting.tsx";
@@ -59,7 +62,7 @@ function entryHref(entry: { id: string; type: "post" | "page" }): string {
   return `/${entry.type === "post" ? "posts" : "pages"}/${entry.id}`;
 }
 
-function Section({
+function Card({
   heading,
   children,
   className = "",
@@ -70,8 +73,8 @@ function Section({
 }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className={`mt-10 ${className}`}>
-      <h2 id={id} className="text-xl font-semibold">
+    <section aria-labelledby={id} className={`card min-w-0 p-5 sm:px-6 ${className}`}>
+      <h2 id={id} className="text-lg font-bold">
         {heading}
       </h2>
       {children}
@@ -92,8 +95,8 @@ function BackupReminder() {
   const since = info?.lastDownloadAt ?? info?.setUpAt;
   if (!info || since == null || Date.now() - since < BACKUP_REMINDER_MS) return null;
   return (
-    <section aria-labelledby="overview-backup" className="mt-8 rounded-lg border border-muted p-4">
-      <h2 id="overview-backup" className="text-lg font-semibold">
+    <section aria-labelledby="overview-backup" className="card min-w-0 p-5 sm:px-6">
+      <h2 id="overview-backup" className="text-lg font-bold">
         <FormattedMessage id="overview.backup.heading" />
       </h2>
       <p className="mt-1">
@@ -124,12 +127,15 @@ function AddressCheck() {
   // The button goes, so the keyboard needs somewhere to be.
   const confirm = useConfirmAddress(() => headingRef.current?.focus());
   return (
-    <section aria-labelledby="overview-address" className="mt-8 rounded-lg border border-brand p-4">
+    <section
+      aria-labelledby="overview-address"
+      className="card mt-6 border-brand bg-mint p-5 sm:px-6"
+    >
       <h2
         ref={headingRef}
         id="overview-address"
         tabIndex={-1}
-        className="text-lg font-semibold outline-none"
+        className="text-lg font-bold outline-none"
       >
         <FormattedMessage id="overview.address.heading" />
       </h2>
@@ -216,23 +222,59 @@ function SiteStatus({ me }: { me: Me }) {
   );
 }
 
+/**
+ * The homepage as it is now, small: a picture of the site, not a way around it. It's the page
+ * itself in a frame with nothing allowed in it, twice as wide as its place and half the size.
+ */
+function SitePicture({ name }: { name: string }) {
+  const intl = useIntl();
+  // Not at its own address: what a frame that's allowed nothing asks for comes without a cookie,
+  // and on a Private site that's nothing at all.
+  const page = useQuery({
+    queryKey: ["homepage"],
+    queryFn: () => api<{ html: string }>("/admin/overview/homepage"),
+    retry: false,
+  });
+  return (
+    <div aria-hidden="true" className="hidden sm:block">
+      <BrowserFrame name={name}>
+        <div className="relative h-80 overflow-hidden">
+          {page.data && (
+            <PageFrame
+              html={page.data.html}
+              title={intl.formatMessage({ id: "overview.picture" })}
+              tabIndex={-1}
+              inert
+              className="pointer-events-none h-[200%] w-[200%] origin-top-left scale-50"
+            />
+          )}
+        </div>
+      </BrowserFrame>
+    </div>
+  );
+}
+
 function EntryLinks({ part, more }: { part: Part; more?: ReactNode }) {
   return (
     <>
-      <ul className="mt-2 divide-y divide-ink/10 border-y border-ink/10">
+      <ul className="mt-2 divide-y divide-line">
         {part.entries.map((entry) => (
-          <li key={entry.id} className="flex flex-wrap items-center justify-between gap-x-4 py-1">
-            <Link
-              href={entryHref(entry)}
-              className="inline-flex min-h-11 min-w-0 items-center font-medium [overflow-wrap:anywhere] underline-offset-4 hover:underline focus-visible:outline-3 focus-visible:outline-brand"
-            >
-              {entry.title || <FormattedMessage id="list.untitled" />}
-            </Link>
-            <span className="text-sm text-muted">
-              <FormattedMessage id={`overview.kind.${entry.type}`} />
-              {" · "}
-              <FormattedDate value={entry.updatedAt} dateStyle="medium" />
-            </span>
+          <li key={entry.id} className="relative flex items-center gap-3.5 py-2.5">
+            <EntryPicture entry={entry} />
+            <div className="min-w-0 flex-1">
+              <Link
+                href={entryHref(entry)}
+                className="font-semibold [overflow-wrap:anywhere] underline-offset-4 after:absolute after:inset-0 after:rounded-lg hover:underline focus-visible:outline-none focus-visible:after:outline-3 focus-visible:after:outline-brand"
+              >
+                {entry.title || <FormattedMessage id="list.untitled" />}
+              </Link>
+              <p className="text-sm text-muted">
+                <FormattedMessage id={`overview.kind.${entry.type}`} />
+                {" · "}
+                <FormattedDate value={entry.updatedAt} dateStyle="medium" />
+              </p>
+            </div>
+            <Icon name="right" className="size-4 text-muted" />
           </li>
         ))}
       </ul>
@@ -247,6 +289,29 @@ function keptOpen(): boolean {
   } catch {
     return true;
   }
+}
+
+/** How far along the first steps are, as a ring. The words beside it say the same. */
+function StepsRing({ done, total }: { done: number; total: number }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 52 52" className="size-13 shrink-0">
+      <circle cx="26" cy="26" r="21" className="fill-none stroke-mint" strokeWidth="7" />
+      <circle
+        cx="26"
+        cy="26"
+        r="21"
+        pathLength={total}
+        strokeDasharray={`${done} ${total}`}
+        strokeLinecap="round"
+        strokeWidth="7"
+        transform="rotate(-90 26 26)"
+        className={done === 0 ? "hidden" : "fill-none stroke-brand"}
+      />
+      <text x="26" y="31" textAnchor="middle" className="fill-ink text-sm font-bold">
+        {done}/{total}
+      </text>
+    </svg>
+  );
 }
 
 /** The first steps. Each ticks itself off, and the list goes once they're all done. */
@@ -276,11 +341,12 @@ function Steps({
     online: "/online",
     domain: "/domain",
   };
+  // The whole row can be pressed.
   const stepClass =
-    "min-h-11 rounded text-left text-brand underline-offset-4 hover:underline focus-visible:outline-3 focus-visible:outline-brand";
+    "min-h-11 py-2 text-left font-medium underline-offset-4 after:absolute after:inset-0 after:rounded-lg hover:underline focus-visible:outline-none focus-visible:after:outline-3 focus-visible:after:outline-brand";
 
   return (
-    <details open={open} className="group mt-10 rounded-lg border border-muted">
+    <details open={open} className="card group min-w-0 self-start">
       {/* biome-ignore lint/a11y/noStaticElementInteractions: a summary is a button already */}
       <summary
         onClick={(event) => {
@@ -293,31 +359,34 @@ function Steps({
             // It's open again next time.
           }
         }}
-        className="flex min-h-11 cursor-pointer flex-wrap items-center gap-x-3 px-4 py-2 focus-visible:outline-3 focus-visible:outline-brand"
+        className="flex min-h-11 cursor-pointer list-none items-center gap-4 rounded-2xl px-5 py-4 focus-visible:outline-3 focus-visible:outline-brand sm:px-6 [&::-webkit-details-marker]:hidden"
       >
-        <h2 className="text-xl font-semibold">
-          <FormattedMessage id={invited ? "steps.headingInvited" : "steps.heading"} />
-        </h2>
-        <span className="text-muted">
-          <FormattedMessage id="steps.count" values={{ done, total: steps.length }} />
+        <StepsRing done={done} total={steps.length} />
+        <span className="min-w-0">
+          <h2 className="text-lg font-bold">
+            <FormattedMessage id={invited ? "steps.headingInvited" : "steps.heading"} />
+          </h2>
+          <span className="text-sm text-muted">
+            <FormattedMessage id="steps.count" values={{ done, total: steps.length }} />
+          </span>
         </span>
-        <Icon name="down" className="ml-auto size-5 group-open:rotate-180" />
+        <Icon name="down" className="ml-auto size-5 text-muted group-open:rotate-180" />
       </summary>
-      <ul className="grid gap-1 border-t border-muted px-4 py-2">
+      <ul className="grid divide-y divide-line px-5 pb-3 sm:px-6">
         {steps.map((step) => {
           const name = <FormattedMessage id={`steps.${step.id}`} />;
           const href = hrefs[step.id];
           return (
-            <li key={step.id} className="flex items-center gap-3">
+            <li key={step.id} className="relative flex min-h-13 items-center gap-3.5">
               <span
-                className={`flex size-6 shrink-0 items-center justify-center rounded-full border ${
-                  step.done ? "border-brand bg-brand text-paper" : "border-muted"
+                className={`grid size-6 shrink-0 place-items-center rounded-full border-2 ${
+                  step.done ? "border-brand bg-brand text-on-brand" : "border-edge"
                 }`}
               >
                 {step.done && <Icon name="done" className="size-4" />}
               </span>
               {step.done ? (
-                <span className="flex min-h-11 items-center text-muted">
+                <span className="text-muted">
                   <span className="sr-only">
                     <FormattedMessage id="steps.done" />{" "}
                   </span>
@@ -328,10 +397,11 @@ function Steps({
                   {name}
                 </button>
               ) : (
-                <Link href={href} className={`${stepClass} inline-flex items-center`}>
+                <Link href={href} className={stepClass}>
                   {name}
                 </Link>
               )}
+              {!step.done && <Icon name="right" className="ml-auto size-4 text-muted" />}
             </li>
           );
         })}
@@ -374,7 +444,7 @@ function ThisServer({ info }: { info: OverviewInfo }) {
   const { disk, lastCopyAt } = info;
   if (!disk) return null;
   return (
-    <Section heading={<FormattedMessage id="overview.server" />}>
+    <Card heading={<FormattedMessage id="overview.server" />}>
       <p className={`mt-2 ${disk.low ? "font-medium text-danger" : ""}`}>
         <FormattedMessage
           id={disk.low ? "overview.diskLow" : "overview.disk"}
@@ -399,7 +469,18 @@ function ThisServer({ info }: { info: OverviewInfo }) {
       <Link href="/settings/backups" className={textLinkClass}>
         <FormattedMessage id="overview.backup.link" />
       </Link>
-    </Section>
+    </Card>
+  );
+}
+
+/** "Good morning, Sam", by this computer's clock. */
+function useHello(name: string): string {
+  const intl = useIntl();
+  const hour = new Date().getHours();
+  const time = hour < 5 || hour >= 18 ? "evening" : hour < 12 ? "morning" : "afternoon";
+  return intl.formatMessage(
+    { id: `overview.hello.${time}` },
+    { name: name.split(/\s+/)[0] ?? name },
   );
 }
 
@@ -415,6 +496,8 @@ function OverviewScreen({ me }: { me: Me }) {
   const info = overview.data;
   const canEditPages = me.user.role === "admin" || me.user.role === "editor";
   const homeId = canEditPages ? (info?.homeId ?? null) : null;
+  const hello = useHello(me.user.name);
+  const hasSteps = info?.steps.some((step) => !step.done) ?? false;
 
   const newPost = useMutation({
     mutationFn: () =>
@@ -429,75 +512,92 @@ function OverviewScreen({ me }: { me: Me }) {
     });
   }
 
-  return (
-    <AdminLayout me={me} screen="overview" title={me.site.name}>
-      {me.site.tagline && <p className="mt-2 text-lg break-words text-muted">{me.site.tagline}</p>}
-      <p className="mt-6 text-lg">
-        <SiteStatus me={me} />
+  const waiting = info && info.changes.count > 0 && (
+    <Card
+      heading={<FormattedMessage id="overview.changes" values={{ count: info.changes.count }} />}
+      className="mt-7 border-wait-line bg-linear-to-b from-wait-soft to-surface to-60%"
+    >
+      <p className="mt-1 text-muted">
+        <FormattedMessage id="overview.changesHint" values={{ count: info.changes.count }} />
       </p>
-      {me.user.role === "admin" && <PicturesNotice me={me} />}
-      {askAddress && <AddressCheck />}
-      {info && info.changes.count > 0 && (
-        <Section
-          heading={
-            <FormattedMessage id="overview.changes" values={{ count: info.changes.count }} />
-          }
-          className="rounded-lg border border-brand p-4"
-        >
-          <p className="mt-1 text-muted">
-            <FormattedMessage id="overview.changesHint" values={{ count: info.changes.count }} />
-          </p>
-          <EntryLinks
-            part={info.changes}
-            more={
-              info.changes.count > info.changes.entries.length && (
-                <p className="mt-2 text-muted">
-                  <FormattedMessage
-                    id="overview.more"
-                    values={{ count: info.changes.count - info.changes.entries.length }}
-                  />
-                </p>
-              )
-            }
-          />
-        </Section>
-      )}
-      <div className="mt-6 flex flex-wrap gap-3">
-        {homeId && (
-          <Link
-            href={`/pages/${homeId}`}
-            className={`${primaryButtonClass} inline-flex items-center`}
+      <EntryLinks
+        part={info.changes}
+        more={
+          info.changes.count > info.changes.entries.length && (
+            <p className="mt-2 text-muted">
+              <FormattedMessage
+                id="overview.more"
+                values={{ count: info.changes.count - info.changes.entries.length }}
+              />
+            </p>
+          )
+        }
+      />
+    </Card>
+  );
+
+  return (
+    <AdminLayout
+      me={me}
+      screen="overview"
+      title={hello}
+      intro={me.site.tagline && <p className="text-lg break-words">{me.site.tagline}</p>}
+      width="wide"
+      actions={
+        <>
+          <button
+            type="button"
+            disabled={newPost.isPending}
+            onClick={writePost}
+            className={homeId ? secondaryButtonClass : primaryButtonClass}
           >
-            <FormattedMessage id="overview.editHome" />
-          </Link>
-        )}
-        <button
-          type="button"
-          disabled={newPost.isPending}
-          onClick={writePost}
-          className={homeId ? secondaryButtonClass : primaryButtonClass}
-        >
-          <FormattedMessage id="overview.writePost" />
-        </button>
-        <OutLink href="/" className={`${textLinkClass} ml-2`}>
-          <FormattedMessage id="nav.viewSite" />
-        </OutLink>
-      </div>
+            <Icon name="add" className="size-4.5" />
+            <FormattedMessage id="overview.writePost" />
+          </button>
+          {homeId && (
+            <Link href={`/pages/${homeId}`} className={primaryButtonClass}>
+              <FormattedMessage id="overview.editHome" />
+            </Link>
+          )}
+        </>
+      }
+    >
       {/* Always mounted: screen readers can miss a live region added along with its text. */}
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
         {newPost.error && <Problem error={newPost.error} />}
       </p>
-      {info ? (
-        <>
+      {me.user.role === "admin" && <PicturesNotice me={me} />}
+      {askAddress && <AddressCheck />}
+      {waiting}
+      <div className={`mt-6 grid gap-5 ${hasSteps ? "xl:grid-cols-[1.6fr_1fr]" : ""}`}>
+        <section aria-labelledby="overview-site" className="card min-w-0 p-4">
+          <h2 id="overview-site" className="sr-only">
+            <FormattedMessage id="overview.site" />
+          </h2>
+          <SitePicture name={me.site.name} />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1.5 pt-3.5">
+            <p className="min-w-0 flex-1 basis-64">
+              <SiteStatus me={me} />
+            </p>
+            <OutLink href="/" className={secondaryButtonClass}>
+              <FormattedMessage id="nav.viewSite" />
+            </OutLink>
+          </div>
+        </section>
+        {info && hasSteps && (
           <Steps
             steps={info.steps}
             homeId={homeId}
             onWritePost={writePost}
             invited={!me.user.isOwner}
           />
+        )}
+      </div>
+      {info ? (
+        <div className="mt-5 grid items-start gap-5 md:grid-cols-2">
           {me.user.isOwner && <BackupReminder />}
           {info.drafts.count > 0 && (
-            <Section heading={<FormattedMessage id="overview.drafts" />}>
+            <Card heading={<FormattedMessage id="overview.drafts" />}>
               <EntryLinks
                 part={info.drafts}
                 more={
@@ -519,29 +619,37 @@ function OverviewScreen({ me }: { me: Me }) {
                   )
                 }
               />
-            </Section>
+            </Card>
           )}
           {info.activity.length > 0 && (
-            <Section heading={<FormattedMessage id="overview.activity" />}>
-              <ul className="mt-2 grid gap-2">
+            <Card heading={<FormattedMessage id="overview.activity" />}>
+              <ul className="mt-2 divide-y divide-line">
                 {info.activity.map((activity) => (
                   <li
                     key={`${activity.kind}-${activity.id}`}
-                    className="flex flex-wrap items-baseline justify-between gap-x-4 [overflow-wrap:anywhere]"
+                    className="flex items-start gap-3.5 py-2.5 [overflow-wrap:anywhere]"
                   >
-                    <span className="min-w-0">
-                      <ActivityText activity={activity} />
+                    <span
+                      aria-hidden="true"
+                      className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-mint text-xs font-bold text-brand-strong"
+                    >
+                      {activity.by ? initials(activity.by) : "?"}
                     </span>
-                    <span className="text-sm text-muted">
-                      <FormattedDate value={activity.at} dateStyle="medium" timeStyle="short" />
+                    <span className="min-w-0">
+                      <span className="block">
+                        <ActivityText activity={activity} />
+                      </span>
+                      <span className="block text-sm text-muted">
+                        <FormattedDate value={activity.at} dateStyle="medium" timeStyle="short" />
+                      </span>
                     </span>
                   </li>
                 ))}
               </ul>
-            </Section>
+            </Card>
           )}
           <ThisServer info={info} />
-        </>
+        </div>
       ) : (
         <Waiting query={overview} />
       )}

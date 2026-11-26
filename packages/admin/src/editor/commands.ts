@@ -1,7 +1,9 @@
 import type { Editor } from "@tiptap/core";
+import type { IconName } from "../components/icons.tsx";
 
 export interface InsertItem {
   id: string;
+  icon: IconName;
   /** More words people might type for this, in the "/" menu. */
   keywords: string;
   pagesOnly?: boolean;
@@ -52,21 +54,25 @@ export function insertAtTopLevel(editor: Editor, content: Record<string, unknown
 export const INSERT_ITEMS: InsertItem[] = [
   {
     id: "heading2",
+    icon: "heading2",
     keywords: "heading title header big h2",
     run: (editor) => editor.chain().focus().setHeading({ level: 2 }).run(),
   },
   {
     id: "heading3",
+    icon: "heading3",
     keywords: "subheading heading title header medium h3",
     run: (editor) => editor.chain().focus().setHeading({ level: 3 }).run(),
   },
   {
     id: "heading4",
+    icon: "heading4",
     keywords: "small heading title header h4",
     run: (editor) => editor.chain().focus().setHeading({ level: 4 }).run(),
   },
   {
     id: "image",
+    icon: "media",
     keywords: "image picture photo photograph upload media img",
     run: (_editor, { askForImage }) => {
       askForImage();
@@ -75,31 +81,37 @@ export const INSERT_ITEMS: InsertItem[] = [
   },
   {
     id: "bulletList",
+    icon: "bulletList",
     keywords: "bullet bulleted list unordered dots points ul",
     run: (editor) => editor.chain().focus().toggleBulletList().run(),
   },
   {
     id: "orderedList",
+    icon: "orderedList",
     keywords: "numbered list ordered steps ol",
     run: (editor) => editor.chain().focus().toggleOrderedList().run(),
   },
   {
     id: "quote",
+    icon: "quote",
     keywords: "quote blockquote citation said",
     run: (editor) => editor.chain().focus().toggleBlockquote().run(),
   },
   {
     id: "code",
+    icon: "code",
     keywords: "code snippet monospace programming pre",
     run: (editor) => editor.chain().focus().toggleCodeBlock().run(),
   },
   {
     id: "divider",
+    icon: "divider",
     keywords: "divider line rule separator horizontal hr break",
     run: (editor) => editor.chain().focus().setHorizontalRule().run(),
   },
   {
     id: "button",
+    icon: "button",
     keywords: "button link call action click",
     run: (_editor, { askForButton }) => {
       askForButton();
@@ -108,6 +120,7 @@ export const INSERT_ITEMS: InsertItem[] = [
   },
   {
     id: "intro",
+    icon: "intro",
     keywords: "big intro section hero welcome banner top",
     pagesOnly: true,
     run: (editor) =>
@@ -119,6 +132,7 @@ export const INSERT_ITEMS: InsertItem[] = [
   },
   {
     id: "pictureText",
+    icon: "pictureText",
     keywords: "picture text image photo side beside section columns",
     pagesOnly: true,
     // The picture comes first, so the section never sits there with nothing in it.
@@ -139,6 +153,7 @@ export const INSERT_ITEMS: InsertItem[] = [
   },
   {
     id: "contact",
+    icon: "contact",
     keywords: "contact hours opening address phone email map location business visit find",
     pagesOnly: true,
     run: (editor) =>

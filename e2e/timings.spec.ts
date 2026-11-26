@@ -13,15 +13,21 @@ const SAVE_P95_MS = 300;
 const KEYSTROKE_TYPICAL_MS = 16;
 const KEYSTROKE_P95_MS = 50;
 const SLOWDOWN = 4;
+/**
+ * How long the typing test's fixed piece of work takes, slowed down as much, on the computer its
+ * limits were set on. Machines differ, GitHub's by more than half from one night to the next: the
+ * same editor took 10.8 ms a keystroke on one and 17.1 on another.
+ */
+const WORK_MS = 6.3;
 
 function percentile(values: number[], part: number): number {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * part) - 1)] as number;
 }
 
-function say(name: string, values: number[]): void {
+function say(name: string, values: number[], note = ""): void {
   const at = (part: number) => percentile(values, part).toFixed(1);
-  console.log(`${name}: ${at(0.5)} ms typically, ${at(0.95)} ms for 95 in 100`);
+  console.log(`${name}: ${at(0.5)} ms typically, ${at(0.95)} ms for 95 in 100${note}`);
 }
 
 const body = (page: Page) => page.getByRole("textbox", { name: "Text" });
@@ -101,8 +107,34 @@ test("typing in 3,000 words keeps up, on a processor 4 times slower", async ({
   const session = await page.context().newCDPSession(page);
   await session.send("Emulation.setCPUThrottlingRate", { rate: SLOWDOWN });
   await page.evaluate(() => {
-    const measured = { handled: [] as number[], shown: [] as number[] };
+    const measured = { handled: [] as number[], shown: [] as number[], work: [] as number[] };
     Object.assign(window, { measured });
+    // Much like what a keystroke sets off, and the same amount each time: words taken apart and
+    // put together, and some of them laid out again, where nobody sees it.
+    const sheet = document.createElement("div");
+    sheet.style.cssText = "position:absolute;top:0;left:0;width:600px;visibility:hidden";
+    for (let index = 0; index < 12; index++) {
+      const words = document.createElement("p");
+      words.textContent = "The oven is warm and the first loaves are ready. ".repeat(6);
+      sheet.append(words);
+    }
+    document.body.append(sheet);
+    const work = () => {
+      const began = performance.now();
+      for (let round = 0; round < 5; round++) {
+        const taken = [...sheet.children].map((words) => ({
+          type: "paragraph",
+          content: (words.textContent ?? "").split(" ").map((text) => ({ type: "text", text })),
+        }));
+        const copied: typeof taken = JSON.parse(JSON.stringify(taken));
+        const line = sheet.children[round] as HTMLElement;
+        line.textContent = (copied[round]?.content ?? []).map(({ text }) => text).join(" ");
+        sheet.getBoundingClientRect();
+      }
+      return performance.now() - began;
+    };
+    // Until the browser has made it as quick as it's going to be.
+    for (let round = 0; round < 60; round++) work();
     document.addEventListener(
       "keydown",
       (event) => {
@@ -113,7 +145,10 @@ test("typing in 3,000 words keeps up, on a processor 4 times slower", async ({
         port1.onmessage = () => measured.handled.push(performance.now() - at);
         port2.postMessage(null);
         requestAnimationFrame(() => {
-          setTimeout(() => measured.shown.push(performance.now() - at));
+          setTimeout(() => {
+            measured.shown.push(performance.now() - at);
+            measured.work.push(work());
+          });
         });
       },
       { capture: true },
@@ -125,12 +160,18 @@ test("typing in 3,000 words keeps up, on a processor 4 times slower", async ({
     await page.waitForTimeout(100);
   }
   await session.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-  const { handled, shown } = await page.evaluate(
-    () => (window as unknown as { measured: { handled: number[]; shown: number[] } }).measured,
+  const { handled, shown, work } = await page.evaluate(
+    () =>
+      (window as unknown as { measured: { handled: number[]; shown: number[]; work: number[] } })
+        .measured,
   );
   expect(handled.length).toBeGreaterThan(50);
-  say("A keystroke handled", handled);
-  say("A keystroke shown", shown);
-  expect(percentile(handled, 0.5)).toBeLessThanOrEqual(KEYSTROKE_TYPICAL_MS);
-  expect(percentile(shown, 0.95)).toBeLessThanOrEqual(KEYSTROKE_P95_MS);
+  expect(work.length).toBeGreaterThan(50);
+  // Going by the work between the keystrokes, which slows down exactly as typing does.
+  const slower = percentile(work, 0.5) / WORK_MS;
+  const note = `, on a machine ${slower.toFixed(2)} times as slow as the limits are for`;
+  say("A keystroke handled", handled, note);
+  say("A keystroke shown", shown, note);
+  expect(percentile(handled, 0.5) / slower).toBeLessThanOrEqual(KEYSTROKE_TYPICAL_MS);
+  expect(percentile(shown, 0.95) / slower).toBeLessThanOrEqual(KEYSTROKE_P95_MS);
 });

@@ -256,7 +256,7 @@ describe("business details", () => {
     expect(html).toContain('href="mailto:hello@rise.example"');
     expect(html).toContain("Get directions");
     expect(html).toContain("Monday");
-    expect(html).toMatch(/Sunday<\/th><td>Closed/);
+    expect(html).toMatch(/Sunday<\/th><td class="t-closed">Closed/);
     expect(html).toContain("Closed on holidays");
     expect(html).not.toContain("tend-business");
     expect(html).toContain('"@type":"LocalBusiness"');
@@ -1053,6 +1053,92 @@ describe("fixes from review", () => {
     await owner.put("/api/admin/settings/visibility", { mode: "public" });
     const open = await made.app.request(smallest(photo));
     expect(open.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  });
+
+  test("previews of a Private site have its pictures, each with a key for it and a while", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    const entry = await (await owner.post(ENTRIES, { type: "post" })).json();
+    const [first, second] = [await picture(owner, 600, 400), await picture(owner, 500, 400)];
+    const { rev } = await (
+      await owner.patch(
+        `${ENTRIES}/${entry.id}`,
+        {
+          title: "Loaves",
+          doc: {
+            type: "doc",
+            content: [first, second].map(({ id }) => ({ type: "image", attrs: { mediaId: id } })),
+          },
+        },
+        { "If-Match": "1" },
+      )
+    ).json();
+    expect(rev).toBe(2);
+    const preview = async () =>
+      (await (await owner.get(`/api/admin/preview/${entry.id}`)).json()).html as string;
+    const addresses = (html: string, id: string) =>
+      [...html.matchAll(new RegExp(`/media/${id}/[^"\\s,]+`, "g"))].map(([address]) => address);
+
+    // Anyone may see an open site's, so they're at their usual addresses.
+    expect(await preview()).not.toContain("?key=");
+    await owner.put("/api/admin/settings/visibility", { mode: "private" });
+    const html = await preview();
+    const [one] = addresses(html, first.id) as [string];
+    expect(addresses(html, first.id).length).toBeGreaterThan(1);
+    for (const address of [...addresses(html, first.id), ...addresses(html, second.id)]) {
+      // From a frame that sends no cookie.
+      const reply = await made.app.request(address);
+      expect(reply.status, address).toBe(200);
+      expect(reply.headers.get("cache-control")).toContain("private");
+    }
+    // The same address for a while, so it's fetched once.
+    expect(await preview()).toBe(html);
+
+    const [plain, key] = one.split("?key=") as [string, string];
+    const [other] = addresses(html, second.id) as [string];
+    const [until, signed] = key.split("-") as [string, string];
+    for (const [address, why] of [
+      [plain, "without a key"],
+      [`${other.split("?")[0]}?key=${key}`, "another picture's key"],
+      [`${plain}?key=${Number(until) + 3_600_000}-${signed}`, "a key made to last"],
+      [`${plain}?key=${until}-${"0".repeat(32)}`, "a made-up key"],
+      [`${plain}?key=${until}`, "half a key"],
+      [`${plain}?key=-`, "nothing much"],
+    ] as const) {
+      expect((await made.app.request(address)).status, why).toBe(404);
+    }
+    // Another site's is no use here.
+    const elsewhere = await makeApp();
+    await setUp(elsewhere);
+    expect((await elsewhere.app.request(one)).status).toBe(404);
+
+    made.clock.time += 3 * 3_600_000;
+    expect((await made.app.request(one)).status, "out of date").toBe(404);
+    const again = addresses(await preview(), first.id)[0] as string;
+    expect((await made.app.request(again)).status).toBe(200);
+    // In the site's own CSS too, where an address needn't be in quotes.
+    const design = await (await owner.get("/api/admin/design")).json();
+    const customCss = `body { background: url(${plain}) }`;
+    await owner.put("/api/admin/design", { ...design.value, customCss });
+    expect(await preview()).toContain(`url(${again})`);
+  });
+
+  test("Overview's picture of the homepage is the page visitors get, with nothing added", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made);
+    await owner.put("/api/admin/settings/code", {
+      head: "<script>alert(1)</script>",
+      bodyEnd: null,
+    });
+    await owner.put("/api/admin/settings/visibility", { mode: "private" });
+    const { client: writer } = await signedInAs(made, "writer");
+    const { html } = await (await writer.get("/api/admin/overview/homepage")).json();
+    expect(html).toContain("Welcome to Rise Bakery");
+    expect(html).toContain('content="noindex"');
+    expect(html).not.toContain("<script>alert");
+    const address = html.match(/\/media\/[^"\s,]+\?key=[^"\s,]+/)?.[0] as string;
+    expect((await made.app.request(address)).status).toBe(200);
+    expect((await made.app.request("/api/admin/overview/homepage")).status).toBe(401);
   });
 
   test("a missing picture or file gets a plain 404, even on a private site", async () => {

@@ -14,18 +14,28 @@ import { forgetUpload, retryUpload, useUpload } from "./uploads.ts";
 export const UPLOAD_META = "tendUpload";
 
 const controlClass =
-  "min-h-11 min-w-11 rounded border border-muted bg-paper px-2 text-sm focus-visible:outline-3 focus-visible:outline-brand";
+  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-line bg-surface px-3 text-sm font-semibold text-ink hover:border-brand focus-visible:outline-3 focus-visible:outline-brand";
+/** On a picture, over whatever's in it. */
+const overClass =
+  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-white hover:bg-white/15 focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-white aria-pressed:bg-white aria-pressed:text-[#14201b]";
+const SIZES = [
+  ["normal", "image.sizeNormal"],
+  ["wide", "image.sizeWide"],
+  ["full", "image.sizeFull"],
+] as const;
 
 export interface ImageOptions {
   /** Opens the description dialog for a picture. */
   onDescribe: (mediaId: string) => void;
+  /** Asks for a picture, and hands it over. */
+  onPick: (use: (mediaId: string) => void) => void;
   /** A dropped, pasted or picked file has arrived and taken its placeholder's place. */
   onUploaded: (item: MediaItem, startedAt: number) => void;
 }
 
 function Notice({ children, onRemove }: { children: React.ReactNode; onRemove?: () => void }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-danger p-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-danger bg-danger-soft p-4 text-left font-sans text-base">
       <span className="min-w-0 flex-1 text-danger">{children}</span>
       {onRemove && (
         <button type="button" onClick={onRemove} className={controlClass}>
@@ -109,7 +119,7 @@ function ImageView({
       );
     } else if (upload.error) {
       picture = (
-        <div className="grid gap-2 rounded-lg border border-dashed border-danger p-3">
+        <div className="grid gap-2 rounded-2xl border border-dashed border-danger bg-danger-soft p-4 text-left font-sans text-base">
           <p role="alert" className="text-danger">
             <FormattedMessage id="image.uploadFailed" values={{ name: upload.name }} />{" "}
             {upload.error}
@@ -137,10 +147,10 @@ function ImageView({
             <img
               src={upload.previewUrl}
               alt=""
-              className="max-h-96 w-full rounded-lg object-contain opacity-60"
+              className="max-h-96 w-full rounded-2xl object-contain opacity-60"
             />
           ) : (
-            <p className="rounded-lg bg-ink/5 p-4 font-medium [overflow-wrap:anywhere]">
+            <p className="rounded-2xl bg-sunken p-5 font-sans text-base font-medium text-ink [overflow-wrap:anywhere]">
               {upload.name}
             </p>
           )}
@@ -155,7 +165,7 @@ function ImageView({
     }
   } else if (!item) {
     picture = lookup.isPending ? (
-      <div className="aspect-[3/2] w-full animate-pulse rounded-lg bg-ink/10" />
+      <div className="tend-picture aspect-[3/2] w-full animate-pulse bg-ink/10 motion-reduce:animate-none" />
     ) : (
       <Notice onRemove={editable ? remove : undefined}>
         <FormattedMessage id={lookup.isError ? "image.cantLoad" : "image.deleted"} />
@@ -170,7 +180,7 @@ function ImageView({
   } else {
     const described = item.decorative || Boolean(item.alt);
     picture = (
-      <div className="grid gap-2">
+      <>
         <img
           src={item.previewUrl ?? undefined}
           srcSet={item.srcset}
@@ -179,52 +189,60 @@ function ImageView({
           width={item.width ?? undefined}
           height={item.height ?? undefined}
           style={{ backgroundColor: item.dominantColor ?? undefined }}
-          className={`h-auto w-full rounded-lg ${size === "normal" || nested ? "" : "ring-2 ring-brand/30"}`}
+          className="tend-picture h-auto w-full"
         />
         {editable && (
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => options.onDescribe(item.id)}
-              className={controlClass}
-            >
+          // Over the picture while it's chosen, or pointed at, or has no description yet.
+          <div className="tend-over" data-always={described ? undefined : ""}>
+            {!nested && (
+              <fieldset className="flex">
+                <legend className="sr-only">{intl.formatMessage({ id: "image.size" })}</legend>
+                {SIZES.map(([option, name]) => (
+                  <button
+                    key={option}
+                    type="button"
+                    aria-pressed={size === option}
+                    onClick={() => updateAttributes({ size: option })}
+                    className={overClass}
+                  >
+                    <FormattedMessage id={name} />
+                  </button>
+                ))}
+              </fieldset>
+            )}
+            <button type="button" onClick={() => options.onDescribe(item.id)} className={overClass}>
               <FormattedMessage id={described ? "image.editDescription" : "image.addDescription"} />
             </button>
-            {!described && (
-              <span className="text-sm text-danger">
-                <FormattedMessage id="image.noDescription" />
-              </span>
-            )}
-            {!nested && (
-              <label className="flex items-center gap-1 text-sm">
-                <FormattedMessage id="image.size" />
-                <select
-                  className={controlClass}
-                  value={size}
-                  onChange={(event) => updateAttributes({ size: event.target.value })}
-                >
-                  <option value="normal">{intl.formatMessage({ id: "image.sizeNormal" })}</option>
-                  <option value="wide">{intl.formatMessage({ id: "image.sizeWide" })}</option>
-                  <option value="full">{intl.formatMessage({ id: "image.sizeFull" })}</option>
-                </select>
-              </label>
-            )}
-            <button type="button" onClick={remove} className={`${controlClass} ms-auto`}>
+            <button
+              type="button"
+              onClick={() => options.onPick((picked) => updateAttributes({ mediaId: picked }))}
+              className={overClass}
+            >
+              <FormattedMessage id="image.change" />
+            </button>
+            <button type="button" onClick={remove} className={overClass}>
               <FormattedMessage id="image.remove" />
             </button>
           </div>
         )}
-      </div>
+        {editable && !described && (
+          <span className="tend-undescribed">
+            <FormattedMessage id="image.noDescription" />
+          </span>
+        )}
+      </>
     );
   }
 
   return (
     <NodeViewWrapper
       data-image-view=""
-      className={`my-4 rounded-lg ${selected ? "outline-3 outline-offset-4 outline-brand" : ""}`}
+      data-size={nested ? "normal" : size}
+      data-chosen={selected ? "" : undefined}
+      className="tend-image"
     >
-      <div contentEditable={false} className="grid gap-2">
-        {picture}
+      <div contentEditable={false}>
+        <div className="tend-image-frame">{picture}</div>
         {mediaId &&
           (editable ? (
             <input
@@ -232,10 +250,10 @@ function ImageView({
               onChange={(event) => updateAttributes({ caption: event.target.value })}
               placeholder={intl.formatMessage({ id: "image.captionPlaceholder" })}
               aria-label={intl.formatMessage({ id: "image.caption" })}
-              className="min-h-11 w-full rounded border border-transparent bg-transparent px-2 text-center text-base text-muted hover:border-muted focus-visible:border-muted focus-visible:outline-3 focus-visible:outline-brand"
+              className="tend-caption"
             />
           ) : (
-            caption && <p className="text-center text-muted">{caption}</p>
+            caption && <p className="tend-caption">{caption}</p>
           ))}
       </div>
     </NodeViewWrapper>
@@ -255,7 +273,7 @@ export const ImageNode = Node.create<ImageOptions>({
   draggable: false,
 
   addOptions() {
-    return { onDescribe: () => {}, onUploaded: () => {} };
+    return { onDescribe: () => {}, onPick: () => {}, onUploaded: () => {} };
   },
 
   addAttributes() {

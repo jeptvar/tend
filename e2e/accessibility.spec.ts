@@ -6,6 +6,8 @@ import {
   copyTheme,
   createEntry,
   expect,
+  openHistory,
+  openSettings,
   photo,
   pretendDataIsAtRisk,
   type Site,
@@ -254,11 +256,13 @@ for (const colorScheme of ["light", "dark"] as const) {
     });
 
     test("admin screens have no accessibility violations", async ({ page, signedIn }) => {
+      // There are a lot of them, and they're all looked at.
+      test.setTimeout(90_000);
       for (const [name, path] of await adminScreens(page, signedIn)) {
         await page.goto(`${signedIn.base}${path}`);
         await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
         await page.waitForLoadState("networkidle");
-        await expectNoViolations(page, name);
+        await expectNoViolations(page, name, { skipFrame: ["overview", "design"].includes(name) });
       }
     });
 
@@ -369,10 +373,10 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.waitForLoadState("networkidle");
       await expectNoViolations(page, "with every kind of content");
 
-      await page.getByText("Address, summary and more").click();
+      await openSettings(page);
       await expectNoViolations(page, "with the settings open");
 
-      await page.getByRole("button", { name: "Insert +" }).click();
+      await page.getByRole("button", { name: "Insert", exact: true }).click();
       await expect(page.getByRole("menu")).toBeVisible();
       await expectNoViolations(page, "with the Insert menu open");
       await page.keyboard.press("Escape");
@@ -433,7 +437,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoViolations(page, "preview", { skipFrame: true });
       await page.getByRole("button", { name: "Close" }).click();
 
-      await page.getByRole("button", { name: "History" }).click();
+      await openHistory(page);
       await page
         .getByRole("dialog", { name: "History" })
         .getByRole("button", { name: /Published/ })
@@ -445,7 +449,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     test("the Trash and toasts have no accessibility violations", async ({ page, signedIn }) => {
       const post = await createEntry(page, signedIn, { title: "Binned", publish: true });
       await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-      await page.getByText("Address, summary and more").click();
+      await openSettings(page);
       await page.getByRole("button", { name: "Move to Trash" }).click();
       await expect(page.getByText("Moved to the Trash")).toBeVisible();
       await expectNoViolations(page, "a toast");
@@ -534,7 +538,7 @@ for (const colorScheme of ["light", "dark"] as const) {
 
       const post = await createEntry(page, signedIn, { title: "Pictures", body: "" });
       await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-      await page.getByRole("button", { name: "Insert +" }).click();
+      await page.getByRole("button", { name: "Insert", exact: true }).click();
       await page.getByRole("menuitem", { name: "Image" }).click();
       await expect(page.getByRole("dialog", { name: "Add an image" })).toBeVisible();
       await page.waitForLoadState("networkidle");
@@ -617,7 +621,14 @@ test.describe("at phone widths", () => {
       [...document.querySelectorAll("a, button, select, summary")]
         .filter((element) => !element.closest(".tend-prose a, .tend-prose :is(p, li) a"))
         .map((element) => {
-          const { width, height } = element.getBoundingClientRect();
+          const box = element.getBoundingClientRect();
+          // A link can be laid over the whole row it's in, which its own box doesn't show.
+          const over = getComputedStyle(element, "::after");
+          const spread = over.position === "absolute" && over.content !== "none";
+          const size = (own: number, whole: string) =>
+            spread && own > 0 ? Math.max(own, Number.parseFloat(whole)) : own;
+          const width = size(box.width, over.width);
+          const height = size(box.height, over.height);
           const hidden = getComputedStyle(element).visibility === "hidden";
           return { text: element.textContent, width, height, hidden };
         })
@@ -696,10 +707,12 @@ test.describe("at phone widths", () => {
     await page.setViewportSize({ width: 375, height: 812 });
     await page.goto(`${signedIn.base}/admin/pages/${entry.id}`);
     await expect(page.getByRole("textbox", { name: "Text" }).locator("h4")).toBeVisible();
-    await page.getByText("Address, summary and more").click();
     expect(await tooSmallTargets(page), "editor").toEqual([]);
+    await openSettings(page);
+    expect(await tooSmallTargets(page), "settings").toEqual([]);
+    await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "Insert +" }).click();
+    await page.getByRole("button", { name: "Insert", exact: true }).click();
     expect(await tooSmallTargets(page), "Insert menu").toEqual([]);
     await page.keyboard.press("Escape");
 
@@ -708,7 +721,7 @@ test.describe("at phone widths", () => {
       .or(page.getByRole("button", { name: "Published" }))
       .first()
       .focus();
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     await expect(page.getByRole("dialog")).toBeVisible();
     await page.waitForLoadState("networkidle");
     expect(await tooSmallTargets(page), "History").toEqual([]);
@@ -726,8 +739,9 @@ test.describe("at phone widths", () => {
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
     await page.waitForLoadState("networkidle");
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     await expectNoSidewaysScrolling(page, "settings open");
+    await page.keyboard.press("Escape");
 
     const body = page.getByRole("textbox", { name: "Text" });
     await body.click();
@@ -740,7 +754,7 @@ test.describe("at phone widths", () => {
     await expectNoSidewaysScrolling(page, "preview");
     await page.getByRole("button", { name: "Close" }).click();
 
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     await expect(page.getByRole("dialog")).toBeVisible();
     await expectNoSidewaysScrolling(page, "History");
     await page.getByRole("button", { name: "Close" }).click();

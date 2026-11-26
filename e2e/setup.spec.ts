@@ -1,4 +1,4 @@
-import { expect, OWNER, test } from "./fixtures.ts";
+import { expect, GREETING, OWNER, test } from "./fixtures.ts";
 
 test("from the printed link to a published site, as a new owner", async ({ page, site }) => {
   await page.goto(site.link);
@@ -24,7 +24,7 @@ test("from the printed link to a published site, as a new owner", async ({ page,
   ).toHaveCount(8);
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByRole("heading", { name: "Rise Bakery" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: GREETING })).toBeVisible();
   await expect(page.getByRole("link", { name: "Edit homepage" })).toBeVisible();
 
   const visitor = await page.context().newPage();

@@ -158,6 +158,19 @@ try {
     (await fetch(`${base}/blog/welcome`)).status === 200,
     "the starter's first post is published",
   );
+  const picture = homeHtml.match(/\/media\/[^" ]+\/480\.webp/)?.[0];
+  const sent = await fetch(`${base}${picture}`);
+  check(
+    sent.status === 200 && sent.headers.get("content-type") === "image/webp",
+    "the starter's picture came along, and is made small for a phone",
+  );
+  const fonts = join(dist, "themes", "meadow", "assets", "fonts");
+  check(
+    ["fraunces-latin.woff2", "Fraunces-OFL.txt", "nunito-latin.woff2", "Nunito-OFL.txt"].every(
+      (name) => existsSync(join(fonts, name)),
+    ),
+    "the theme's fonts came along, with their licences",
+  );
 
   // tendcms doctor, from files of its own in the bundle, beside the running site. How full
   // this computer's disk is could fail it, so only what it says about the site counts.

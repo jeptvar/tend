@@ -1,4 +1,27 @@
 {
+  "pictures": {
+    "table": {
+      "file": "table.jpg",
+      "alt": "Vases, a bowl and some fruit on a table",
+      "width": 2400,
+      "height": 1350,
+      "color": "#d8d8c8"
+    },
+    "bowl": {
+      "file": "bowl.jpg",
+      "alt": "A green bowl and two vases",
+      "width": 1600,
+      "height": 1200,
+      "color": "#c8c8b8"
+    },
+    "leaves": {
+      "file": "leaves.jpg",
+      "alt": "Green leaves in a white vase",
+      "width": 1600,
+      "height": 1200,
+      "color": "#d8d8c8"
+    }
+  },
   "entries": [
     {
       "type": "page",
@@ -12,11 +35,17 @@
             "type": "section",
             "attrs": {
               "kind": "intro",
-              "preset": "1",
-              "tone": "muted",
+              "preset": "2",
+              "tone": "none",
               "align": "left"
             },
             "content": [
+              {
+                "type": "image",
+                "attrs": {
+                  "mediaId": "{picture:table}"
+                }
+              },
               {
                 "type": "heading",
                 "attrs": {
@@ -48,11 +77,110 @@
             ]
           },
           {
-            "type": "paragraph",
+            "type": "section",
+            "attrs": {
+              "kind": "pictureText",
+              "preset": "1",
+              "tone": "none",
+              "align": "left"
+            },
             "content": [
               {
-                "type": "text",
-                "text": "Edit this text to make it your own, then publish your changes."
+                "type": "image",
+                "attrs": {
+                  "mediaId": "{picture:bowl}"
+                }
+              },
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "What you do"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Say what you make, or what people come to you for. Then swap this picture for one of your own."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "section",
+            "attrs": {
+              "kind": "pictureText",
+              "preset": "2",
+              "tone": "muted",
+              "align": "left"
+            },
+            "content": [
+              {
+                "type": "image",
+                "attrs": {
+                  "mediaId": "{picture:leaves}"
+                }
+              },
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "How it began"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "People like to know who they're buying from. A few lines about you are enough."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "section",
+            "attrs": {
+              "kind": "contact",
+              "preset": "2",
+              "tone": "none",
+              "align": "left"
+            },
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Come by"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Your address, phone and opening hours show here once you add them in Settings."
+                  }
+                ]
               }
             ]
           }

@@ -1,5 +1,5 @@
 import type { Browser, Page } from "@playwright/test";
-import { expect, OWNER, type Site, test } from "./fixtures.ts";
+import { expect, GREETING, OWNER, type Site, test } from "./fixtures.ts";
 
 // People and invites (PLAN.md J5), and getting back in without the old password (J7).
 
@@ -53,7 +53,7 @@ test("J5: the Owner invites an Editor, who joins with the link", async ({
     invitee.getByRole("list", { name: "Your recovery codes" }).getByRole("listitem"),
   ).toHaveCount(8);
   await invitee.getByRole("button", { name: "Continue" }).click();
-  await expect(invitee.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(invitee.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
   await expect(invitee.getByRole("link", { name: "Pages" })).toBeVisible();
   await expect(invitee.getByRole("link", { name: "People" })).toHaveCount(0);
   await expect(invitee.getByRole("link", { name: "Settings" })).toHaveCount(0);
@@ -108,7 +108,7 @@ test("J7: locked out, the Owner gets back in with a recovery code", async ({
   await expect(owner.getByText("That code is used up now. You have 7 left.")).toBeVisible();
   await owner.getByLabel("New password", { exact: true }).fill(NEW_PASSWORD);
   await owner.getByRole("button", { name: "Save new password" }).click();
-  await expect(owner.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
   await expect(owner.getByText("Your new password is saved.", { exact: false })).toBeVisible();
 
   // The session from before is over, and the new password works.
@@ -306,7 +306,7 @@ test("J7: the Owner sends an Editor a link to choose a new password", async ({
   await expect(fresh.getByText("For ed@example.com, on Rise Bakery.")).toBeVisible();
   await fresh.getByLabel("New password", { exact: true }).fill(ANOTHER_PASSWORD);
   await fresh.getByRole("button", { name: "Save new password" }).click();
-  await expect(fresh.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(fresh.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
 
   // Ed's other session ended with the old password, which no longer works.
   await ed.goto(`${signedIn.base}/admin/`);
@@ -317,5 +317,5 @@ test("J7: the Owner sends an Editor a link to choose a new password", async ({
   await expect(ed.getByText("That email and password don't match.")).toBeVisible();
   await ed.getByLabel("Password", { exact: true }).fill(ANOTHER_PASSWORD);
   await ed.getByRole("button", { name: "Sign in" }).click();
-  await expect(ed.getByRole("heading", { name: "Rise Bakery", level: 1 })).toBeVisible();
+  await expect(ed.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
 });

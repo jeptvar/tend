@@ -69,15 +69,28 @@ async function setBusinessDetails(page: Page, site: Site): Promise<void> {
   expect(reply.status()).toBe(200);
 }
 
-/** Red, green and blue from a computed colour, as rgb() or color(srgb ...) gives them. */
+/**
+ * Red, green and blue from a computed colour. Meadow mixes its own in Oklab, which browsers
+ * give back as oklab().
+ */
 function channels(color: string): [number, number, number] {
-  const numbers = (color.match(/[\d.]+/g) ?? []).map(Number);
-  const scale = color.startsWith("color(") ? 255 : 1;
-  return [numbers[0] ?? 0, numbers[1] ?? 0, numbers[2] ?? 0].map((value) => value * scale) as [
-    number,
-    number,
-    number,
-  ];
+  const numbers = (color.match(/-?[\d.]+(?:e-?\d+)?/g) ?? []).map(Number);
+  const [first = 0, second = 0, third = 0] = numbers;
+  if (!color.startsWith("oklab(")) {
+    const scale = color.startsWith("color(") ? 255 : 1;
+    return [first * scale, second * scale, third * scale];
+  }
+  const l = (first + 0.3963377774 * second + 0.2158037573 * third) ** 3;
+  const m = (first - 0.1055613458 * second - 0.0638541728 * third) ** 3;
+  const s = (first - 0.0894841775 * second - 1.291485548 * third) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ].map((value) => {
+    const c = Math.min(1, Math.max(0, value));
+    return 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+  }) as [number, number, number];
 }
 
 /** WCAG 2.2's contrast ratio between two opaque colours. */
@@ -168,13 +181,15 @@ for (const colorScheme of ["light", "dark"] as const) {
           const accent = element.closest(".t-tone-accent");
           if (!accent) return null;
           const style = getComputedStyle(element);
+          // On the section itself, or on a card that's on it.
+          const behind = element.closest(".t-business-part") ?? accent;
           return {
             name: element.textContent ?? "",
             visible: element.matches(":focus-visible"),
             style: style.outlineStyle,
             width: Number.parseFloat(style.outlineWidth),
             colour: style.outlineColor,
-            behind: getComputedStyle(accent).backgroundColor,
+            behind: getComputedStyle(behind).backgroundColor,
           };
         });
         if (!now) continue;
@@ -313,7 +328,9 @@ test.describe("pictures", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${signedIn.base}${url}`);
       const shown = await page.evaluate(() => {
-        const column = (document.querySelector(".t-body") as HTMLElement).getBoundingClientRect();
+        const column = (
+          document.querySelector(".t-body > p") as HTMLElement
+        ).getBoundingClientRect();
         return {
           column: column.width,
           window: document.documentElement.clientWidth,
@@ -620,9 +637,8 @@ test.describe("the site menu", () => {
             // are checked in every browser.
             const walk = tabsToLinks ? ["More", ...items] : [];
             await page.locator(".t-dropdown summary").focus();
-            for (const label of walk) {
-              await page.keyboard.press("Tab");
-              const focused = await page.evaluate(() => {
+            const focused = () =>
+              page.evaluate(() => {
                 const element = document.activeElement as HTMLElement;
                 const { left, right, top, bottom } = element.getBoundingClientRect();
                 const middle = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
@@ -633,11 +649,12 @@ test.describe("the site menu", () => {
                   uncovered: middle?.closest("a") === element,
                 };
               });
-              expect(focused, `${name}: ${label}`).toEqual({
-                label,
-                inView: true,
-                uncovered: true,
-              });
+            for (const label of walk) {
+              await page.keyboard.press("Tab");
+              // WebKit scrolls to what has the keyboard a moment after the key.
+              await expect
+                .poll(focused, { message: `${name}: ${label}` })
+                .toEqual({ label, inView: true, uncovered: true });
             }
             expectOnScreen(await openLists(page), `${name}, at its last link`);
             const results = await new AxeBuilder({ page }).analyze();
@@ -728,7 +745,7 @@ test.describe("business details", () => {
 });
 
 test.describe("the second layout of a section", () => {
-  test("a Big intro can go right across the page, with its words as wide as the rest", async ({
+  test("a Big intro goes right across the page, with its words under the site's name", async ({
     page,
     signedIn,
   }) => {
@@ -750,7 +767,7 @@ test.describe("the second layout of a section", () => {
           return {
             intro: edges(".t-intro"),
             words: edges(".t-intro h2"),
-            rest: edges(".t-body > p"),
+            name: edges(".t-brand"),
             window: innerWidth,
             scrolls: document.documentElement.scrollWidth,
           };
@@ -758,7 +775,7 @@ test.describe("the second layout of a section", () => {
         const label = `${tone} at ${width} px`;
         expect(shown.intro.left, label).toBeLessThanOrEqual(0.5);
         expect(shown.intro.right, label).toBeGreaterThanOrEqual(shown.window - 0.5);
-        expect(shown.words.left, label).toBeCloseTo(shown.rest.left, 0);
+        expect(shown.words.left, label).toBeCloseTo(shown.name.left, 0);
         expect(shown.scrolls, `${label}: sideways scrolling`).toBeLessThanOrEqual(shown.window);
       }
     }

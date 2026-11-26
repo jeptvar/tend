@@ -14,7 +14,7 @@ import { recoveryKitSaved } from "../../db/repo/tokens.ts";
 import type { User } from "../../db/repo/users.ts";
 import { diskSpace, isRunningLow } from "../../disk.ts";
 import { isHostingAddress } from "../../site-address.ts";
-import { summaryJson } from "./entries.ts";
+import { listJson } from "./entries.ts";
 import type { AdminOptions, Routing } from "./routing.ts";
 
 /** How many of each list Overview shows. The rest are a link away. */
@@ -24,6 +24,8 @@ const ACTIVITY_SHOWN = 8;
 export interface OverviewRouteOptions extends AdminOptions {
   /** Where the copies Tend makes are kept. Absent only in tests that don't need it. */
   backupsDir?: string | undefined;
+  /** The homepage as it is. Absent only in tests that don't need it. */
+  homepage?: (() => Promise<string>) | undefined;
 }
 
 export type StepId = "home" | "business" | "post" | "logo" | "photo" | "kit" | "online" | "domain";
@@ -66,10 +68,16 @@ export function registerOverviewRoutes(routing: Routing, options: OverviewRouteO
     return list;
   }
 
+  // As JSON, like a preview, so it can only be shown in a frame that's allowed nothing.
+  route("get", "/overview/homepage", "entry:list", async (c) => {
+    if (!options.homepage) throw new Error("The homepage isn't available here.");
+    return c.json({ html: await options.homepage() });
+  });
+
   route("get", "/overview", "entry:list", async (c, user) => {
     const authorId = seesOnlyOwnEntries(user) ? user.id : undefined;
     const part = async (view: EntryView) =>
-      (await listEntries(orm, { view, authorId, offset: 0, limit: SHOWN })).map(summaryJson);
+      listJson(orm, await listEntries(orm, { view, authorId, offset: 0, limit: SHOWN }));
     const counts = await countEntries(orm, { authorId });
     const setup = await getSetting(orm, "setup");
     const isAdmin = user.role === "admin";

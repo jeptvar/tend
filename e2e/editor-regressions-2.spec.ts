@@ -5,6 +5,8 @@ import {
   createEntry,
   expect,
   holdRequests,
+  openHistory,
+  openSettings,
   readEntry,
   type Site,
   test,
@@ -17,6 +19,11 @@ const body = (page: Page) => page.getByRole("textbox", { name: "Text" });
 const saveStatus = (page: Page) => page.getByTestId("save-status");
 const postsLink = (page: Page) => page.getByRole("link", { name: "Posts", exact: true });
 const toast = (page: Page) => page.locator(".fixed");
+
+/** The part of what the editor knows that's looked at here. */
+interface EditorState {
+  selection: { $from: { index(depth: number): number } };
+}
 
 async function openPost(page: Page, site: Site, id: string, kind = "posts"): Promise<void> {
   await page.goto(`${site.base}/admin/${kind}/${id}`);
@@ -353,7 +360,7 @@ test.describe("Undo after leaving", () => {
     const post = await createEntry(page, signedIn, { title: "T", body: "Live", publish: true });
     await openPost(page, signedIn, post.id);
     const answer = await holdRequests(page, "**/unpublish");
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     await page.getByRole("button", { name: "Unpublish" }).click();
     await postsLink(page).click();
     // The answer comes once the list is showing. An Undo already showing when the editor
@@ -486,7 +493,7 @@ test.describe("reviewing and restoring", () => {
     });
     await patch(page, signedIn, post.id, post.rev, { doc: doc(paragraph("Newer edit")) });
     await openPost(page, signedIn, post.id);
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     await history.getByRole("button", { name: /On your site/ }).click();
     await history.getByRole("button", { name: "Restore this version" }).click();
@@ -504,7 +511,7 @@ test.describe("reviewing and restoring", () => {
     await openPost(page, signedIn, post.id);
     await retype(page, "Newest edit");
     await expect(saveStatus(page)).toContainText("not on your site yet", { timeout: 6000 });
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     await history
       .getByRole("button", { name: /Saved automatically/ })
@@ -531,7 +538,7 @@ test.describe("reviewing and restoring", () => {
       rev = (await act(page, signedIn, post.id, "publish", saved.rev)).rev;
     }
     await openPost(page, signedIn, post.id);
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     await expect(history.getByRole("button", { name: /Published/ })).toHaveCount(100);
     await history.getByRole("button", { name: "Show older versions" }).click();
@@ -675,19 +682,47 @@ test.describe("the editor itself", () => {
     await patch(page, signedIn, created.id, created.rev, {
       title: "T",
       doc: doc(
-        ...Array.from({ length: 30 }, (_, index) => paragraph(`Paragraph ${index} `.repeat(6))),
+        // More than one line each, in any font.
+        ...Array.from({ length: 30 }, (_, index) => paragraph(`Paragraph ${index} `.repeat(14))),
       ),
     });
     await openPost(page, signedIn, created.id);
+    // WebKit tells the editor where the cursor is a moment after the key or the press that moved
+    // it, and what's pasted here comes sooner than a person could paste it.
+    const paragraphWithCursor = () =>
+      body(page).evaluate((element) => {
+        const { state } = (element as unknown as { editor: { state: EditorState } }).editor;
+        return state.selection.$from.index(0);
+      });
+    const dismissed = async () => {
+      await paste(page, '<img src="/a.png">');
+      const scrolled = await page.evaluate(() => scrollY);
+      await page.getByRole("button", { name: "OK" }).click();
+      await expect(body(page)).toBeFocused();
+      expect(await page.evaluate(() => scrollY)).toBe(scrolled);
+    };
     await body(page).click();
     await page.keyboard.press("ControlOrMeta+End");
-    await paste(page, '<img src="/a.png">');
-    const scrolled = await page.evaluate(() => scrollY);
-    await page.getByRole("button", { name: "OK" }).click();
-    await expect(body(page)).toBeFocused();
-    expect(await page.evaluate(() => scrollY)).toBe(scrolled);
+    await expect.poll(paragraphWithCursor).toBe(29);
+    await dismissed();
     await page.keyboard.type("more");
-    await expect(body(page)).toContainText("more");
+    await expect(body(page).locator("p").last()).toContainText("more");
+
+    // And right under the bars, where pasting brings back a cursor that was out of sight: on the
+    // first line of a paragraph, and on its last, where WebKit's cursor reaches up to the one above.
+    for (const [index, line] of [
+      [9, "first"],
+      [10, "last"],
+    ] as const) {
+      const target = body(page).locator("p").nth(index);
+      const height = (await target.boundingBox())?.height ?? 0;
+      await target.click({ position: { x: 40, y: line === "first" ? 10 : height - 10 } });
+      await expect.poll(paragraphWithCursor).toBe(index);
+      await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+      await dismissed();
+      await page.keyboard.type("again");
+      await expect(target).toContainText("again");
+    }
   });
 
   test("closing a button's dialog hands focus back to its Edit button, in place", async ({
@@ -843,7 +878,7 @@ test.describe("the editor itself", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "blog/Second" });
     await openPost(page, signedIn, post.id);
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     const real = (await readEntry(page, signedIn, post.id)).address.path;
     await expect(page.getByText(`This will be ${real}.`)).toBeVisible();
   });

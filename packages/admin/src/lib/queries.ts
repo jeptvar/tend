@@ -51,6 +51,9 @@ export interface EntrySummary {
   createdAt: number;
   updatedAt: number;
   trashedAt: number | null;
+  /** In lists: its first words, and the smallest size of its picture. */
+  words?: string;
+  thumbUrl?: string | null;
 }
 
 export interface EntryFull extends EntrySummary {

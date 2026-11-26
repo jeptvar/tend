@@ -11,7 +11,7 @@ function words(message: string): string {
 }
 
 /** Says the site is live, rather than how to get there (PLAN.md §4, P15). */
-const SAYS_LIVE = ["overview.live"];
+const SAYS_LIVE = ["overview.live", "nav.state.live"];
 /** How to get there: what's true once someone has done it all. */
 const SAYS_HOW = ["online.addressBody"];
 

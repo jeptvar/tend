@@ -20,6 +20,7 @@ import {
   type Entry,
   type EntryRow,
   type EntryType,
+  entryGlances,
   findLinkTargets,
   getEntry,
   getRevision,
@@ -38,8 +39,10 @@ import {
 } from "../../content/entries.ts";
 import { writeSetting } from "../../content/settings.ts";
 import { existingTagIds } from "../../content/tags.ts";
+import type { Orm } from "../../db/client.ts";
 import type { User } from "../../db/repo/users.ts";
 import { uuidv7 } from "../../ids.ts";
+import { findMedia, mediaWidths, variantUrl } from "../../media/library.ts";
 import { menuLinksTo, menuSetting } from "../../site/menus.ts";
 import type { PreviewInput } from "../../site/router.ts";
 import { ApiError } from "../errors.ts";
@@ -138,6 +141,28 @@ export function summaryJson(entry: EntryRow) {
     updatedAt: entry.updatedAt,
     trashedAt: entry.trashedAt,
   };
+}
+
+/** The same for a list, with a small picture and the first words of each. */
+export async function listJson(orm: Orm, rows: EntryRow[]) {
+  const glances = await entryGlances(
+    orm,
+    rows.map((row) => row.id),
+  );
+  const pictures = await findMedia(
+    orm,
+    [...glances.values()].flatMap(({ imageId }) => imageId ?? []),
+  );
+  return rows.map((row) => {
+    const glance = glances.get(row.id);
+    const picture = glance?.imageId ? pictures.get(glance.imageId) : undefined;
+    const width = picture && mediaWidths(picture)[0];
+    return {
+      ...summaryJson(row),
+      words: glance?.words ?? "",
+      thumbUrl: picture && width !== undefined ? variantUrl(picture, width) : null,
+    };
+  });
 }
 
 /** Blank means "fill in automatically", so it's stored as null. */
@@ -313,7 +338,7 @@ export function registerEntryRoutes(routing: Routing, options: AdminOptions): vo
     // For the tabs, whichever is open and whatever is being looked for.
     const { all, drafts, published, trash } = await countEntries(orm, { type, authorId });
     return c.json({
-      entries: rows.slice(0, PAGE_SIZE).map(summaryJson),
+      entries: await listJson(orm, rows.slice(0, PAGE_SIZE)),
       nextCursor: rows.length > PAGE_SIZE ? String(offset + PAGE_SIZE) : null,
       counts: { all, drafts, published, trash },
     });

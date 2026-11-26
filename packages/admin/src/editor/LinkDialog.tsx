@@ -6,6 +6,7 @@ import { Dialog } from "../components/Dialog.tsx";
 import { Field } from "../components/fields.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { toHref } from "../lib/href.ts";
+import { linkTargets } from "../lib/link-targets.ts";
 import type { LinkTarget } from "../lib/queries.ts";
 
 const ENTRY_PREFIX = "entry:";
@@ -62,15 +63,7 @@ export function LinkDialog({
   });
   const chosen = picked ?? (unpickedInitial ? null : (current.data ?? null));
 
-  const search = useQuery({
-    queryKey: ["link-targets", query.trim()],
-    enabled: chosen === null,
-    staleTime: 10_000,
-    queryFn: () =>
-      api<{ targets: LinkTarget[] }>(
-        `/admin/link-targets?q=${encodeURIComponent(query.trim())}`,
-      ).then((reply) => reply.targets),
-  });
+  const search = useQuery({ ...linkTargets(query.trim()), enabled: chosen === null });
   const results = search.data ?? [];
 
   // What was just pressed has been replaced, and focus shouldn't vanish with it. The opening
@@ -138,7 +131,7 @@ export function LinkDialog({
   return (
     <Dialog labelledBy={headingId} onClose={onClose}>
       <form onSubmit={submit} noValidate className="grid gap-4">
-        <h2 id={headingId} className="text-xl font-semibold">
+        <h2 id={headingId} className="text-xl font-bold">
           {heading}
         </h2>
         {withLabel && (
@@ -155,7 +148,7 @@ export function LinkDialog({
           />
         )}
         {chosen ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-muted p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-sunken p-4">
             <span role="status">
               <FormattedMessage
                 id="link.goesTo"
@@ -196,7 +189,7 @@ export function LinkDialog({
               }}
             />
             <p role="status" className="sr-only">
-              {search.data && query.trim() !== ""
+              {search.data && !search.isPlaceholderData && query.trim() !== ""
                 ? intl.formatMessage({ id: "link.found" }, { count: results.length })
                 : ""}
             </p>
@@ -210,7 +203,7 @@ export function LinkDialog({
                       setPicked(target);
                       setProblem(null);
                     }}
-                    className="flex min-h-11 w-full flex-wrap items-center justify-between gap-x-3 rounded-lg px-3 py-1 text-start hover:bg-ink/5 focus-visible:outline-3 focus-visible:outline-brand"
+                    className="flex min-h-11 w-full flex-wrap items-center justify-between gap-x-3 rounded-xl px-3 py-1 text-start hover:bg-ink/5 focus-visible:outline-3 focus-visible:outline-brand"
                   >
                     <span className="font-medium">
                       {target.title || intl.formatMessage({ id: "list.untitled" })}

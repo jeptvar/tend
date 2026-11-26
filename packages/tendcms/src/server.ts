@@ -14,7 +14,8 @@ import { createSite } from "./site/router.ts";
 import { SiteAddress } from "./site-address.ts";
 import { resolveInside, StaticFiles } from "./static-files.ts";
 
-export interface AppOptions extends Omit<AuthOptions, "onSiteChanged" | "themeDir" | "address"> {
+export interface AppOptions
+  extends Omit<AuthOptions, "onSiteChanged" | "themeDir" | "address" | "store"> {
   version: string;
   adminDir: string;
   adminDevUrl: string | undefined;
@@ -324,7 +325,7 @@ export function createApp(options: AppOptions): Hono {
     site.changed(path);
   };
 
-  app.route("/api/auth", createAuthRoutes({ ...options, address, onSiteChanged }));
+  app.route("/api/auth", createAuthRoutes({ ...options, address, store, onSiteChanged }));
   app.route(
     "/api/admin",
     createAdminRoutes({
@@ -337,6 +338,9 @@ export function createApp(options: AppOptions): Hono {
       themes: site.themes,
       platform: options.platform,
       previewDesign: (design) => site.previewDesign(design),
+      homepage: () => site.homepage(),
+      siteStyle: () => site.style(),
+      fontChoices: (themeId) => site.fontChoices(themeId),
       backupsDir: options.backupsDir,
       uploadsDir: options.uploadsDir,
       dbPath: options.dataFolder?.dbPath,

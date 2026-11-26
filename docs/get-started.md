@@ -19,7 +19,7 @@ There are three ways to start. You can begin on your computer and [move online](
 
    `my-site` is the folder your site goes in. Choose any name.
 3. Your browser opens at the setup screen by itself. If it doesn't, open the link in the window.
-4. **Start a new site**, then: name it, make your account, and pick a starting point. You can change everything later.
+4. **Start a new site**, then: name it, make your account, and pick a starting point. You can change everything later. Blog and Business come with pictures to swap for your own. They were drawn for Tend, so there's nobody to pay or credit.
 5. Save your recovery kit. If you forget your password, a code from it gets you back in.
 
 Keep the window open: Tend stops when you close it. To start it again:

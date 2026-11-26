@@ -1,0 +1,9 @@
+{%- comment -%}
+  A list of posts, and what's said when there are none.
+{%- endcomment -%}
+<div class="t-wrap">
+  <div class="t-cards">
+    {% for post in posts %}{% render "post-card", post: post, first: forloop.first %}{% else %}<p class="t-none">{{ none | t }}</p>{% endfor %}
+  </div>
+  {% render "pagination", pagination: pagination %}
+</div>

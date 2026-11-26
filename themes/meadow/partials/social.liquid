@@ -1,0 +1,5 @@
+{%- comment -%}
+  One link to a network: its sign, with its name said, or just its name if there's no sign.
+{%- endcomment -%}
+{%- capture sign -%}{%- render "icon", name: link.network -%}{%- endcapture -%}
+{%- if sign contains "<path" or sign contains "<rect" -%}{{ sign | raw }}<span class="t-hidden">{{ link.name }}</span>{%- else -%}{{ link.name }}{%- endif -%}

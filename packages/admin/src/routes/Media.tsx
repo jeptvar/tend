@@ -9,8 +9,10 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { Icon } from "../components/icons.tsx";
 import { PicturesNotice } from "../components/PicturesNotice.tsx";
 import { Problem } from "../components/Problem.tsx";
+import { Tabs } from "../components/Tabs.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
@@ -154,7 +156,7 @@ export function UploadList({
       {uploads.map((upload) => (
         <li
           key={upload.key}
-          className={`grid gap-1 rounded-lg border px-3 py-2 ${upload.error ? "border-danger" : "border-ink/15"}`}
+          className={`grid gap-1 rounded-2xl border px-4 py-3 ${upload.error ? "border-danger bg-danger-soft" : "border-line bg-surface"}`}
         >
           <div className="flex flex-wrap items-center justify-between gap-x-3">
             <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{upload.name}</span>
@@ -377,58 +379,60 @@ function MediaScreen({ me }: { me: Me }) {
   }
 
   return (
-    <AdminLayout me={me} screen="media">
-      <p className="mt-2 text-muted">
-        <FormattedMessage id="media.hint" />
-      </p>
-      <PicturesNotice me={me} />
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-3">
-        <div className="-ml-2 flex">
-          {(["all", "trash"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={view === option}
-              onClick={() => setView(option)}
-              className={`min-h-11 min-w-11 rounded px-2 text-center hover:underline focus-visible:outline-3 focus-visible:outline-brand ${view === option ? "font-semibold" : "text-muted"}`}
-            >
-              <FormattedMessage id={option === "all" ? "list.all" : "list.trash"} />
-            </button>
-          ))}
-        </div>
-        <input
-          ref={picker}
-          type="file"
-          multiple
-          accept={ACCEPTED_FILES}
-          className="sr-only"
-          tabIndex={-1}
-          aria-hidden="true"
-          onChange={(event) => {
-            add([...(event.target.files ?? [])]);
-            event.target.value = "";
-          }}
-        />
+    <AdminLayout
+      me={me}
+      screen="media"
+      width="wide"
+      intro={<FormattedMessage id="media.hint" />}
+      actions={
         <button
           type="button"
           onClick={() => picker.current?.click()}
           className={primaryButtonClass}
         >
+          <Icon name="upload" className="size-4.5" />
           <FormattedMessage id="media.add" />
         </button>
-      </div>
-
-      <div className="mt-4 grid gap-2">
-        <label htmlFor={searchId} className="font-medium">
-          <FormattedMessage id="media.search" />
-        </label>
-        <input
-          id={searchId}
-          type="search"
-          value={typed}
-          onChange={(event) => setTyped(event.target.value)}
-          className="min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-lg text-[#1d2420] focus-visible:outline-3 focus-visible:outline-brand"
-        />
+      }
+    >
+      <PicturesNotice me={me} />
+      <input
+        ref={picker}
+        type="file"
+        multiple
+        accept={ACCEPTED_FILES}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => {
+          add([...(event.target.files ?? [])]);
+          event.target.value = "";
+        }}
+      />
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <Tabs>
+          {(["all", "trash"] as const).map((option) => (
+            <Tabs.Tab key={option} chosen={view === option} onChoose={() => setView(option)}>
+              <FormattedMessage id={option === "all" ? "list.all" : "list.trash"} />
+            </Tabs.Tab>
+          ))}
+        </Tabs>
+        <div className="relative w-full sm:w-80">
+          <label htmlFor={searchId} className="sr-only">
+            <FormattedMessage id="media.search" />
+          </label>
+          <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-muted">
+            <Icon name="search" />
+          </span>
+          <input
+            id={searchId}
+            type="search"
+            value={typed}
+            placeholder={intl.formatMessage({ id: "media.search" })}
+            onChange={(event) => setTyped(event.target.value)}
+            className="min-h-11 w-full rounded-xl border border-edge bg-field pr-3 pl-11 placeholder:text-muted focus-visible:outline-3 focus-visible:outline-brand"
+          />
+        </div>
       </div>
 
       <UploadList uploads={uploads} onDismiss={dismiss} onRetry={retry} />
@@ -440,30 +444,30 @@ function MediaScreen({ me }: { me: Me }) {
 
       {!list.data && <Waiting query={list} />}
       {items?.length === 0 && (
-        <p className="mt-8 text-muted">
+        <p className="dashed mt-5 px-6 py-12 text-center text-muted">
           <FormattedMessage
             id={trashed ? "list.emptyTrash" : search ? "media.noMatches" : "media.empty"}
           />
         </p>
       )}
 
-      <ul className="mt-6 grid grid-cols-2 gap-3 empty:hidden sm:grid-cols-3">
+      <ul className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(min(9.5rem,100%),1fr))] gap-4 empty:hidden sm:grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))] sm:gap-5">
         {items?.map((item) => (
           <li key={item.id} className="min-w-0">
             <button
               type="button"
               onClick={() => setOpen(item)}
-              className="group grid w-full min-w-0 gap-1 rounded-lg text-left focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className="card group flex h-full w-full min-w-0 flex-col overflow-hidden text-left hover:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand"
             >
-              <Thumbnail item={item} className="aspect-[4/3] w-full rounded-lg" />
-              <span className="truncate text-sm font-medium group-hover:underline">
-                {item.name}
+              <Thumbnail item={item} className="aspect-[4/3] w-full" />
+              <span className="grid w-full gap-0.5 px-3.5 py-2.5">
+                <span className="truncate font-medium group-hover:underline">{item.name}</span>
+                {needsDescription(item) && (
+                  <span className="text-sm text-wait">
+                    <FormattedMessage id="media.noDescription" />
+                  </span>
+                )}
               </span>
-              {needsDescription(item) && (
-                <span className="text-sm text-muted">
-                  <FormattedMessage id="media.noDescription" />
-                </span>
-              )}
             </button>
           </li>
         ))}
@@ -660,7 +664,7 @@ function MediaDetails({
     <Dialog labelledBy={headingId} onClose={onClose}>
       <div className="grid gap-4">
         <div className="flex items-start justify-between gap-3">
-          <h2 id={headingId} className="min-w-0 text-xl font-semibold [overflow-wrap:anywhere]">
+          <h2 id={headingId} className="min-w-0 text-xl font-bold [overflow-wrap:anywhere]">
             {item.name}
           </h2>
           <button type="button" onClick={onClose} className={`${textLinkClass} shrink-0`}>
@@ -676,7 +680,7 @@ function MediaDetails({
             width={item.width ?? undefined}
             height={item.height ?? undefined}
             style={{ backgroundColor: item.dominantColor ?? undefined }}
-            className="max-h-72 w-full rounded-lg object-contain"
+            className="max-h-72 w-full rounded-xl bg-sunken object-contain"
           />
         ) : (
           <Thumbnail item={item} className="h-24 w-24 rounded-lg" />
@@ -717,7 +721,7 @@ function MediaDetails({
                     disabled={decorative}
                     aria-describedby={altHintId}
                     onChange={(event) => setAlt(event.target.value)}
-                    className="w-full rounded-lg border border-muted bg-white px-3 py-2 text-lg text-[#1d2420] focus-visible:outline-3 focus-visible:outline-brand disabled:opacity-60"
+                    className="w-full rounded-xl border border-edge bg-field px-3 py-2 text-lg focus-visible:outline-3 focus-visible:outline-brand disabled:opacity-60"
                   />
                   <p id={altHintId} className="text-sm text-muted">
                     <FormattedMessage id="media.descriptionHint" />
@@ -743,7 +747,7 @@ function MediaDetails({
                 value={credit}
                 onChange={(event) => setCredit(event.target.value)}
                 placeholder={intl.formatMessage({ id: "media.creditExample" })}
-                className="min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-lg text-[#1d2420] placeholder:text-[#5b655f] focus-visible:outline-3 focus-visible:outline-brand"
+                className="min-h-11 w-full rounded-xl border border-edge bg-field px-3 text-lg placeholder:text-muted focus-visible:outline-3 focus-visible:outline-brand"
               />
             </div>
             <div>
@@ -903,7 +907,7 @@ function MediaDetails({
       {confirmDelete && (
         <Dialog labelledBy={`${headingId}-delete`} onClose={() => setConfirmDelete(false)}>
           <div className="grid gap-4">
-            <h2 id={`${headingId}-delete`} className="text-xl font-semibold">
+            <h2 id={`${headingId}-delete`} className="text-xl font-bold">
               <FormattedMessage id="media.confirmDelete" values={{ name: item.name }} />
             </h2>
             <p>

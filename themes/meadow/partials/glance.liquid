@@ -1,0 +1,36 @@
+{%- comment -%}
+  The business details at a glance, for the homepage: nothing until there are some.
+{%- endcomment -%}
+{% if business.has_any %}
+<div class="t-glance">
+  <ul class="t-wrap">
+    {% if business.hours_summary %}
+    <li>
+      {% render "icon", name: "clock" %}
+      <div>
+        <p>{{ "hours" | t }}</p>
+        {% for line in business.hours_summary %}{% unless line.closed %}<p class="t-quiet">{{ line.days }}: {{ line.opens }}–{{ line.closes }}</p>{% endunless %}{% endfor %}
+      </div>
+    </li>
+    {% endif %}
+    {% if business.address_lines.size > 0 %}
+    <li>
+      {% render "icon", name: "pin" %}
+      <div>
+        <p>{{ business.address_lines | join: ", " }}</p>
+        {% if business.map_url %}<p><a href="{{ business.map_url }}">{{ "directions" | t }}</a></p>{% endif %}
+      </div>
+    </li>
+    {% endif %}
+    {% if business.phone or business.email %}
+    <li>
+      {% if business.phone %}{% render "icon", name: "phone" %}{% else %}{% render "icon", name: "mail" %}{% endif %}
+      <div>
+        {% if business.phone %}<p><a href="{{ business.phone_href }}">{{ business.phone }}</a></p>{% endif %}
+        {% if business.email %}<p><a href="{{ business.email_href }}">{{ business.email }}</a></p>{% endif %}
+      </div>
+    </li>
+    {% endif %}
+  </ul>
+</div>
+{% endif %}

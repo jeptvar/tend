@@ -14,7 +14,7 @@ You're signed in, and everyone who was signed in as you isn't any more. Each cod
 
 ## Ask someone
 
-The Owner can send anyone a link to choose a new password, from **People**. Admins can for Editors and Writers. It works once, for a day.
+The Owner can send anyone a link to choose a new password, from **People**. Admins can for Editors. It works once, for a day.
 
 ## Ask whoever looks after the server
 

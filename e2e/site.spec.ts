@@ -4,6 +4,7 @@ import {
   expect,
   holdRequests,
   OWNER,
+  openSettings,
   photo,
   readEntry,
   signIn,
@@ -46,7 +47,7 @@ test.describe("pictures in the editor (J2)", () => {
     await body(page).click();
     await page.keyboard.press("ControlOrMeta+End");
 
-    await page.getByRole("button", { name: "Insert +" }).click();
+    await page.getByRole("button", { name: "Insert", exact: true }).click();
     await page.getByRole("menuitem", { name: "Image" }).click();
     const picker = page.getByRole("dialog", { name: "Add an image" });
     await expect(picker).toBeVisible();
@@ -147,7 +148,7 @@ test.describe("pictures in the editor (J2)", () => {
   }) => {
     const post = await createEntry(page, signedIn, { title: "Phone photo", body: "Words stay." });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await page.getByRole("button", { name: "Insert +" }).click();
+    await page.getByRole("button", { name: "Insert", exact: true }).click();
     await page.getByRole("menuitem", { name: "Image" }).click();
     const heic = Buffer.concat([
       Buffer.from([0, 0, 0, 24]),
@@ -175,7 +176,7 @@ test.describe("pictures in the editor (J2)", () => {
     });
     const post = await createEntry(page, signedIn, { title: "Grand opening", body: "We're open." });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     await expect(page.getByText("Automatic: the first image")).toBeVisible();
     await page.getByRole("button", { name: "Choose image" }).click();
     const picker = page.getByRole("dialog", { name: "Choose the featured image" });
@@ -197,7 +198,10 @@ test.describe("pictures in the editor (J2)", () => {
 test.describe("the Media screen", () => {
   test("upload, describe, trash with Undo, and see what uses it", async ({ page, signedIn }) => {
     await page.goto(`${signedIn.base}/admin/media`);
-    await expect(page.getByText("Nothing here yet")).toBeVisible();
+    // The pictures the Business starting point comes with, to be replaced with the owner's own.
+    for (const name of [/table\.jpg/, /bowl\.jpg/, /leaves\.jpg/]) {
+      await expect(page.getByRole("button", { name })).toBeVisible();
+    }
     await page.locator('input[type="file"]').setInputFiles({
       name: "counter.jpg",
       mimeType: "image/jpeg",
@@ -259,6 +263,83 @@ test.describe("the site menu (J4)", () => {
     await expect(page.getByText("The menu is back as it was.")).toBeVisible();
     await visitor.reload();
     await expect(menu.getByRole("link")).toHaveText(["About", "Contact"]);
+  });
+
+  test("Enter adds what was typed, however soon it's pressed", async ({ page, signedIn }) => {
+    await createEntry(page, signedIn, { type: "page", title: "Our story", publish: true });
+    await page.request.put(`${signedIn.base}/api/admin/menus/main`, { data: { items: [] } });
+    await page.goto(`${signedIn.base}/admin/menu`);
+    const links = page.getByRole("main").getByRole("listitem");
+    const add = page.getByRole("dialog", { name: "Add a link" });
+    await page.getByRole("button", { name: "Add link" }).click();
+    await expect(add.getByRole("button", { name: /Our story/ })).toBeVisible();
+    const answer = await holdRequests(page, "**/api/admin/link-targets?q=story");
+    // Before the list has followed what's typed, when Homepage is still the first in it.
+    await add.getByLabel(/Search your pages/).fill("story");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+    // What was found before stays until the answer comes: nothing goes from under a finger.
+    await expect(add.getByRole("button", { name: /Homepage/ })).toHaveCount(0);
+    await expect(add.getByRole("button", { name: /Our story/ })).toBeVisible();
+    answer();
+    await expect(add).toBeHidden();
+    await expect(links).toHaveCount(1);
+    await expect(links).toContainText("Our story");
+
+    // Closed before the answer came, it adds nothing.
+    await page.getByRole("button", { name: "Add link" }).click();
+    const late = await holdRequests(page, "**/api/admin/link-targets?q=contact");
+    const asked = page.waitForRequest("**/api/admin/link-targets?q=contact");
+    await add.getByLabel(/Search your pages/).fill("contact");
+    await page.keyboard.press("Enter");
+    await asked;
+    await page.keyboard.press("Escape");
+    await expect(add).toBeHidden();
+    const answered = page.waitForResponse("**/api/admin/link-targets?q=contact");
+    late();
+    await (await answered).finished();
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    await expect(links).toHaveCount(1);
+  });
+
+  test("looking for a page to link to works here, then in the editor, then here again", async ({
+    page,
+    signedIn,
+  }) => {
+    await createEntry(page, signedIn, { type: "page", title: "Our story", publish: true });
+    const post = await createEntry(page, signedIn, { title: "Fresh loaves", body: "Words" });
+    const go = (name: string) =>
+      page
+        .getByRole("navigation", { name: "Main" })
+        .getByRole("link", { name, exact: true })
+        .click();
+    const add = page.getByRole("dialog", { name: "Add a link" });
+    const story = add.getByRole("button", { name: /Our story/ });
+    await page.goto(`${signedIn.base}/admin/menu`);
+    for (const again of [false, true]) {
+      await page.getByRole("button", { name: "Add link" }).click();
+      await expect(story).toBeVisible();
+      await page.keyboard.press("Escape");
+      if (again) break;
+      // From one screen to the next, so what's been found is still there.
+      await go("Posts");
+      await page.getByRole("link", { name: /Fresh loaves/ }).click();
+      await expect(page).toHaveURL(new RegExp(post.id));
+      await body(page).click();
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(story).toBeVisible();
+      const answer = await holdRequests(page, "**/api/admin/link-targets?q=story");
+      const asked = page.waitForRequest("**/api/admin/link-targets?q=story");
+      await add.getByLabel(/Search your pages/).fill("story");
+      await asked;
+      await expect(story).toBeVisible();
+      answer();
+      await expect(add.getByRole("status").filter({ hasText: "1 found" })).toHaveCount(1);
+      await page.keyboard.press("Escape");
+      await expect(add).toBeHidden();
+      await go("Site menu");
+    }
   });
 
   test("a removed link can be put back where it was, until the screen is left", async ({
@@ -353,15 +434,37 @@ test.describe("design (J3)", () => {
     await expect(accent).toHaveValue("#806600");
     await page.getByRole("radio", { name: /Classic/ }).check();
 
+    // The site is beside the form, with what isn't saved yet: its styles load there too.
+    const beside = page.getByRole("region", { name: "Preview" });
+    const site = beside.frameLocator("iframe").last().locator("html");
+    const expectChosen = async () => {
+      await expect(site).toHaveAttribute("data-fonts", "classic");
+      await expect(site).toHaveCSS("--tend-accent", "#806600");
+    };
+    await expectChosen();
+    // Its fonts as well, though the frame counts as another site's.
+    const fonts = () =>
+      site.evaluate(() =>
+        [...document.fonts].some(
+          ({ family, status }) => /^"?Fraunces"?$/.test(family) && status === "loaded",
+        ),
+      );
+    await expect.poll(fonts).toBe(true);
+    await beside.getByRole("button", { name: "Phone" }).click();
+    await expectChosen();
+
+    // Where there's no room beside it, it's behind a button.
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(beside).toHaveCount(0);
     await page.getByRole("button", { name: "Preview" }).click();
     const frame = page.frameLocator("dialog iframe[title]");
     await expect(frame.getByRole("heading", { level: 1 })).toBeVisible();
-    // The theme's styles load in the preview, with the colour that isn't saved yet.
     const accentInPreview = await frame
       .locator("body")
       .evaluate((element) => getComputedStyle(element).getPropertyValue("--tend-accent").trim());
     expect(accentInPreview).toBe("#806600");
     await page.getByRole("button", { name: "Close" }).click();
+    await page.setViewportSize({ width: 1280, height: 720 });
 
     await page.getByRole("button", { name: "Save design" }).click();
     await expect(page.getByText("Design saved.")).toBeVisible();
@@ -558,7 +661,7 @@ test.describe("fixes from review", () => {
     const post = await createEntry(page, signedIn, { title: "Changed my mind", body: "Words." });
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
     const finishUpload = await holdUploads(page);
-    await page.getByText("Address, summary and more").click();
+    await openSettings(page);
     await page.getByRole("button", { name: "Choose image" }).click();
     const picker = page.getByRole("dialog", { name: "Choose the featured image" });
     await picker.locator('input[type="file"]').setInputFiles({

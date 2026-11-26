@@ -1,21 +1,65 @@
+/*
+ * Meadow. One choice, the accent colour, makes the whole palette, so a site stays in one style
+ * whatever colour its owner likes. The fonts a site can choose come from partials/fonts.liquid,
+ * with how headings sit and how round things are in each; these are the ones every device has.
+ */
+
 :root {
   color-scheme: light dark;
   --tend-accent: #1f6f4a;
-  --tend-paper: #fff;
-  --tend-ink: #1d2420;
-  --tend-muted: #5b655f;
-  --tend-line: #dde2df;
   --tend-font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --tend-font-heading: var(--tend-font-body);
+  --tend-font-display: var(--tend-font-heading);
+  --tend-heading-weight: 700;
+  --tend-heading-tracking: -0.025em;
+
+  /* The page, what lies on it, and the softer and stronger backgrounds of whole sections. */
+  --tend-paper: color-mix(in oklab, var(--tend-accent) 2%, #fffefc);
+  --tend-card: color-mix(in oklab, var(--tend-accent) 0%, #ffffff);
+  --tend-tint: color-mix(in oklab, var(--tend-accent) 8%, #fdfaf5);
+  --tend-tint-strong: color-mix(in oklab, var(--tend-accent) 18%, #fdfaf5);
+  --tend-ink: color-mix(in oklab, var(--tend-accent) 16%, #17130f);
+  --tend-muted: color-mix(in oklab, var(--tend-accent) 18%, #5c5650);
+  --tend-line: color-mix(in oklab, var(--tend-accent) 14%, #e6e1da);
+  --tend-link: color-mix(in oklab, var(--tend-accent) 88%, #17130f);
+  --tend-on-accent: #ffffff;
+  /* Sections in the accent colour, and what's written on them. */
+  --tend-band: var(--tend-accent);
+  --tend-on-band: #fffdf9;
+  --tend-band-button: color-mix(in oklab, var(--tend-accent) 80%, #17130f);
+  --tend-foot: color-mix(in oklab, var(--tend-accent) 24%, #15110e);
+  --tend-on-foot: #f4efe8;
+  /* Laid over a photo that words go on, in an accent-coloured section. */
+  --tend-veil: color-mix(in oklab, var(--tend-accent) 16%, #0f0b08);
+  --tend-shadow: 0 1px 2px rgb(40 25 10 / 5%), 0 14px 40px -18px rgb(40 25 10 / 22%);
+
+  --tend-radius: 1rem;
+  --tend-radius-button: 0.75rem;
+  --tend-wide: 76rem;
+  --tend-text: 42rem;
+  --tend-gutter: clamp(1rem, 4vw, 3rem);
+  /* From a full-width section's edge to its words. */
+  --tend-side: max(var(--tend-gutter), (100% - var(--tend-wide)) / 2);
+  --tend-space: clamp(3.5rem, 2rem + 6vw, 7rem);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --tend-accent: #7fd3a8;
-    --tend-paper: #141a17;
-    --tend-ink: #e9eeeb;
-    --tend-muted: #a3aea8;
-    --tend-line: #2c3531;
+    --tend-paper: color-mix(in oklab, var(--tend-accent) 4%, #121010);
+    --tend-card: color-mix(in oklab, var(--tend-accent) 6%, #1b1817);
+    --tend-tint: color-mix(in oklab, var(--tend-accent) 6%, #181514);
+    --tend-tint-strong: color-mix(in oklab, var(--tend-accent) 14%, #1b1716);
+    --tend-ink: color-mix(in oklab, var(--tend-accent) 8%, #f5f1ec);
+    --tend-muted: color-mix(in oklab, var(--tend-accent) 20%, #a9a29b);
+    --tend-line: color-mix(in oklab, var(--tend-accent) 16%, #302b28);
+    --tend-link: var(--tend-accent);
+    --tend-on-accent: #15110e;
+    --tend-band: color-mix(in oklab, var(--tend-accent) 30%, #171210);
+    --tend-on-band: #fbf6f0;
+    --tend-band-button: #1b1512;
+    --tend-foot: color-mix(in oklab, var(--tend-accent) 7%, #0c0a09);
+    --tend-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 14px 40px -18px rgb(0 0 0 / 70%);
   }
 }
 
@@ -23,319 +67,159 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+/* On a short page, the footer is still at the bottom of the window. */
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
   margin: 0;
   background: var(--tend-paper);
   color: var(--tend-ink);
   font-family: var(--tend-font-body);
   font-size: 1.125rem;
-  line-height: 1.6;
+  line-height: 1.65;
   overflow-wrap: break-word;
 }
 
-a {
-  color: var(--tend-accent);
-  text-underline-offset: 0.2em;
+img {
+  max-width: 100%;
+  height: auto;
 }
 
-a:focus-visible {
+p {
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--tend-link);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.22em;
+}
+
+a:hover {
+  text-decoration-thickness: 0.14em;
+}
+
+:focus-visible {
   outline: 3px solid var(--tend-accent);
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 h1,
-h2 {
+h2,
+h3,
+h4,
+h5 {
+  margin: 0;
   font-family: var(--tend-font-heading);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+  font-weight: var(--tend-heading-weight);
+  line-height: 1.12;
+  letter-spacing: var(--tend-heading-tracking);
+  text-wrap: balance;
 }
 
 h1 {
-  margin: 0 0 0.5em;
-  font-size: 2.25rem;
+  font-family: var(--tend-font-display);
+  font-size: clamp(2.5rem, 1.75rem + 3.6vw, 4.5rem);
+  line-height: 1.06;
 }
 
 h2 {
-  margin: 0 0 0.25em;
-  font-size: 1.5rem;
+  font-size: clamp(1.875rem, 1.45rem + 2.1vw, 3rem);
+}
+
+h3 {
+  font-size: clamp(1.4375rem, 1.25rem + 0.7vw, 1.75rem);
+}
+
+h4,
+h5 {
+  font-size: 1.25rem;
+}
+
+.t-main {
+  flex: 1;
 }
 
 .t-skip {
   position: absolute;
   left: 1rem;
-  top: -4rem;
-  padding: 0.5rem 1rem;
-  background: var(--tend-paper);
+  top: -5rem;
+  z-index: 30;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  background: var(--tend-ink);
+  color: var(--tend-paper);
 }
 
 .t-skip:focus {
   top: 1rem;
 }
 
-.t-wrap {
-  width: 100%;
-  max-width: 44rem;
-  margin-inline: auto;
-  padding-inline: 1rem;
+/* For someone who can't see the page: it says in words what the page shows. */
+.t-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
+.t-wrap {
+  width: 100%;
+  max-width: calc(var(--tend-wide) + 2 * var(--tend-gutter));
+  margin-inline: auto;
+  padding-inline: var(--tend-gutter);
+}
+
+.t-icon {
+  flex: none;
+  width: 1.25em;
+  height: 1.25em;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Header */
+
 .t-header {
-  border-bottom: 1px solid var(--tend-line);
+  border-block-end: 1px solid var(--tend-line);
 }
 
 .t-header-inner {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.25rem 1.5rem;
+  gap: 0.25rem 2.25rem;
+  min-height: 5rem;
   padding-block: 0.75rem;
 }
 
-.t-brand,
-.t-menu a {
+.t-header nav {
   min-width: 0;
-  overflow-wrap: anywhere;
+  margin-inline-start: auto;
 }
 
 .t-brand {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   min-height: 2.75rem;
   color: var(--tend-ink);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.t-menu {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 1rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.t-menu a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-}
-
-.t-menu a[aria-current="page"] {
-  color: var(--tend-ink);
-  font-weight: 600;
-}
-
-.t-main {
-  padding-block: 2.5rem;
-  /* Full-width pictures are as wide as the window, scrollbar and all: that bit is cut off. */
-  overflow-x: clip;
-}
-
-.t-lead {
-  margin-top: -0.5em;
-  color: var(--tend-muted);
-  font-size: 1.25rem;
-}
-
-.t-meta {
-  margin: 0 0 0.75em;
-  color: var(--tend-muted);
-  font-size: 1rem;
-}
-
-.t-card {
-  padding-block: 1.25rem;
-  border-top: 1px solid var(--tend-line);
-}
-
-.t-card p {
-  margin-block: 0 0.5em;
-}
-
-.t-body p,
-.t-body ul,
-.t-body ol,
-.t-body blockquote,
-.t-body pre {
-  margin-block: 0 1em;
-}
-
-.t-body li > p {
-  margin-block: 0 0.25em;
-}
-
-.t-body h2,
-.t-body h3,
-.t-body h4 {
-  margin-block: 1.5em 0.5em;
   font-family: var(--tend-font-heading);
-  line-height: 1.25;
-}
-
-.t-body h3 {
-  font-size: 1.25rem;
-}
-
-.t-body h4 {
-  font-size: 1.125rem;
-}
-
-.t-body blockquote {
-  margin-inline: 0;
-  padding-inline-start: 1em;
-  border-inline-start: 3px solid var(--tend-line);
-  color: var(--tend-muted);
-}
-
-.t-body code {
-  padding: 0.1em 0.25em;
-  border-radius: 0.25em;
-  background: color-mix(in srgb, var(--tend-ink) 8%, transparent);
-  font-size: 0.95em;
-}
-
-.t-body pre {
-  overflow-x: auto;
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  background: color-mix(in srgb, var(--tend-ink) 8%, transparent);
-}
-
-.t-body pre code {
-  padding: 0;
-  background: none;
-}
-
-.t-body hr {
-  margin-block: 2em;
-  border: 0;
-  border-top: 1px solid var(--tend-line);
-}
-
-.t-button-row {
-  margin-block: 1.5em;
-}
-
-.t-button {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  min-height: 2.75rem;
-  overflow-wrap: anywhere;
-  padding: 0.25rem 1.25rem;
-  border-radius: 0.5rem;
-  background: var(--tend-accent);
-  color: var(--tend-paper);
-  font-weight: 600;
+  font-size: clamp(1.375rem, 1.2rem + 0.9vw, 1.75rem);
+  font-weight: var(--tend-heading-weight);
+  line-height: 1.15;
+  letter-spacing: var(--tend-heading-tracking);
   text-decoration: none;
-}
-
-.t-button:hover {
-  text-decoration: underline;
-}
-
-.t-intro {
-  margin-block: 0 2em;
-  padding: 2rem 1.5rem;
-  border-radius: 0.75rem;
-  font-size: 1.25rem;
-}
-
-.t-intro h2 {
-  margin-block-start: 0;
-  font-size: 2rem;
-}
-
-.t-tone-none {
-  padding-inline: 0;
-}
-
-/* Right across the page, with its words as wide as the rest. */
-.t-intro[data-preset="2"] {
-  width: 100vw;
-  margin-inline: calc(50% - 50vw);
-  padding: 4rem max(1rem, 50vw - 21rem);
-  border-radius: 0;
-}
-
-.t-intro[data-preset="2"] h2 {
-  font-size: clamp(2rem, 6vw, 3rem);
-}
-
-/* At the top of a page, it meets the header. */
-.t-body > .t-intro[data-preset="2"]:first-child {
-  margin-block-start: 1rem;
-}
-
-.t-tone-muted {
-  background: color-mix(in srgb, var(--tend-ink) 6%, transparent);
-}
-
-.t-tone-accent {
-  background: var(--tend-accent);
-  color: var(--tend-paper);
-}
-
-.t-tone-accent a {
-  color: inherit;
-}
-
-.t-tone-accent .t-button {
-  background: var(--tend-paper);
-  color: var(--tend-accent);
-}
-
-/* The focus ring is the accent colour, which would vanish on it: here it's the paper's. */
-.t-tone-accent a:focus-visible {
-  outline-color: var(--tend-paper);
-}
-
-.t-align-center {
-  text-align: center;
-}
-
-.t-pagination {
-  display: flex;
-  justify-content: space-between;
-  padding-block: 1.25rem;
-  border-top: 1px solid var(--tend-line);
-}
-
-.t-footer {
-  padding-block: 1.5rem;
-  border-top: 1px solid var(--tend-line);
-  color: var(--tend-muted);
-  font-size: 1rem;
-}
-
-/* Design choices (Design screen): fonts come with every device, so nothing is downloaded. */
-
-[data-fonts="classic"] {
-  --tend-font-heading:
-    "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
-}
-
-[data-fonts="friendly"] {
-  --tend-font-body:
-    ui-rounded, "SF Pro Rounded", "Hiragino Maru Gothic ProN", Quicksand, Comfortaa, Manjari,
-    "Arial Rounded MT", "Arial Rounded MT Bold", Calibri, sans-serif;
-}
-
-[data-header="centered"] .t-header-inner {
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-[data-header="centered"] .t-menu {
-  justify-content: center;
-}
-
-img {
-  max-width: 100%;
-  height: auto;
+  overflow-wrap: anywhere;
 }
 
 /* As tall as the header allows, and narrower on a small screen, but always its own shape. */
@@ -345,36 +229,92 @@ img {
   max-height: 3rem;
 }
 
+.t-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.t-menu a,
 .t-dropdown summary {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   min-height: 2.75rem;
-  color: var(--tend-accent);
+  color: var(--tend-ink);
+  font-size: 1.0625rem;
+  font-weight: 500;
+  text-decoration: none;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
-.t-dropdown summary:focus-visible {
-  outline: 3px solid var(--tend-accent);
-  outline-offset: 2px;
+.t-menu a:hover,
+.t-dropdown summary:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--tend-accent);
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.4em;
+}
+
+.t-menu a[aria-current="page"] {
+  color: var(--tend-link);
+  text-decoration: underline;
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.4em;
+}
+
+.t-dropdown summary {
+  list-style: none;
+}
+
+.t-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+/* An arrow, which turns over while the list is open. */
+.t-dropdown summary::after {
+  content: "";
+  flex: none;
+  width: 0.5em;
+  height: 0.5em;
+  margin: -0.25em 0.15em 0 0.6em;
+  border: solid currentcolor;
+  border-width: 0 0.12em 0.12em 0;
+  rotate: 45deg;
+}
+
+.t-dropdown[open] summary::after {
+  margin-block-start: 0.25em;
+  rotate: 225deg;
 }
 
 /* Room above the first link and below the last for their focus ring, which scrolling cuts off. */
 .t-submenu {
   z-index: 10;
-  min-width: 12rem;
+  min-width: 13rem;
   margin: 0;
-  padding: 0.375rem 0.75rem;
+  padding: 0.5rem 1rem;
   border: 1px solid var(--tend-line);
-  border-radius: 0.5rem;
-  background: var(--tend-paper);
+  border-radius: min(var(--tend-radius), 1rem);
+  background: var(--tend-card);
+  box-shadow: var(--tend-shadow);
   list-style: none;
   text-align: start;
+}
+
+.t-submenu a {
+  display: flex;
 }
 
 /*
  * From tablet width up, an open list hangs over the page under its link. Wherever the link is
  * in the menu, the list stays on screen and keeps the page's 1rem gutter. With anchor
- * positioning, it opens on whichever side of the link has room.
+ * positioning, it opens on whichever side of the link has room. The header itself isn't
+ * positioned, so the list is placed in the whole window, with all the room below it.
  */
 @supports (anchor-scope: all) and (position-try-fallbacks: flip-inline) {
   @media (min-width: 46rem) {
@@ -447,90 +387,710 @@ img {
   }
 }
 
-.t-submenu a {
-  display: flex;
+[data-header="centered"] .t-header-inner {
+  flex-direction: column;
+  gap: 0;
+  padding-block: 1.5rem 0.75rem;
+  text-align: center;
+}
+
+[data-header="centered"] .t-header nav {
+  margin-inline: auto;
+}
+
+[data-header="centered"] .t-brand {
+  font-size: clamp(1.625rem, 1.4rem + 1.4vw, 2.25rem);
+}
+
+[data-header="centered"] .t-menu {
+  justify-content: center;
+}
+
+[data-header="centered"] .t-header-call {
+  display: none;
+}
+
+@media (max-width: 45.99rem) {
+  [data-header="simple"] .t-header-inner {
+    flex-wrap: wrap;
+    min-height: 4rem;
+    padding-block: 0.5rem 0.25rem;
+  }
+
+  [data-header="simple"] .t-header-inner:has(> .t-header-call) > .t-brand {
+    max-width: calc(100% - 5rem);
+  }
+
+  /* Just the telephone, with its number said but not shown. */
+  .t-header-call {
+    justify-content: center;
+    width: 2.75rem;
+    margin-inline-start: auto;
+    padding: 0;
+  }
+
+  .t-header-call span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  [data-header="simple"] .t-header nav {
+    order: 3;
+    width: 100%;
+    margin: 0;
+  }
+
+  .t-menu {
+    gap: 0 1.5rem;
+  }
+}
+
+/* Buttons */
+
+.t-button {
+  display: inline-flex;
   align-items: center;
+  gap: 0.625rem;
+  max-width: 100%;
+  min-height: 3.125rem;
+  padding: 0.5rem 1.625rem;
+  border: 2px solid transparent;
+  border-radius: var(--tend-radius-button);
+  background: var(--tend-accent);
+  color: var(--tend-on-accent);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.t-button:hover {
+  background: color-mix(in oklab, var(--tend-accent) 86%, var(--tend-ink));
+}
+
+/* A second button in a row is quieter than the first. */
+.t-button-row + .t-button-row .t-button,
+.t-button-quiet {
+  border-color: color-mix(in oklab, currentcolor 30%, transparent);
+  background: transparent;
+  color: inherit;
+}
+
+.t-button-quiet {
   min-height: 2.75rem;
+  padding: 0.25rem 1.125rem;
+  color: var(--tend-ink);
+  font-size: 1rem;
+}
+
+.t-button-row + .t-button-row .t-button:hover,
+.t-button-quiet:hover {
+  border-color: currentcolor;
+  background: transparent;
+}
+
+.t-button-row {
+  display: inline-block;
+  max-width: 100%;
+  margin: 1.75rem 0.75rem 0 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .t-button {
+    transition:
+      background 0.15s,
+      border-color 0.15s;
+  }
+}
+
+/* A page: its words in a column down the middle, its sections right across. */
+
+.t-page-head {
+  padding: clamp(2.5rem, 1.75rem + 4vw, 5.5rem) var(--tend-gutter)
+    clamp(1.75rem, 1.25rem + 2vw, 3.5rem);
+  text-align: center;
+}
+
+.t-page-head > * {
+  max-width: 56rem;
+  margin-inline: auto;
+}
+
+/* The opening words of a page whose sections follow straight on are part of its heading. */
+.t-page-head:has(+ .t-body > p:first-child + section) {
+  padding-block-end: 1.25rem;
+}
+
+.t-lead,
+.t-body > p:first-child:has(+ section) {
+  color: var(--tend-muted);
+  font-size: clamp(1.1875rem, 1.05rem + 0.6vw, 1.4375rem);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.t-lead {
+  max-width: 40rem;
+  margin: 1.25rem auto 0;
+}
+
+.t-body {
+  display: grid;
+  grid-template-columns:
+    [full-start] minmax(var(--tend-gutter), 1fr)
+    [wide-start] minmax(0, calc((var(--tend-wide) - var(--tend-text)) / 2))
+    [text-start] min(100% - 2 * var(--tend-gutter), var(--tend-text)) [text-end]
+    minmax(0, calc((var(--tend-wide) - var(--tend-text)) / 2)) [wide-end]
+    minmax(var(--tend-gutter), 1fr) [full-end];
+}
+
+.t-body > * {
+  grid-column: text;
+  min-width: 0;
+}
+
+.t-body > :is(p, ul, ol, pre) {
+  margin-block: 0 1.25em;
+}
+
+.t-body > :is(h2, h3, h4) {
+  margin-block: 0.9em 0.55em;
+}
+
+.t-body > h2 {
+  font-size: clamp(1.75rem, 1.5rem + 1vw, 2.25rem);
+}
+
+.t-body > :first-child:not(section) {
+  margin-block-start: 0;
+}
+
+.t-body > p:first-child:has(+ section) {
+  margin-block-end: clamp(2.25rem, 5vw, 4rem);
+}
+
+.t-body > :last-child:not(section) {
+  margin-block-end: var(--tend-space);
+}
+
+.t-body > .t-button-row {
+  margin-block: 0.25rem 2em;
+}
+
+.t-body li > p {
+  margin-block: 0 0.35em;
+}
+
+.t-body li::marker {
+  color: var(--tend-link);
+}
+
+.t-body blockquote {
+  margin: 0.75em 0 1.25em;
+  padding: 0;
+  font-family: var(--tend-font-heading);
+  font-size: clamp(1.5rem, 1.25rem + 1.1vw, 2rem);
+  font-weight: var(--tend-heading-weight);
+  line-height: 1.28;
+  letter-spacing: var(--tend-heading-tracking);
+}
+
+.t-body blockquote::before {
+  content: "\201c";
+  display: block;
+  height: 0.5em;
+  color: var(--tend-link);
+  font-size: 2.6em;
+  line-height: 1;
+}
+
+.t-body blockquote p {
+  margin: 0 0 0.4em;
+}
+
+.t-body code {
+  padding: 0.1em 0.3em;
+  border-radius: 0.3em;
+  background: var(--tend-tint-strong);
+  color: var(--tend-ink);
+  font-size: 0.92em;
+}
+
+.t-body pre {
+  overflow-x: auto;
+  padding: 1.25rem 1.5rem;
+  border-radius: var(--tend-radius);
+  background: var(--tend-foot);
+  color: var(--tend-on-foot);
+}
+
+.t-body pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+}
+
+.t-body > hr {
+  width: 6rem;
+  margin: 2.5em auto;
+  border: 0;
+  border-block-start: 2px solid var(--tend-accent);
 }
 
 /* Pictures in the text. Wider ones reach past the words, as far as the window allows. */
 
 .t-image {
-  margin: 2em 0;
+  margin: 1.5em 0 2.25em;
 }
 
 /* No wider than its width attribute says it was made, so a small one isn't blown up and blurred. */
 .t-image img {
   display: block;
   margin-inline: auto;
-  border-radius: 0.5rem;
+  border-radius: var(--tend-radius);
 }
 
-.t-size-wide {
-  width: min(64rem, 100vw - 2rem);
-  margin-inline: calc((100% - min(64rem, 100vw - 2rem)) / 2);
+.t-body > .t-size-wide {
+  grid-column: wide;
 }
 
-.t-size-full {
-  width: 100vw;
-  margin-inline: calc(50% - 50vw);
+.t-body > .t-size-full {
+  grid-column: full;
 }
 
 /* Wide and full-width pictures were asked for at that width, so they're stretched to it. */
-.t-size-wide img,
-.t-size-full img {
+.t-body > :is(.t-size-wide, .t-size-full) img {
   width: 100%;
 }
 
-.t-size-full img {
+.t-body > .t-size-full img {
   border-radius: 0;
 }
 
 .t-image figcaption {
-  margin-top: 0.5em;
+  margin-block-start: 0.875em;
   color: var(--tend-muted);
   font-size: 1rem;
   text-align: center;
 }
 
 .t-credit {
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
 }
 
-/* Grey can't be read on the accent colour, so captions and quotes take the section's colour. */
-.t-tone-accent blockquote,
+/* Sections, right across the page, with their words as wide as the header's. */
+
+.t-intro,
+.t-picture-text,
+.t-contact {
+  grid-column: full;
+  padding: var(--tend-space) var(--tend-side);
+}
+
+/* Two with the page's own colour, one after the other, have one gap between them, not two. */
+.t-tone-none:not(.t-intro) + .t-tone-none:not(.t-intro) {
+  padding-block-start: 0;
+}
+
+/* Between a section and words on the page itself. */
+.t-body > :not(section, .t-glance) + :is(.t-intro, .t-tone-muted, .t-tone-accent) {
+  margin-block-start: 1.5rem;
+}
+
+.t-body > :is(.t-intro, .t-tone-muted, .t-tone-accent, .t-glance) + :not(section, .t-glance) {
+  margin-block-start: var(--tend-space);
+}
+
+:is(.t-intro, .t-picture-text, .t-contact) > :is(p, ul, ol, pre, blockquote):not(.t-button-row) {
+  margin-block: 0 1em;
+}
+
+:is(.t-intro, .t-picture-text, .t-contact) > :is(h2, h3, h4) {
+  margin-block: 0 0.5em;
+}
+
+:is(.t-picture-text, .t-contact) > :is(p, ul, ol) {
+  font-size: clamp(1.125rem, 1.05rem + 0.35vw, 1.25rem);
+}
+
+.t-tone-muted {
+  background: var(--tend-tint);
+}
+
+.t-tone-accent {
+  background: var(--tend-band);
+  color: var(--tend-on-band);
+}
+
+/* Grey can't be read on the accent colour, so captions, quotes and links take the section's. */
+.t-tone-accent a:not(.t-button),
+.t-tone-accent blockquote::before,
+.t-tone-accent li::marker,
 .t-tone-accent .t-image figcaption {
   color: inherit;
 }
 
-.t-img-card {
-  display: block;
+.t-tone-accent .t-button {
+  background: var(--tend-on-band);
+  color: var(--tend-band-button);
+}
+
+.t-tone-accent .t-button-row + .t-button-row .t-button {
+  background: transparent;
+  color: inherit;
+}
+
+/* The focus ring is the accent colour, which would vanish on it: here it's the words'. */
+.t-tone-accent :focus-visible {
+  outline-color: var(--tend-on-band);
+}
+
+.t-align-center {
+  text-align: center;
+}
+
+/* Big intro */
+
+.t-intro {
+  position: relative;
+  isolation: isolate;
+  align-content: center;
+  /* How far the words reach, and so how far a photo behind them has to be covered. */
+  --t-words: 41rem;
+  overflow: clip;
+}
+
+.t-intro > * {
+  max-width: var(--t-words);
+}
+
+.t-intro > h2 {
+  margin-block-end: 0.35em;
+  font-family: var(--tend-font-display);
+  font-size: clamp(2.625rem, 1.6rem + 5vw, 5.25rem);
+  line-height: 1.04;
+}
+
+.t-intro > :is(p, ul, ol):not(.t-button-row) {
+  max-width: min(var(--t-words), 34rem);
+  font-size: clamp(1.1875rem, 1.05rem + 0.75vw, 1.5rem);
+  line-height: 1.5;
+}
+
+.t-intro.t-align-center > :not(.t-button-row, .t-image:first-of-type) {
+  margin-inline: auto;
+}
+
+.t-intro.t-align-center > .t-button-row {
+  margin-inline: 0.375rem;
+}
+
+/* With no photo, the words have more room, and light in the accent's colours stands in for it. */
+.t-intro:not(:has(> .t-image)) {
+  --t-words: 60rem;
+  padding-block: clamp(4rem, 3rem + 7vw, 9rem);
+}
+
+.t-intro[data-preset="2"]:not(:has(> .t-image)) {
+  min-height: min(44rem, 82svh);
+}
+
+.t-intro:not(:has(> .t-image), .t-tone-accent) {
+  background:
+    radial-gradient(
+      50rem 32rem at 92% -8%,
+      color-mix(in oklab, var(--tend-accent) 20%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      44rem 30rem at -6% 108%,
+      color-mix(in oklab, var(--tend-accent) 14%, transparent),
+      transparent 70%
+    ),
+    var(--tend-tint);
+}
+
+.t-intro.t-tone-accent:not(:has(> .t-image)) {
+  background-image:
+    radial-gradient(52rem 34rem at 96% -10%, rgb(0 0 0 / 20%), transparent 70%),
+    radial-gradient(46rem 30rem at -8% 112%, rgb(0 0 0 / 28%), transparent 70%);
+}
+
+/* Its photo, beside the words from where there's room for both, and in its own place until then. */
+.t-intro > .t-image:first-of-type {
+  max-width: none;
+  margin: 0;
+}
+
+.t-intro[data-preset="1"] > .t-image:first-of-type {
+  margin-block-end: 2rem;
+}
+
+.t-intro[data-preset="1"] > .t-image:first-of-type img {
   width: 100%;
-  margin-block-end: 0.75rem;
-  border-radius: 0.5rem;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
 }
 
-/* Picture and text: side by side on a wide screen, the picture first on a phone. */
+@media (min-width: 56rem) {
+  .t-intro[data-preset="1"]:has(> .t-image) {
+    --t-words: none;
+    min-height: 40rem;
+    padding-inline-end: calc(50% + 1rem);
+  }
 
-.t-picture-text {
-  display: grid;
-  gap: 0 2rem;
-  margin-block: 0 2em;
+  .t-intro[data-preset="1"]:has(> .t-image) > :is(p, ul, ol):not(.t-button-row) {
+    max-width: 34rem;
+  }
+
+  .t-intro[data-preset="1"]:has(> .t-image) > h2 {
+    font-size: clamp(2.75rem, 1.2rem + 4vw, 4.5rem);
+  }
+
+  .t-intro[data-preset="1"] > .t-image:first-of-type {
+    position: absolute;
+    inset-block: clamp(2rem, 4vw, 4rem);
+    inset-inline: calc(50% + 3.5rem) var(--tend-side);
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+  }
+
+  .t-intro[data-preset="1"] > .t-image:first-of-type img {
+    flex: 1;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
 }
 
-.t-picture-text .t-image {
-  margin: 0 0 1em;
+:is([data-fonts="classic"], [data-fonts="friendly"])
+  .t-intro[data-preset="1"]
+  > .t-image:first-of-type
+  img {
+  border-radius: 24rem 24rem var(--tend-radius) var(--tend-radius);
+}
+
+/*
+ * Or behind them, filling the section. Between the two is enough of one colour to read the
+ * words on any photo, even one that's all white or all black: the page's own colour, the softer
+ * one, or dark. It's that thick for as far as the words reach, whatever the window's width.
+ */
+.t-intro[data-preset="2"]:has(> .t-image) {
+  --t-veil: var(--tend-paper);
+  --t-end: calc(var(--tend-side) + var(--t-words));
+  min-height: min(46rem, 84svh);
+  background: var(--t-veil);
+}
+
+.t-intro.t-tone-muted[data-preset="2"]:has(> .t-image) {
+  --t-veil: var(--tend-tint);
+}
+
+.t-intro.t-tone-accent[data-preset="2"]:has(> .t-image) {
+  --t-veil: var(--tend-veil);
+  color: #fffdf9;
+}
+
+.t-intro[data-preset="2"]:has(> .t-image) > h2 {
+  max-width: min(var(--t-words), 8em);
+}
+
+.t-intro[data-preset="2"] > .t-image:first-of-type {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+}
+
+.t-intro[data-preset="2"] > .t-image:first-of-type img {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+.t-intro[data-preset="2"] > .t-image:first-of-type figcaption {
+  position: absolute;
+  inset-block-start: 0.75rem;
+  inset-inline-end: 0.75rem;
+  max-width: min(22rem, 70%);
+  margin: 0;
+  padding: 0.125rem 0.875rem;
+  border-radius: 1rem;
+  background: color-mix(in oklab, var(--t-veil) 84%, transparent);
+  color: inherit;
+  font-size: 0.9375rem;
+}
+
+.t-intro[data-preset="2"]:has(> .t-image)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--t-veil) 90%, transparent),
+    color-mix(in oklab, var(--t-veil) 70%, transparent) var(--t-end),
+    color-mix(in oklab, var(--t-veil) 60%, transparent) calc(var(--t-end) + 3rem),
+    color-mix(in oklab, var(--t-veil) 34%, transparent) calc(var(--t-end) + 9rem),
+    color-mix(in oklab, var(--t-veil) 12%, transparent) calc(var(--t-end) + 15rem),
+    color-mix(in oklab, var(--t-veil) 4%, transparent) calc(var(--t-end) + 21rem)
+  );
+}
+
+.t-intro[data-preset="2"].t-align-center:has(> .t-image)::before {
+  background: color-mix(in oklab, var(--t-veil) 70%, transparent);
+}
+
+/* A link in the words is underlined, and as dark as they are: its own colour may not be enough. */
+.t-intro:not(.t-tone-accent)[data-preset="2"]:has(> .t-image) a:not(.t-button) {
+  color: inherit;
+}
+
+.t-intro:not(.t-tone-accent)[data-preset="2"]:has(> .t-image) :focus-visible {
+  outline-color: var(--tend-ink);
+}
+
+.t-intro.t-tone-accent[data-preset="2"]:has(> .t-image) :focus-visible {
+  outline-color: #fffdf9;
+}
+
+.t-intro.t-tone-accent[data-preset="2"]:has(> .t-image) .t-button {
+  background: #fffdf9;
+  color: #17130f;
+}
+
+.t-intro.t-tone-accent[data-preset="2"]:has(> .t-image) .t-button-row + .t-button-row .t-button {
+  border-color: rgb(255 253 249 / 60%);
+  background: rgb(20 14 10 / 45%);
+  color: #fffdf9;
+}
+
+@media (max-width: 45.99rem) {
+  /* Dark, the words are at the bottom of the photo, which shows most above them. */
+  .t-intro.t-tone-accent[data-preset="2"]:has(> .t-image) {
+    --t-above: 9rem;
+    align-content: end;
+    min-height: min(38rem, 86svh);
+    padding-block: var(--t-above) 3rem;
+  }
+
+  .t-intro.t-tone-accent[data-preset="2"]:has(> .t-image)::before {
+    background: linear-gradient(
+      0deg,
+      color-mix(in oklab, var(--t-veil) 94%, transparent),
+      color-mix(in oklab, var(--t-veil) 70%, transparent) calc(100% - var(--t-above)),
+      color-mix(in oklab, var(--t-veil) 6%, transparent)
+    );
+  }
+
+  /* Light, so much of it would be covered that it goes above them instead. */
+  .t-intro:not(.t-tone-accent)[data-preset="2"]:has(> .t-image) {
+    min-height: 0;
+    padding-block: 0 var(--tend-space);
+  }
+
+  .t-intro:not(.t-tone-accent)[data-preset="2"]:has(> .t-image)::before {
+    content: none;
+  }
+
+  .t-intro:not(.t-tone-accent)[data-preset="2"] > .t-image:first-of-type {
+    position: static;
+    margin: 0 calc(-1 * var(--tend-gutter)) 2rem;
+  }
+
+  .t-intro:not(.t-tone-accent)[data-preset="2"] > .t-image:first-of-type img {
+    aspect-ratio: 4 / 3;
+  }
+}
+
+/* At a glance: the business details, right under the homepage's big intro. */
+
+.t-glance {
+  grid-column: full;
+  border-block-end: 1px solid var(--tend-line);
+  background: var(--tend-card);
+}
+
+.t-glance ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+  gap: 0 2rem;
+  margin-block: 0;
+  list-style: none;
+}
+
+.t-glance li {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-block: 1.125rem;
+  font-size: 1.0625rem;
+  line-height: 1.45;
+}
+
+.t-glance .t-icon {
+  box-sizing: content-box;
+  padding: 0.6875rem;
+  border-radius: 50%;
+  background: var(--tend-tint-strong);
+  color: var(--tend-link);
+}
+
+.t-glance p {
+  margin: 0;
+}
+
+.t-glance p:first-child {
+  font-weight: 650;
+}
+
+.t-glance .t-quiet {
+  color: var(--tend-muted);
+}
+
+.t-glance a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.875rem;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 39.99rem) {
+  .t-glance li + li {
+    border-block-start: 1px solid var(--tend-line);
+  }
+}
+
+/* Picture and text: side by side on a wide screen, in their own order on a phone. */
+
+.t-picture-text > .t-image {
+  margin: 0 0 1.75rem;
+}
+
+.t-picture-text > .t-image img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+/* Two columns only while there's a picture: if it's gone, the words get a column of their own. */
+.t-picture-text:not(:has(> .t-image)) {
+  padding-inline: max(var(--tend-gutter), (100% - var(--tend-text)) / 2);
 }
 
 @media (min-width: 46rem) {
-  /* Two columns only while there's a picture: if it's gone, the words get the whole width. */
   .t-picture-text:has(> .t-image) {
-    grid-template-columns: 1fr 1fr;
+    display: grid;
+    grid-template-columns: minmax(0, 1.18fr) minmax(0, 1fr);
     /* Each column fills from the top, so a second picture goes under the first, not on it. */
     grid-auto-flow: dense;
-    align-items: center;
+    column-gap: clamp(2.5rem, 6vw, 6rem);
+    text-align: start;
   }
 
   .t-picture-text:has(> .t-image) > * {
@@ -544,7 +1104,11 @@ img {
   }
 
   .t-picture-text > .t-image ~ .t-image {
-    margin-block-start: 1em;
+    margin-block-start: 1.5rem;
+  }
+
+  .t-picture-text[data-preset="2"]:has(> .t-image) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.18fr);
   }
 
   .t-picture-text[data-preset="2"]:has(> .t-image) > * {
@@ -554,85 +1118,346 @@ img {
   .t-picture-text[data-preset="2"] > .t-image {
     grid-column: 2;
   }
+
+  /* With one picture, the words sit in the middle of its height, however many there are. */
+  .t-picture-text:has(> .t-image):not(:has(> .t-image ~ .t-image)) {
+    grid-template-rows: 1fr repeat(18, auto) 1fr;
+  }
+
+  .t-picture-text:has(> .t-image):not(:has(> .t-image ~ .t-image))::before {
+    content: "";
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .t-picture-text[data-preset="2"]:has(> .t-image):not(:has(> .t-image ~ .t-image))::before {
+    grid-column: 1;
+  }
+
+  .t-picture-text:not(:has(> .t-image ~ .t-image)) > .t-image {
+    grid-row: 1 / -1;
+    align-self: center;
+  }
 }
 
-.t-picture-text.t-tone-muted,
-.t-picture-text.t-tone-accent,
-.t-contact.t-tone-muted,
-.t-contact.t-tone-accent {
-  padding: 1.5rem;
-  border-radius: 0.75rem;
+/* Contact & hours: the business details from Settings. */
+
+.t-contact > p {
+  max-width: 40rem;
 }
 
-/* Contact & hours, and the footer: the business details from Settings. */
+.t-contact.t-align-center > p {
+  margin-inline: auto;
+}
 
-.t-contact {
-  margin-block: 0 2em;
+.t-business {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(17rem, 100%), 1fr));
+  gap: 1.5rem;
+  margin-block-start: clamp(1.75rem, 4vw, 3rem);
+  color: var(--tend-ink);
+  font-size: 1.0625rem;
+  text-align: start;
+}
+
+.t-contact > .t-business:first-child {
+  margin-block-start: 0;
+}
+
+.t-business-part {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: clamp(1.5rem, 3vw, 2rem);
+  border: 1px solid var(--tend-line);
+  border-radius: calc(var(--tend-radius) + 0.25rem);
+  background: var(--tend-card);
+  box-shadow: var(--tend-shadow);
+}
+
+.t-business-part > .t-icon {
+  box-sizing: content-box;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-block-end: 1.125rem;
+  padding: 0.75rem;
+  border-radius: 50%;
+  background: var(--tend-tint-strong);
+  color: var(--tend-link);
+}
+
+/* Their level follows the page's outline, but they look the same at every level. */
+.t-business-part > :is(h2, h3, h4, h5) {
+  margin-block-end: 0.4em;
+  font-size: 1.375rem;
+  line-height: 1.2;
+}
+
+.t-business-part p {
+  margin: 0;
+}
+
+/* On a card, whatever the section behind it, links, buttons and focus are as on the page. */
+.t-business-part a:not(.t-button) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--tend-link);
+  overflow-wrap: anywhere;
+}
+
+.t-business-part .t-button {
+  margin-block-start: 1rem;
+  background: var(--tend-accent);
+  color: var(--tend-on-accent);
+}
+
+.t-business-part .t-button-quiet {
+  background: transparent;
+  color: var(--tend-ink);
+}
+
+.t-business-part :focus-visible {
+  outline-color: var(--tend-accent);
+}
+
+.t-business-part .t-last {
+  margin-block-start: auto;
+}
+
+.t-hours {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.t-hours th,
+.t-hours td {
+  padding: 0.4rem 0;
+  border-block-end: 1px solid var(--tend-line);
+  font-weight: normal;
+  text-align: start;
+  vertical-align: top;
+}
+
+.t-hours tr:last-child > * {
+  border-block-end: 0;
+}
+
+.t-hours td {
+  padding-inline-start: 1rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.t-hours .t-closed,
+.t-hours-note {
+  color: var(--tend-muted);
+}
+
+.t-hours + .t-hours-note {
+  margin-block-start: 0.75rem;
+}
+
+/* The hours take the most room, so anything else is in a column beside them. */
+@media (min-width: 46rem) {
+  .t-business:has(> .t-business-hours ~ *, > * ~ .t-business-hours) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: dense;
+  }
+
+  .t-business:has(> .t-business-hours ~ *, > * ~ .t-business-hours) > * {
+    grid-column: 1;
+  }
+
+  .t-business:has(> .t-business-hours ~ *, > * ~ .t-business-hours) > .t-business-hours {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
 }
 
 /* The details beside the words, on a screen with room for both. */
-@media (min-width: 46rem) {
-  .t-contact[data-preset="2"] {
+@media (min-width: 60rem) {
+  .t-contact[data-preset="2"]:has(> .t-business) {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 2rem;
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    grid-template-rows: repeat(18, auto) 1fr;
+    column-gap: clamp(2rem, 5vw, 5rem);
+    text-align: start;
   }
 
   .t-contact[data-preset="2"] > * {
     grid-column: 1;
   }
 
-  .t-contact[data-preset="2"] > :first-child {
-    margin-block-start: 0;
-  }
-
   .t-contact[data-preset="2"] > .t-business {
     grid-column: 2;
-    grid-row: 1 / span 20;
+    grid-row: 1 / -1;
     align-self: start;
-  }
-
-  .t-contact[data-preset="2"] .t-business-part:first-child > :is(h2, h3, h4, h5) {
     margin-block-start: 0;
   }
 }
 
-.t-business {
+/* Posts: the newest largest, the rest as cards. */
+
+.t-cards {
   display: grid;
-  gap: 0 2rem;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+  gap: clamp(2.5rem, 4vw, 4rem) clamp(1.5rem, 3vw, 2.5rem);
+  margin-block-end: var(--tend-space);
 }
 
-/* Their level follows the page's outline, but they look the same at every level. */
-.t-business-part > :is(h2, h3, h4, h5) {
-  margin-block: 1em 0.25em;
-  font-family: var(--tend-font-heading);
-  font-size: 1.125rem;
-  line-height: 1.25;
-  letter-spacing: normal;
+.t-card {
+  position: relative;
 }
 
-.t-business .t-business-part p {
-  margin-block: 0 0.5em;
+.t-card-picture {
+  overflow: clip;
+  border-radius: var(--tend-radius);
 }
 
-.t-hours {
-  border-collapse: collapse;
+.t-img-card {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
 }
 
-.t-hours th,
-.t-hours td {
-  padding: 0.125rem 1rem 0.125rem 0;
-  font-weight: normal;
-  text-align: start;
-  vertical-align: top;
+@media (prefers-reduced-motion: no-preference) {
+  .t-img-card {
+    transition: scale 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .t-card:hover .t-img-card {
+    scale: 1.035;
+  }
+}
+
+.t-meta {
+  margin: 1.125rem 0 0.375rem;
+  color: var(--tend-muted);
+  font-size: 1rem;
+}
+
+.t-card h2 {
+  font-size: clamp(1.5rem, 1.3rem + 0.7vw, 1.8125rem);
+  line-height: 1.18;
+}
+
+.t-card h2 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The whole card leads to its post. */
+.t-card h2 a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--tend-radius);
+}
+
+.t-card:hover h2 a {
+  text-decoration: underline;
+  text-decoration-color: var(--tend-accent);
+  text-decoration-thickness: 0.06em;
+}
+
+.t-card h2 a:focus-visible {
+  outline-color: transparent;
+}
+
+.t-card h2 a:focus-visible::after {
+  outline: 3px solid var(--tend-accent);
+  outline-offset: 6px;
+}
+
+.t-card-summary {
+  margin: 0.625rem 0 0;
+  color: var(--tend-muted);
+}
+
+/* Without a picture, a line above says where it starts. */
+.t-card:not(:has(.t-card-picture)) {
+  padding-block-start: 1.25rem;
+  border-block-start: 2px solid var(--tend-line);
+}
+
+.t-card:not(:has(.t-card-picture)) .t-meta {
+  margin-block-start: 0;
+}
+
+@media (min-width: 56rem) {
+  .t-card:first-child:has(.t-card-picture) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: clamp(2rem, 4vw, 4rem);
+    align-items: center;
+  }
+
+  .t-card:first-child:has(.t-card-picture) .t-img-card {
+    aspect-ratio: 16 / 10;
+  }
+
+  .t-card:first-child:has(.t-card-picture) h2 {
+    font-size: clamp(2.125rem, 1.5rem + 2vw, 3.125rem);
+    line-height: 1.08;
+  }
+
+  .t-card:first-child:has(.t-card-picture) .t-card-summary {
+    font-size: 1.25rem;
+  }
+}
+
+.t-none {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--tend-muted);
+  text-align: center;
+}
+
+/* One post */
+
+.t-page-head .t-meta {
+  margin: 0 auto 0.875rem;
+  font-size: 1.0625rem;
+}
+
+.t-cover {
+  margin-block-end: clamp(2.25rem, 5vw, 4.5rem);
+}
+
+.t-img-cover {
+  display: block;
+  width: 100%;
+  border-radius: calc(var(--tend-radius) + 0.25rem);
+  aspect-ratio: 2 / 1;
+  object-fit: cover;
+}
+
+.t-post .t-body {
+  font-size: 1.1875rem;
+}
+
+.t-post .t-body > :last-child {
+  margin-block-end: clamp(2.5rem, 5vw, 4rem);
+}
+
+.t-post-foot {
+  padding-block-end: var(--tend-space);
+  text-align: center;
+}
+
+.t-post-foot p {
+  margin: 0;
 }
 
 .t-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 2em 0 0;
+  justify-content: center;
+  gap: 0.625rem;
+  margin: 0 0 2rem;
   padding: 0;
   list-style: none;
 }
@@ -641,24 +1466,84 @@ img {
   display: inline-flex;
   align-items: center;
   min-height: 2.75rem;
-  padding-inline: 0.75rem;
-  border: 1px solid var(--tend-line);
+  padding-inline: 1.125rem;
   border-radius: 999px;
+  background: var(--tend-tint-strong);
+  color: var(--tend-ink);
+  font-size: 1rem;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.t-tags a:hover {
+  text-decoration: underline;
+}
+
+.t-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 1rem;
+  margin-block-end: var(--tend-space);
+  padding-block-start: 1.25rem;
+  border-block-start: 1px solid var(--tend-line);
+}
+
+.t-pagination a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
+/* Footer */
+
+.t-footer {
+  padding-block: clamp(3rem, 2rem + 3vw, 5rem) 2rem;
+  background: var(--tend-foot);
+  color: var(--tend-on-foot);
+  font-size: 1rem;
+}
+
+.t-footer a {
+  color: inherit;
+}
+
+.t-footer :focus-visible {
+  outline-color: currentcolor;
 }
 
 .t-footer-inner {
   display: grid;
-  gap: 1rem 2rem;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+  gap: 2.5rem 3rem;
 }
 
-.t-footer .t-footer-inner p {
-  margin-block: 0 0.25em;
+.t-footer p {
+  margin: 0 0 0.25em;
 }
 
-.t-footer-name {
-  color: var(--tend-ink);
-  font-weight: 600;
+@media (min-width: 40rem) {
+  .t-footer-brand {
+    grid-column: span 2;
+  }
+}
+
+.t-footer .t-footer-name {
+  margin-block-end: 0.3em;
+  font-family: var(--tend-font-heading);
+  font-size: clamp(1.75rem, 1.5rem + 1.2vw, 2.25rem);
+  font-weight: var(--tend-heading-weight);
+  line-height: 1.1;
+  letter-spacing: var(--tend-heading-tracking);
+}
+
+.t-footer-tagline {
+  max-width: 24rem;
+}
+
+.t-footer .t-footer-title {
+  margin-block-end: 0.75rem;
+  font-weight: 650;
 }
 
 .t-footer-menu,
@@ -668,22 +1553,70 @@ img {
   list-style: none;
 }
 
-.t-footer-menu a,
-.t-social a {
+.t-footer-menu a {
   display: inline-flex;
   align-items: center;
   min-height: 2.75rem;
+  overflow-wrap: anywhere;
 }
 
-.t-footer-text {
-  grid-column: 1 / -1;
+.t-footer-business a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.875rem;
+  overflow-wrap: anywhere;
 }
+
+.t-social {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  margin-block-start: 1.25rem;
+}
+
+.t-social a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding-inline: 0.6875rem;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 999px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.t-social a:hover {
+  border-color: currentcolor;
+}
+
+.t-footer .t-footer-text {
+  grid-column: 1 / -1;
+  margin-block-start: 0.5rem;
+  padding-block-start: 1.5rem;
+  border-block-start: 1px solid rgb(255 255 255 / 18%);
+}
+
+/* Coming soon */
 
 .t-coming-soon {
+  flex: 1;
   display: grid;
-  min-height: 100dvh;
   place-items: center;
-  padding-block: 2rem;
+  padding-block: 3rem;
+  background:
+    radial-gradient(
+      50rem 32rem at 92% -8%,
+      color-mix(in oklab, var(--tend-accent) 20%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      44rem 30rem at -6% 108%,
+      color-mix(in oklab, var(--tend-accent) 14%, transparent),
+      transparent 70%
+    ),
+    var(--tend-tint);
   text-align: center;
 }
 
@@ -691,6 +1624,11 @@ img {
   margin-inline: auto;
 }
 
+.t-coming-soon .t-lead {
+  color: var(--tend-ink);
+}
+
 .t-coming-soon .t-business {
-  text-align: start;
+  max-width: 56rem;
+  margin-inline: auto;
 }

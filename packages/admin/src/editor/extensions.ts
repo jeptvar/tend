@@ -30,6 +30,7 @@ export function editorExtensions(options: {
   placeholder: string;
   onEditButton: ButtonOptions["onEdit"];
   onDescribeImage: ImageOptions["onDescribe"];
+  onPickImage: ImageOptions["onPick"];
   onUploaded: ImageOptions["onUploaded"];
   onSectionRemoved: SectionOptions["onRemoved"];
   canEditBusiness: boolean;
@@ -51,11 +52,16 @@ export function editorExtensions(options: {
     TendHeading.configure({ levels: [...LEVELS] }),
     Placeholder.configure({ placeholder: options.placeholder }),
     ButtonNode.configure({ onEdit: options.onEditButton }),
-    ImageNode.configure({ onDescribe: options.onDescribeImage, onUploaded: options.onUploaded }),
+    ImageNode.configure({
+      onDescribe: options.onDescribeImage,
+      onPick: options.onPickImage,
+      onUploaded: options.onUploaded,
+    }),
     ...(options.allowSections
       ? [
           SectionNode.configure({
             onRemoved: options.onSectionRemoved,
+            onPickImage: options.onPickImage,
             canEditBusiness: options.canEditBusiness,
           }),
         ]

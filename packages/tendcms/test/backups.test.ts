@@ -48,7 +48,7 @@ const NEWEST = readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")
 /** A site with a picture, set up the way an owner would. */
 async function siteWithPicture() {
   const made = await makeApp();
-  const owner = await setUp(made);
+  const owner = await setUp(made, { starter: "blank" });
   const png = await sharp({
     create: { width: 1200, height: 800, channels: 3, background: "#336699" },
   })

@@ -8,11 +8,14 @@ import {
   textLinkClass,
 } from "../components/AuthLayout.tsx";
 import { Dialog } from "../components/Dialog.tsx";
+import { Icon } from "../components/icons.tsx";
 import { Problem } from "../components/Problem.tsx";
+import { Tabs } from "../components/Tabs.tsx";
 import { dismissToast, showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { api, errorText } from "../lib/api.ts";
 import { toHref } from "../lib/href.ts";
+import { linkTargets } from "../lib/link-targets.ts";
 import type { LinkTarget, Me } from "../lib/queries.ts";
 import { type ScreenDraft, settleScreenDraft, useScreenDraft } from "../lib/screen-drafts.ts";
 import {
@@ -28,7 +31,7 @@ type MenuName = "main" | "footer";
 
 const SEARCH_DELAY_MS = 200;
 const smallButtonClass =
-  "inline-flex min-h-11 min-w-11 items-center justify-center rounded border border-muted px-2 text-sm hover:border-brand focus-visible:outline-3 focus-visible:outline-brand aria-disabled:opacity-40 aria-disabled:hover:border-muted";
+  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-line bg-surface px-3 text-sm hover:border-brand focus-visible:outline-3 focus-visible:outline-brand aria-disabled:opacity-40 aria-disabled:hover:border-line";
 
 interface Known {
   title: string | null;
@@ -63,6 +66,14 @@ function targetFromHref(href: string): MenuTarget {
   return { type: "url", url: href };
 }
 
+interface LinkOption {
+  key: string;
+  label: string;
+  detail: string;
+  target: MenuTarget;
+  known: Known;
+}
+
 function AddLinkDialog({
   onAdd,
   onClose,
@@ -71,96 +82,107 @@ function AddLinkDialog({
   onClose: () => void;
 }) {
   const intl = useIntl();
+  const queryClient = useQueryClient();
   const headingId = useId();
   const searchId = useId();
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState("");
+  /** Enter was pressed, and what it's for is being looked up. */
+  const choosing = useRef(false);
+  const open = useRef(true);
+
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery(typed.trim()), SEARCH_DELAY_MS);
     return () => clearTimeout(timer);
   }, [typed]);
 
-  const found = useQuery({
-    queryKey: ["link-targets", query],
-    queryFn: () =>
-      api<{ targets: LinkTarget[] }>(`/admin/link-targets?q=${encodeURIComponent(query)}`),
-  });
+  const found = useQuery(linkTargets(query));
   const tags = useQuery({
     queryKey: ["tags"],
     queryFn: () => api<{ tags: Tag[] }>("/admin/tags"),
     staleTime: 60_000,
   });
 
-  const words = query.toLowerCase();
-  const matches = (name: string) => !words || name.toLowerCase().includes(words);
-  const typedHref = toHref(typed);
-  const looksLikeAddress = typedHref !== null && /^(https?:|mailto:|tel:|\/)/.test(typedHref);
+  function optionsFor(words: string, targets: LinkTarget[]): LinkOption[] {
+    const options: LinkOption[] = [];
+    const matches = (name: string) => name.toLowerCase().includes(words.toLowerCase());
+    const typedHref = toHref(typed);
+    if (typedHref !== null && /^(https?:|mailto:|tel:|\/)/.test(typedHref)) {
+      options.push({
+        key: "typed",
+        label: intl.formatMessage({ id: "menu.linkTo" }, { address: typedHref }),
+        detail: "",
+        target: targetFromHref(typedHref),
+        known: { title: null, url: typedHref },
+      });
+    }
+    const homepage = intl.formatMessage({ id: "menu.homepage" });
+    if (matches(homepage)) {
+      options.push({
+        key: "home",
+        label: homepage,
+        detail: "/",
+        target: { type: "home" },
+        known: { title: homepage, url: "/" },
+      });
+    }
+    if (matches("Blog")) {
+      options.push({
+        key: "blog",
+        label: "Blog",
+        detail: "/blog",
+        target: { type: "blog" },
+        known: { title: "Blog", url: "/blog" },
+      });
+    }
+    for (const target of targets) {
+      options.push({
+        key: target.id,
+        label: target.title || intl.formatMessage({ id: "list.untitled" }),
+        detail: target.url ?? intl.formatMessage({ id: "link.notOnSite" }),
+        target: { type: "entry", id: target.id },
+        known: { title: target.title, url: target.url },
+      });
+    }
+    for (const tag of (tags.data?.tags ?? []).filter((tag) => matches(tag.name)).slice(0, 5)) {
+      options.push({
+        key: `tag-${tag.id}`,
+        label: intl.formatMessage({ id: "menu.tag" }, { name: tag.name }),
+        detail: `/tag/${tag.slug}`,
+        target: { type: "tag", id: tag.id },
+        known: { title: tag.name, url: `/tag/${tag.slug}` },
+      });
+    }
+    return options;
+  }
+  const options = optionsFor(query, found.data ?? []);
 
-  const options: {
-    key: string;
-    label: string;
-    detail: string;
-    target: MenuTarget;
-    known: Known;
-  }[] = [];
-  if (looksLikeAddress && typedHref) {
-    options.push({
-      key: "typed",
-      label: intl.formatMessage({ id: "menu.linkTo" }, { address: typedHref }),
-      detail: "",
-      target: targetFromHref(typedHref),
-      known: { title: null, url: typedHref },
-    });
-  }
-  const homepage = intl.formatMessage({ id: "menu.homepage" });
-  if (matches(homepage)) {
-    options.push({
-      key: "home",
-      label: homepage,
-      detail: "/",
-      target: { type: "home" },
-      known: { title: homepage, url: "/" },
-    });
-  }
-  if (matches("Blog")) {
-    options.push({
-      key: "blog",
-      label: "Blog",
-      detail: "/blog",
-      target: { type: "blog" },
-      known: { title: "Blog", url: "/blog" },
-    });
-  }
-  for (const target of found.data?.targets ?? []) {
-    options.push({
-      key: target.id,
-      label: target.title || intl.formatMessage({ id: "list.untitled" }),
-      detail: target.url ?? intl.formatMessage({ id: "link.notOnSite" }),
-      target: { type: "entry", id: target.id },
-      known: { title: target.title, url: target.url },
-    });
-  }
-  for (const tag of (tags.data?.tags ?? []).filter((tag) => matches(tag.name)).slice(0, 5)) {
-    options.push({
-      key: `tag-${tag.id}`,
-      label: intl.formatMessage({ id: "menu.tag" }, { name: tag.name }),
-      detail: `/tag/${tag.slug}`,
-      target: { type: "tag", id: tag.id },
-      known: { title: tag.name, url: `/tag/${tag.slug}` },
-    });
-  }
-
-  function onSubmit(event: FormEvent) {
+  /** Enter chooses the first that fits exactly what's typed, whatever the list is still showing. */
+  async function onSubmit(event: FormEvent) {
     event.preventDefault();
-    const first = options[0];
-    if (first) onAdd(first.target, first.known);
+    if (choosing.current) return;
+    choosing.current = true;
+    const words = typed.trim();
+    let [first] = optionsFor(words, []);
+    if (first?.key !== "typed") {
+      const targets = await queryClient.fetchQuery(linkTargets(words)).catch(() => []);
+      [first] = optionsFor(words, targets);
+    }
+    choosing.current = false;
+    if (first && open.current) onAdd(first.target, first.known);
   }
 
   return (
     <Dialog labelledBy={headingId} onClose={onClose}>
       <form onSubmit={onSubmit} className="grid gap-4">
-        <h2 id={headingId} className="text-xl font-semibold">
+        <h2 id={headingId} className="text-xl font-bold">
           <FormattedMessage id="menu.addHeading" />
         </h2>
         <div className="grid gap-2">
@@ -172,11 +194,13 @@ function AddLinkDialog({
             value={typed}
             autoFocus
             onChange={(event) => setTyped(event.target.value)}
-            className="min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-lg text-[#1d2420] focus-visible:outline-3 focus-visible:outline-brand"
+            className="min-h-11 w-full rounded-xl border border-edge bg-field px-3 text-lg focus-visible:outline-3 focus-visible:outline-brand"
           />
         </div>
         <p role="status" className="sr-only">
-          <FormattedMessage id="link.found" values={{ count: options.length }} />
+          {!found.isPlaceholderData && (
+            <FormattedMessage id="link.found" values={{ count: options.length }} />
+          )}
         </p>
         <ul className="grid max-h-80 gap-1 overflow-y-auto">
           {options.map((option) => (
@@ -184,7 +208,7 @@ function AddLinkDialog({
               <button
                 type="button"
                 onClick={() => onAdd(option.target, option.known)}
-                className="grid min-h-11 w-full gap-0.5 rounded px-3 py-1 text-start hover:bg-ink/10 focus-visible:outline-3 focus-visible:outline-brand"
+                className="grid min-h-11 w-full gap-0.5 rounded-xl px-3 py-1 text-start hover:bg-ink/5 focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-brand"
               >
                 <span className="font-medium [overflow-wrap:anywhere]">{option.label}</span>
                 {option.detail && (
@@ -245,8 +269,14 @@ function MenuRow({
   // aria-disabled rather than disabled, so a button that's just been used keeps focus.
   const canIndent = position.nested || position.canIndent;
   return (
-    <div data-item={item.id} className={`grid gap-2 py-3 ${position.nested ? "ms-8" : ""}`}>
-      <div className="min-w-0">
+    <div
+      data-item={item.id}
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2 py-3.5 ${position.nested ? "ms-6 sm:ms-10" : ""}`}
+    >
+      {position.nested && (
+        <span aria-hidden="true" className="-ms-6 h-px w-4 bg-edge max-sm:hidden" />
+      )}
+      <div className="min-w-0 flex-1 basis-52">
         <p className="font-medium [overflow-wrap:anywhere]">{title}</p>
         <p className={`text-sm [overflow-wrap:anywhere] ${shown ? "text-muted" : "text-danger"}`}>
           {shown ? (
@@ -258,7 +288,7 @@ function MenuRow({
       </div>
       {renaming ? (
         <form
-          className="flex flex-wrap items-end gap-2"
+          className="flex min-w-0 flex-1 basis-64 flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             onRename(words.trim() || null);
@@ -278,7 +308,7 @@ function MenuRow({
               // biome-ignore lint/a11y/noAutofocus: they've just asked to rename it
               autoFocus
               onChange={(event) => setWords(event.target.value)}
-              className="min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-[#1d2420] focus-visible:outline-3 focus-visible:outline-brand"
+              className="min-h-11 w-full rounded-xl border border-edge bg-field px-3 focus-visible:outline-3 focus-visible:outline-brand"
             />
           </div>
           <button type="submit" className={smallButtonClass}>
@@ -295,9 +325,9 @@ function MenuRow({
               if (!position.first) onMove(-1);
             }}
             aria-label={intl.formatMessage({ id: "menu.moveUp" }, { title })}
-            className={smallButtonClass}
+            className={`${smallButtonClass} px-0! min-w-11`}
           >
-            ↑
+            <Icon name="up" />
           </button>
           <button
             type="button"
@@ -307,9 +337,9 @@ function MenuRow({
               if (!position.last) onMove(1);
             }}
             aria-label={intl.formatMessage({ id: "menu.moveDown" }, { title })}
-            className={smallButtonClass}
+            className={`${smallButtonClass} px-0! min-w-11`}
           >
-            ↓
+            <Icon name="down" />
           </button>
           <button
             type="button"
@@ -537,22 +567,27 @@ function SiteMenuScreen({ me }: { me: Me }) {
   });
 
   return (
-    <AdminLayout me={me} screen="menu">
-      <p className="mt-2 text-muted">
-        <FormattedMessage id="menu.hint" />
-      </p>
-      <div className="-ml-2 mt-6 flex">
-        {(["main", "footer"] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={which === option}
-            onClick={() => setWhich(option)}
-            className={`min-h-11 min-w-11 rounded px-2 text-center hover:underline focus-visible:outline-3 focus-visible:outline-brand ${which === option ? "font-semibold" : "text-muted"}`}
-          >
-            <FormattedMessage id={option === "main" ? "menu.main" : "menu.footer"} />
+    <AdminLayout
+      me={me}
+      screen="menu"
+      intro={<FormattedMessage id="menu.hint" />}
+      actions={
+        stored && (
+          <button type="button" onClick={() => setAdding(true)} className={secondaryButtonClass}>
+            <Icon name="add" className="size-4.5" />
+            <FormattedMessage id="menu.add" />
           </button>
-        ))}
+        )
+      }
+    >
+      <div className="mt-6 flex">
+        <Tabs>
+          {(["main", "footer"] as const).map((option) => (
+            <Tabs.Tab key={option} chosen={which === option} onChoose={() => setWhich(option)}>
+              <FormattedMessage id={option === "main" ? "menu.main" : "menu.footer"} />
+            </Tabs.Tab>
+          ))}
+        </Tabs>
       </div>
 
       <p role="alert" className="mt-4 font-medium text-danger empty:sr-only">
@@ -564,17 +599,17 @@ function SiteMenuScreen({ me }: { me: Me }) {
 
       {!menus.data && <Waiting query={menus} />}
       {stored?.automatic && !changed && (
-        <p className="mt-4 rounded-lg bg-ink/5 p-3">
+        <p className="mt-5 rounded-2xl bg-mint p-4">
           <FormattedMessage id={which === "main" ? "menu.automatic" : "menu.footerEmpty"} />
         </p>
       )}
       {stored && items.length === 0 && !stored.automatic && (
-        <p className="mt-4 text-muted">
+        <p className="dashed mt-5 px-6 py-10 text-center text-muted">
           <FormattedMessage id="menu.empty" />
         </p>
       )}
 
-      <ol ref={listRef} className="mt-4 divide-y divide-ink/10 border-y border-ink/10 empty:hidden">
+      <ol ref={listRef} className="card mt-5 divide-y divide-line px-5 empty:hidden sm:px-6">
         {items.map((item, index) => (
           <li key={item.id}>
             <MenuRow
@@ -592,7 +627,7 @@ function SiteMenuScreen({ me }: { me: Me }) {
               onRemove={() => remove(index, null)}
             />
             {item.children.length > 0 && (
-              <ol className="divide-y divide-ink/10 border-t border-ink/10">
+              <ol className="divide-y divide-line border-t border-line">
                 {item.children.map((child, childIndex) => (
                   <li key={child.id}>
                     <MenuRow
@@ -618,10 +653,7 @@ function SiteMenuScreen({ me }: { me: Me }) {
       </ol>
 
       {stored && (
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button type="button" onClick={() => setAdding(true)} className={secondaryButtonClass}>
-            <FormattedMessage id="menu.add" />
-          </button>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <button
             type="button"
             aria-disabled={!changed || save.isPending}

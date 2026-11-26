@@ -10,7 +10,10 @@ export function PicturesNotice({ me }: { me: Me }) {
   if (me.picturesWork) return null;
   const isAdmin = me.user.role === "admin";
   return (
-    <section aria-labelledby={id} className="mt-6 rounded-lg border border-danger p-4">
+    <section
+      aria-labelledby={id}
+      className="mt-6 rounded-2xl border border-danger bg-danger-soft p-5"
+    >
       <h2 id={id} className="text-lg font-semibold">
         <FormattedMessage id="pictures.heading" />
       </h2>

@@ -1,16 +1,19 @@
 import { type InfiniteData, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Node as PmNode } from "@tiptap/pm/model";
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { FormattedMessage, type IntlShape, useIntl } from "react-intl";
 import { Link, Redirect, useLocation } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import {
+  iconButtonClass,
   Loading,
   primaryButtonClass,
   secondaryButtonClass,
   textLinkClass,
 } from "../components/AuthLayout.tsx";
-import { Field } from "../components/fields.tsx";
+import { Dialog } from "../components/Dialog.tsx";
+import { Field, SentenceField } from "../components/fields.tsx";
+import { Icon } from "../components/icons.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { dismissToast, showToast } from "../components/Toast.tsx";
 import { BodyEditor, type BodyHandle } from "../editor/BodyEditor.tsx";
@@ -25,6 +28,7 @@ import { FeaturedImageField, SearchFields, TagsField } from "../editor/EntrySett
 import { HistoryDialog } from "../editor/HistoryDialog.tsx";
 import { PreviewDialog } from "../editor/PreviewDialog.tsx";
 import { PublishDialog } from "../editor/PublishDialog.tsx";
+import { TitleField } from "../editor/TitleField.tsx";
 import { getUpload, isUploading, useUploadsChanged } from "../editor/uploads.ts";
 import { ApiError, api, errorText, OFFLINE } from "../lib/api.ts";
 import { cleanDoc, type Doc, docToText, imageIds, leadText, sameDoc } from "../lib/doc.ts";
@@ -49,6 +53,7 @@ import {
   waitForSave,
 } from "../lib/held-drafts.ts";
 import { lookUpMedia } from "../lib/media.ts";
+import { useMediaQuery } from "../lib/media-query.ts";
 import {
   type EntryFull,
   type EntryPage,
@@ -61,6 +66,7 @@ import {
   type Me,
   withoutEntry,
 } from "../lib/queries.ts";
+import { SiteStyle } from "../lib/site-style.tsx";
 
 // PLAN.md §5: a copy on this device almost straight away, and the server soon after.
 const HOLD_DELAY_MS = 250;
@@ -94,7 +100,30 @@ function toAddress(text: string, type: EntryType, from: "address" | "title" = "a
 
 // aria-disabled rather than disabled, so a button that's just been used keeps keyboard focus,
 // and a dialog it opens has somewhere to hand focus back to.
-const actionButtonClass = `${secondaryButtonClass} aria-disabled:opacity-60`;
+const settingsActionClass =
+  "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left font-medium hover:bg-ink/5 focus-visible:outline-3 focus-visible:outline-brand aria-disabled:opacity-60";
+
+/** Where there's room for the settings beside the page. Anywhere else they're a drawer. */
+const ROOM_BESIDE = "(min-width: 80rem)";
+const PANEL_KEY = "tend-settings";
+
+/** Whether the settings are shown beside the page, until someone on this device hides them. */
+function keptPanel(): boolean {
+  try {
+    return localStorage.getItem(PANEL_KEY) !== "hidden";
+  } catch {
+    return true;
+  }
+}
+
+function keepPanel(shown: boolean): void {
+  try {
+    if (shown) localStorage.removeItem(PANEL_KEY);
+    else localStorage.setItem(PANEL_KEY, "hidden");
+  } catch {
+    // It stays as it is until this screen is left.
+  }
+}
 
 function newEditSession(): string {
   // Not crypto.randomUUID, which only exists on https and localhost.
@@ -266,7 +295,9 @@ function EditorScreen({
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
   const bodyLabelId = useId();
-  const titleRef = useRef<HTMLInputElement>(null);
+  const settingsHeadingId = useId();
+  const settingsId = useId();
+  const titleRef = useRef<HTMLTextAreaElement>(null);
   const slugRef = useRef<HTMLInputElement>(null);
   const statusRef = useRef<HTMLParagraphElement>(null);
   const bodyRef = useRef<BodyHandle>(null);
@@ -285,7 +316,12 @@ function EditorScreen({
   const [activity, setActivity] = useState<Activity | null>(null);
   const [restoredHeld, setRestoredHeld] = useState(held !== undefined);
   const [justUnpublished, setJustUnpublished] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const roomBeside = useMediaQuery(ROOM_BESIDE);
+  const [panelShown, setPanelShown] = useState(keptPanel);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const settingsOpen = roomBeside ? panelShown : drawerOpen;
+  /** A box to go to, once whatever it's in is there. */
+  const [goingTo, setGoingTo] = useState<"title" | "slug" | null>(null);
   const [review, setReview] = useState<{ checks: Check[]; done: boolean } | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -541,6 +577,8 @@ function EditorScreen({
     setSaving(false);
     setReview(null);
     setHistoryOpen(false);
+    // The choice is on the page, which can't be reached behind an open drawer.
+    setDrawerOpen(false);
     setConflict(theirs);
   }
 
@@ -585,12 +623,26 @@ function EditorScreen({
     setProblem(error);
   }
 
-  function goToField(field: "title" | "slug"): void {
-    if (field === "slug") setSettingsOpen(true);
-    // After anything open has closed and handed focus back, and the settings have opened,
-    // because something hidden can't take focus.
-    requestAnimationFrame(() => (field === "title" ? titleRef : slugRef).current?.focus());
+  function showSettings(shown: boolean): void {
+    if (roomBeside) setPanelShown(shown);
+    else setDrawerOpen(shown);
   }
+
+  function goToField(field: "title" | "slug"): void {
+    if (field === "slug") showSettings(true);
+    setGoingTo(field);
+  }
+
+  // After anything open has closed and handed focus back, and the settings have opened, because
+  // something that isn't there can't take focus.
+  useEffect(() => {
+    if (!goingTo) return;
+    const frame = requestAnimationFrame(() => {
+      (goingTo === "title" ? titleRef : slugRef).current?.focus();
+      setGoingTo(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [goingTo]);
 
   /** Leads to what a check is about, for its Fix button. */
   function goToCheck(target: CheckTarget): void {
@@ -1475,6 +1527,166 @@ function EditorScreen({
   // The same as the server's rule: the start of the first paragraph.
   const reviewSummary = fields.summary.trim() || leadText(session.current.doc).slice(0, 160);
   const problemText = problem ? errorText(problem, offlineText) : null;
+  const look =
+    activity !== null
+      ? "busy"
+      : inTrash
+        ? "away"
+        : conflict || trouble || (restoredHeld && unsaved)
+          ? "trouble"
+          : statusId === "editor.saving"
+            ? "busy"
+            : statusId === "status.onSite"
+              ? "live"
+              : statusId === "status.changes"
+                ? "waiting"
+                : "saved";
+  // On a phone it's a line of its own when it's long, rather than half the bar, and always for
+  // something on the site, so the page doesn't move with every save.
+  const longStatus =
+    isLive ||
+    look === "trouble" ||
+    look === "away" ||
+    (activity !== null && activity !== "preparing") ||
+    justUnpublished ||
+    pictures.going + pictures.failed > 0;
+  const settingsName = intl.formatMessage({ id: `editor.settings.${type}` });
+  const settings = (
+    <div className="grid grid-cols-1 gap-6">
+      <FeaturedImageField
+        value={fields.featuredImageId}
+        automatic={imageIds(session.current.doc)[0] ?? null}
+        onChange={(id) => changeField("featuredImageId", id)}
+        readOnly={readOnly}
+      />
+      {!current.isHome && (
+        <Field
+          ref={slugRef}
+          label={intl.formatMessage({ id: "editor.addressLabel" })}
+          hint={
+            <FormattedMessage
+              id="editor.addressHint"
+              values={{ address: `${addressPrefix}${addressPreview}` }}
+            />
+          }
+          value={fields.slug}
+          onChange={(event) => changeField("slug", event.target.value)}
+          error={
+            fieldError?.field === "slug"
+              ? fieldError.message
+              : current.address.problem
+                ? `${current.address.problem.message} ${current.address.problem.fix ?? ""}`.trim()
+                : undefined
+          }
+          placeholder={toAddress(fields.title, type, "title")}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={200}
+          readOnly={readOnly}
+        />
+      )}
+      <SentenceField
+        label={intl.formatMessage({ id: "editor.summaryLabel" })}
+        hint={intl.formatMessage({ id: "editor.summaryHint" })}
+        value={fields.summary}
+        onChange={(value) => changeField("summary", value)}
+        maxLength={300}
+        readOnly={readOnly}
+      />
+      {type === "post" && (
+        <TagsField
+          value={fields.tagIds}
+          onChange={(ids) => changeField("tagIds", ids)}
+          readOnly={readOnly}
+        />
+      )}
+      <SearchFields
+        title={fields.seoTitle}
+        description={fields.seoDescription}
+        noindex={fields.noindex}
+        automaticTitle={fields.title}
+        automaticDescription={reviewSummary}
+        readOnly={readOnly}
+        onChange={(change) => {
+          if (change.seoTitle !== undefined) changeField("seoTitle", change.seoTitle);
+          if (change.seoDescription !== undefined) {
+            changeField("seoDescription", change.seoDescription);
+          }
+          if (change.noindex !== undefined) changeField("noindex", change.noindex);
+        }}
+      />
+      {!inTrash && (
+        <ul className="-mx-3 grid gap-0.5">
+          <li className="sm:hidden">
+            <button
+              type="button"
+              aria-disabled={locked}
+              onClick={() => {
+                if (session.current.locked) return;
+                setDrawerOpen(false);
+                setProblem(null);
+                setHistoryOpen(true);
+              }}
+              className={settingsActionClass}
+            >
+              <Icon name="history" className="size-5 text-muted" />
+              <FormattedMessage id="editor.history" />
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              aria-disabled={busy || locked}
+              onClick={() => {
+                if (busy || session.current.locked) return;
+                setDrawerOpen(false);
+                onDuplicate();
+              }}
+              className={settingsActionClass}
+            >
+              <Icon name="copy" className="size-5 text-muted" />
+              <FormattedMessage id="editor.duplicate" />
+            </button>
+          </li>
+          {canPublishRole && isLive && !current.isHome && (
+            <li>
+              <button
+                type="button"
+                aria-disabled={busy || locked}
+                onClick={() => {
+                  if (busy || session.current.locked) return;
+                  setDrawerOpen(false);
+                  onUnpublish();
+                }}
+                className={settingsActionClass}
+              >
+                <Icon name="hide" className="size-5 text-muted" />
+                <FormattedMessage id="editor.unpublish" />
+              </button>
+            </li>
+          )}
+          {canPublishRole && !current.isHome && (
+            <li>
+              <button
+                type="button"
+                aria-disabled={busy || locked}
+                onClick={() => {
+                  if (busy || session.current.locked) return;
+                  setDrawerOpen(false);
+                  onTrash();
+                }}
+                className={settingsActionClass}
+              >
+                <Icon name="trash" className="size-5 text-muted" />
+                <FormattedMessage id="editor.trash" />
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
 
   return (
     <AdminLayout
@@ -1484,98 +1696,149 @@ function EditorScreen({
       currentEntryId={entry.id}
       writing
     >
-      <div className="mt-2">
-        <Link href={listPath} className={textLinkClass}>
-          <FormattedMessage id={type === "post" ? "editor.backToPosts" : "editor.backToPages"} />
-        </Link>
-      </div>
+      <SiteStyle />
 
       {/* Always mounted: screen readers can miss a live region added along with its text. */}
       <p role="status" className="sr-only">
         {announcement}
       </p>
 
-      <div className="tend-sticky sticky top-0 z-10 -mx-4 mt-2 grid gap-1 border-b border-ink/10 bg-paper px-4 py-2 max-md:static">
-        <p
-          ref={statusRef}
-          tabIndex={-1}
-          data-testid="save-status"
-          className="flex flex-wrap items-center gap-x-3 text-muted outline-none"
-        >
-          <span>
-            <FormattedMessage id={statusId} />
-          </span>
-          {pictures.going > 0 && (
-            <span>
-              <FormattedMessage id="editor.uploadingPictures" values={{ count: pictures.going }} />
+      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-x-1 bg-surface px-1.5 py-1.5 max-md:border-b max-md:border-line md:flex-nowrap md:bg-paper md:p-0 short:static print:hidden">
+        <div className="max-md:contents md:flex md:min-h-18 md:min-w-0 md:flex-1 md:items-center md:gap-x-3 md:px-5">
+          <Link
+            href={listPath}
+            aria-label={intl.formatMessage({
+              id: type === "post" ? "editor.backToPosts" : "editor.backToPages",
+            })}
+            className="-ml-1 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-xl font-medium text-muted hover:text-ink focus-visible:outline-3 focus-visible:outline-brand md:pr-2"
+          >
+            <Icon name="back" />
+            <span className="max-md:hidden">
+              <FormattedMessage id={type === "post" ? "nav.posts" : "nav.pages"} />
+            </span>
+          </Link>
+          {!isLive && !inTrash && (
+            <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-sunken px-3 py-1 text-sm font-semibold max-md:hidden">
+              <span aria-hidden="true" className="size-2 rounded-full bg-edge" />
+              <FormattedMessage id="status.draft" />
             </span>
           )}
-          {pictures.failed > 0 && (
-            <span className="font-medium text-danger">
-              <FormattedMessage id="editor.picturesFailed" values={{ count: pictures.failed }} />
-            </span>
-          )}
-          {isLive && !unsaved && !busy && current.url && (
-            <a href={current.url} target="_blank" rel="noopener" className={textLinkClass}>
-              <FormattedMessage id="editor.view" />
-            </a>
-          )}
-          {trouble === "offline" && !busy && (
-            <button
-              type="button"
-              className={textLinkClass}
-              onClick={() => {
-                session.current.retryDelay = RETRY_MIN_MS;
-                session.current.announceNextSave = true;
-                void autosave();
-                // The button goes as soon as this works, and focus shouldn't go with it.
-                statusRef.current?.focus();
-              }}
+          <div
+            className={`flex min-w-0 flex-1 flex-wrap items-center gap-x-3 text-sm max-md:text-[0.8125rem] ${
+              longStatus ? "max-md:order-last max-md:basis-full max-md:px-2" : ""
+            }`}
+          >
+            <p
+              ref={statusRef}
+              tabIndex={-1}
+              data-testid="save-status"
+              className="flex min-w-0 flex-wrap items-center gap-x-3 outline-none"
             >
-              <FormattedMessage id="common.tryAgain" />
-            </button>
-          )}
-          {trouble === "signedOut" && (
-            <Link href="/login" className={textLinkClass}>
-              <FormattedMessage id="login.submit" />
-            </Link>
-          )}
-        </p>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          {inTrash ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={onRestore}
-              className={primaryButtonClass}
-            >
-              <FormattedMessage id="list.restore" />
-            </button>
-          ) : (
-            <>
-              {canPublishRole && (
-                <button
-                  type="button"
-                  // aria-disabled, so a button that's just been used keeps keyboard focus.
-                  aria-disabled={!canPublish}
-                  onClick={onPublish}
-                  className={`${primaryButtonClass} aria-disabled:opacity-60`}
-                >
-                  <FormattedMessage id={publishId} />
-                </button>
+              <span
+                className={`inline-flex items-center gap-2 ${
+                  look === "live"
+                    ? "rounded-full font-semibold text-brand-strong md:bg-mint md:px-3 md:py-1"
+                    : look === "waiting"
+                      ? "rounded-full font-semibold text-wait md:bg-wait-soft md:px-3 md:py-1"
+                      : look === "trouble"
+                        ? "font-medium text-danger"
+                        : "text-muted"
+                }`}
+              >
+                {look === "saved" ? (
+                  <Icon name="done" className="size-4.5" />
+                ) : look === "trouble" ? (
+                  <Icon name="warning" className="size-4.5" />
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className={`size-2 shrink-0 rounded-full ${
+                      look === "live"
+                        ? "bg-[#3fae74]"
+                        : look === "waiting"
+                          ? "bg-[#d9962b]"
+                          : "bg-edge"
+                    }`}
+                  />
+                )}
+                <FormattedMessage id={statusId} />
+              </span>
+              {pictures.going > 0 && (
+                <span className="text-muted">
+                  <FormattedMessage
+                    id="editor.uploadingPictures"
+                    values={{ count: pictures.going }}
+                  />
+                </span>
               )}
-              {canPublishRole && hasPendingChanges && (
+              {pictures.failed > 0 && (
+                <span className="font-medium text-danger">
+                  <FormattedMessage
+                    id="editor.picturesFailed"
+                    values={{ count: pictures.failed }}
+                  />
+                </span>
+              )}
+              {isLive && !unsaved && !busy && current.url && (
+                <a
+                  href={current.url}
+                  target="_blank"
+                  rel="noopener"
+                  className={`${textLinkClass} ${hasPendingChanges ? "max-md:hidden" : ""}`}
+                >
+                  <FormattedMessage id="editor.view" />
+                </a>
+              )}
+              {trouble === "offline" && !busy && (
                 <button
                   type="button"
-                  aria-disabled={busy || locked}
+                  className={textLinkClass}
                   onClick={() => {
-                    if (!busy && !session.current.locked) onDiscard();
+                    session.current.retryDelay = RETRY_MIN_MS;
+                    session.current.announceNextSave = true;
+                    void autosave();
+                    // The button goes as soon as this works, and focus shouldn't go with it.
+                    statusRef.current?.focus();
                   }}
-                  className={actionButtonClass}
                 >
-                  <FormattedMessage id="editor.discard" />
+                  <FormattedMessage id="common.tryAgain" />
                 </button>
               )}
+              {trouble === "signedOut" && (
+                <Link href="/login" className={textLinkClass}>
+                  <FormattedMessage id="login.submit" />
+                </Link>
+              )}
+            </p>
+            {canPublishRole && hasPendingChanges && !inTrash && (
+              <button
+                type="button"
+                aria-disabled={busy || locked}
+                onClick={() => {
+                  if (!busy && !session.current.locked) onDiscard();
+                }}
+                className={`${textLinkClass} aria-disabled:opacity-60`}
+              >
+                <FormattedMessage id="editor.discard" />
+              </button>
+            )}
+          </div>
+          {!inTrash && (
+            <>
+              <button
+                type="button"
+                aria-label={intl.formatMessage({ id: "editor.history" })}
+                title={intl.formatMessage({ id: "editor.history" })}
+                aria-disabled={locked}
+                onClick={() => {
+                  if (session.current.locked) return;
+                  setProblem(null);
+                  setHistoryOpen(true);
+                }}
+                className={`${iconButtonClass} aria-disabled:opacity-60 max-sm:hidden md:border md:border-line md:bg-surface md:text-ink md:shadow-xs md:hover:border-brand md:hover:bg-surface`}
+              >
+                <Icon name="history" />
+              </button>
               <button
                 type="button"
                 // Not while a copy from this device is waiting to be decided about.
@@ -1583,262 +1846,223 @@ function EditorScreen({
                 onClick={() => {
                   if (!busy && !session.current.locked) onPreview();
                 }}
-                className={actionButtonClass}
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-xl font-semibold hover:bg-ink/5 focus-visible:outline-3 focus-visible:outline-brand aria-disabled:opacity-60 max-md:ml-auto md:border md:border-line md:bg-surface md:px-4 md:shadow-xs md:hover:border-brand md:hover:bg-surface"
               >
-                <FormattedMessage id="editor.preview" />
-              </button>
-              <button
-                type="button"
-                aria-disabled={locked}
-                onClick={() => {
-                  if (session.current.locked) return;
-                  setProblem(null);
-                  setHistoryOpen(true);
-                }}
-                className={actionButtonClass}
-              >
-                <FormattedMessage id="editor.history" />
+                <Icon name="eye" className="size-5 max-md:text-muted" />
+                <span className="max-md:sr-only">
+                  <FormattedMessage id="editor.preview" />
+                </span>
               </button>
             </>
           )}
         </div>
+        <div
+          className={`max-md:contents md:flex md:min-h-18 md:items-center md:gap-3 ${
+            roomBeside && panelShown
+              ? "md:w-85 md:shrink-0 md:border-b md:border-l md:border-line md:bg-surface md:px-5"
+              : "md:pr-5"
+          }`}
+        >
+          {inTrash ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRestore}
+              className={`${primaryButtonClass} flex-1 max-md:ml-auto max-md:flex-none`}
+            >
+              <FormattedMessage id="list.restore" />
+            </button>
+          ) : (
+            canPublishRole && (
+              <button
+                type="button"
+                // aria-disabled, so a button that's just been used keeps keyboard focus.
+                aria-disabled={!canPublish}
+                aria-label={intl.formatMessage({ id: publishId })}
+                onClick={onPublish}
+                className={`${primaryButtonClass} aria-disabled:opacity-60 max-md:px-4 ${
+                  roomBeside && panelShown ? "md:flex-1" : ""
+                }`}
+              >
+                <span className="max-md:hidden">
+                  <FormattedMessage id={publishId} />
+                </span>
+                <span className="md:hidden">
+                  <FormattedMessage id={canPublish ? "editor.publish" : publishId} />
+                </span>
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            aria-label={settingsName}
+            title={settingsName}
+            aria-expanded={settingsOpen}
+            {...(roomBeside ? { "aria-controls": settingsId } : { "aria-haspopup": "dialog" })}
+            onClick={() => {
+              showSettings(!settingsOpen);
+              if (roomBeside) keepPanel(!settingsOpen);
+            }}
+            className={`${iconButtonClass} md:border md:border-line md:bg-surface md:text-ink md:shadow-xs md:hover:border-brand md:hover:bg-surface`}
+          >
+            <Icon name="panel" />
+          </button>
+        </div>
       </div>
 
-      {restoredHeld && unsaved && !inTrash && (
-        <div className="mt-4 grid gap-3 rounded-lg border border-muted p-4">
-          <p>
-            <FormattedMessage id="editor.heldBack" />
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                saveNowByHand();
-                statusRef.current?.focus();
-              }}
-              className={secondaryButtonClass}
-            >
-              <FormattedMessage id="editor.keepHeld" />
-            </button>
-            <button type="button" onClick={discardHeld} className={secondaryButtonClass}>
-              <FormattedMessage id="editor.discardHeld" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Always mounted: screen readers can miss a live region added along with its text. */}
-      <p role="alert" className="mt-2 font-medium text-danger empty:sr-only">
-        {review || historyOpen ? null : problemText}
-      </p>
-
-      {conflict && (
-        <div
-          ref={conflictRef}
-          tabIndex={-1}
-          role="alert"
-          className="mt-4 grid gap-3 rounded-lg border border-danger p-4 outline-none"
-        >
-          <p className="font-medium">
-            {conflictIsMine ? (
-              <FormattedMessage id="editor.conflictYou" />
-            ) : (
-              <FormattedMessage
-                id="editor.conflictThem"
-                values={{ name: conflictName, when: timeAgo(intl, conflict.updatedAt) }}
-              />
-            )}{" "}
-            <FormattedMessage id="editor.conflictKept" />
-          </p>
-          <div className="rounded border border-muted/50 p-3 text-sm">
-            <p className="font-medium">
-              <FormattedMessage id="editor.conflictTheirs" />
-            </p>
-            <p className="mt-1 break-words">{conflict.title}</p>
-            <p className="mt-1 line-clamp-4 break-words whitespace-pre-wrap text-muted">
-              {docToText(cleanDoc(conflict.data.doc))}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={takeNewest}
-              className={secondaryButtonClass}
-            >
-              {conflictIsMine ? (
-                <FormattedMessage id="editor.useNewest" />
-              ) : (
-                <FormattedMessage id="editor.useTheirs" values={{ name: conflictName }} />
-              )}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={keepMine}
-              className={secondaryButtonClass}
-            >
-              <FormattedMessage id={conflictIsMine ? "editor.useThis" : "editor.keepMine"} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-4 grid grid-cols-1 gap-6">
-        <Field
-          ref={titleRef}
-          label={intl.formatMessage({ id: "editor.titleLabel" })}
-          value={fields.title}
-          onChange={(event) => changeField("title", event.target.value)}
-          onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
-            // Enter moves on to the writing, the same as a word processor's title.
-            if (event.key === "Enter") {
-              event.preventDefault();
-              bodyRef.current?.focusStart();
-            }
-          }}
-          error={fieldError?.field === "title" ? fieldError.message : undefined}
-          maxLength={200}
-          readOnly={readOnly}
-          autoFocus={entry.title === ""}
-        />
-
-        <div className="grid min-w-0 grid-cols-1 gap-2">
-          <span id={bodyLabelId} className="font-medium">
-            <FormattedMessage id="editor.bodyLabel" />
-          </span>
-          <BodyEditor
-            ref={bodyRef}
-            initial={startingDraft.doc}
-            type={type}
-            editable={!readOnly}
-            canEditBusiness={me.user.role === "admin"}
-            labelledBy={bodyLabelId}
-            onReady={(doc) => {
-              session.current.pmDoc = doc;
-              // What the editor made of this is the starting point. It isn't a change.
-              session.current.doc = cleanDoc(doc.toJSON());
-              session.current.readFrom = doc;
-            }}
-            onDocChange={(doc) => {
-              session.current.pmDoc = doc;
-              noteChange();
-            }}
-          />
-        </div>
-
-        <details
-          open={settingsOpen}
-          onToggle={(event) => setSettingsOpen(event.currentTarget.open)}
-          className="rounded-lg border border-muted"
-        >
-          <summary className="flex min-h-11 cursor-pointer items-center px-3 font-medium focus-visible:outline-3 focus-visible:outline-brand">
-            <FormattedMessage id="editor.settings" />
-          </summary>
-          <div className="grid gap-6 border-t border-muted p-3">
-            {!current.isHome && (
-              <Field
-                ref={slugRef}
-                label={intl.formatMessage({ id: "editor.addressLabel" })}
-                hint={
-                  <FormattedMessage
-                    id="editor.addressHint"
-                    values={{ address: `${addressPrefix}${addressPreview}` }}
-                  />
-                }
-                value={fields.slug}
-                onChange={(event) => changeField("slug", event.target.value)}
-                error={
-                  fieldError?.field === "slug"
-                    ? fieldError.message
-                    : current.address.problem
-                      ? `${current.address.problem.message} ${current.address.problem.fix ?? ""}`.trim()
-                      : undefined
-                }
-                placeholder={toAddress(fields.title, type, "title")}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                maxLength={200}
-                readOnly={readOnly}
-              />
-            )}
-            <Field
-              label={intl.formatMessage({ id: "editor.summaryLabel" })}
-              hint={intl.formatMessage({ id: "editor.summaryHint" })}
-              value={fields.summary}
-              onChange={(event) => changeField("summary", event.target.value)}
-              maxLength={300}
-              readOnly={readOnly}
-            />
-            <FeaturedImageField
-              value={fields.featuredImageId}
-              onChange={(id) => changeField("featuredImageId", id)}
-              readOnly={readOnly}
-            />
-            {type === "post" && (
-              <TagsField
-                value={fields.tagIds}
-                onChange={(ids) => changeField("tagIds", ids)}
-                readOnly={readOnly}
-              />
-            )}
-            <SearchFields
-              title={fields.seoTitle}
-              description={fields.seoDescription}
-              noindex={fields.noindex}
-              automaticTitle={fields.title}
-              automaticDescription={reviewSummary}
-              readOnly={readOnly}
-              onChange={(change) => {
-                if (change.seoTitle !== undefined) changeField("seoTitle", change.seoTitle);
-                if (change.seoDescription !== undefined) {
-                  changeField("seoDescription", change.seoDescription);
-                }
-                if (change.noindex !== undefined) changeField("noindex", change.noindex);
-              }}
-            />
-            {!inTrash && (
-              <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  aria-disabled={busy || locked}
-                  onClick={() => {
-                    if (!busy && !session.current.locked) onDuplicate();
-                  }}
-                  className={actionButtonClass}
-                >
-                  <FormattedMessage id="editor.duplicate" />
-                </button>
-                {canPublishRole && isLive && !current.isHome && (
+      <div className="flex items-start max-md:min-h-dvh max-md:bg-surface">
+        <div className="min-w-0 flex-1 md:px-6 md:pb-12">
+          <div className="mx-auto max-w-[53rem] max-md:px-4">
+            {restoredHeld && unsaved && !inTrash && (
+              <div className="card mt-4 mb-4 grid gap-3 p-5">
+                <p>
+                  <FormattedMessage id="editor.heldBack" />
+                </p>
+                <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
-                    aria-disabled={busy || locked}
                     onClick={() => {
-                      if (!busy && !session.current.locked) onUnpublish();
+                      saveNowByHand();
+                      statusRef.current?.focus();
                     }}
-                    className={actionButtonClass}
+                    className={secondaryButtonClass}
                   >
-                    <FormattedMessage id="editor.unpublish" />
+                    <FormattedMessage id="editor.keepHeld" />
                   </button>
-                )}
-                {canPublishRole && !current.isHome && (
+                  <button type="button" onClick={discardHeld} className={secondaryButtonClass}>
+                    <FormattedMessage id="editor.discardHeld" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Always mounted: screen readers can miss a live region added along with its text. */}
+            <p
+              role="alert"
+              className="mt-2 mb-4 rounded-2xl border border-danger bg-danger-soft px-5 py-3 font-medium text-danger empty:sr-only"
+            >
+              {review || historyOpen ? null : problemText}
+            </p>
+
+            {conflict && (
+              <div
+                ref={conflictRef}
+                tabIndex={-1}
+                role="alert"
+                className="mt-4 mb-4 grid gap-3 rounded-2xl border border-danger bg-surface p-5 outline-none"
+              >
+                <p className="font-medium">
+                  {conflictIsMine ? (
+                    <FormattedMessage id="editor.conflictYou" />
+                  ) : (
+                    <FormattedMessage
+                      id="editor.conflictThem"
+                      values={{ name: conflictName, when: timeAgo(intl, conflict.updatedAt) }}
+                    />
+                  )}{" "}
+                  <FormattedMessage id="editor.conflictKept" />
+                </p>
+                <div className="rounded-xl bg-sunken p-4 text-sm">
+                  <p className="font-medium">
+                    <FormattedMessage id="editor.conflictTheirs" />
+                  </p>
+                  <p className="mt-1 break-words">{conflict.title}</p>
+                  <p className="mt-1 line-clamp-4 break-words whitespace-pre-wrap text-muted">
+                    {docToText(cleanDoc(conflict.data.doc))}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
-                    aria-disabled={busy || locked}
-                    onClick={() => {
-                      if (!busy && !session.current.locked) onTrash();
-                    }}
-                    className={actionButtonClass}
+                    disabled={busy}
+                    onClick={takeNewest}
+                    className={secondaryButtonClass}
                   >
-                    <FormattedMessage id="editor.trash" />
+                    {conflictIsMine ? (
+                      <FormattedMessage id="editor.useNewest" />
+                    ) : (
+                      <FormattedMessage id="editor.useTheirs" values={{ name: conflictName }} />
+                    )}
                   </button>
-                )}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={keepMine}
+                    className={secondaryButtonClass}
+                  >
+                    <FormattedMessage id={conflictIsMine ? "editor.useThis" : "editor.keepMine"} />
+                  </button>
+                </div>
               </div>
             )}
           </div>
-        </details>
+          <div
+            className={`tend-page mx-auto md:card md:mt-1 ${
+              type === "page" ? "max-w-[66rem]" : "max-w-[53rem]"
+            }`}
+          >
+            <span id={bodyLabelId} className="sr-only">
+              <FormattedMessage id="editor.bodyLabel" />
+            </span>
+            <BodyEditor
+              ref={bodyRef}
+              initial={startingDraft.doc}
+              type={type}
+              editable={!readOnly}
+              canEditBusiness={me.user.role === "admin"}
+              labelledBy={bodyLabelId}
+              title={
+                <TitleField
+                  ref={titleRef}
+                  value={fields.title}
+                  onChange={(value) => changeField("title", value)}
+                  onEnter={() => bodyRef.current?.focusStart()}
+                  error={fieldError?.field === "title" ? fieldError.message : undefined}
+                  readOnly={readOnly}
+                  autoFocus={entry.title === ""}
+                />
+              }
+              onReady={(doc) => {
+                session.current.pmDoc = doc;
+                // What the editor made of this is the starting point. It isn't a change.
+                session.current.doc = cleanDoc(doc.toJSON());
+                session.current.readFrom = doc;
+              }}
+              onDocChange={(doc) => {
+                session.current.pmDoc = doc;
+                noteChange();
+              }}
+            />
+          </div>
+        </div>
+        {roomBeside && panelShown && (
+          <aside
+            id={settingsId}
+            aria-label={settingsName}
+            className="sticky top-18 h-[calc(100dvh-4.5rem)] w-85 shrink-0 overflow-y-auto border-l border-line bg-surface p-5 max-xl:hidden short:static short:h-auto"
+          >
+            {settings}
+          </aside>
+        )}
       </div>
+      {!roomBeside && drawerOpen && (
+        <Dialog labelledBy={settingsHeadingId} size="drawer" onClose={() => setDrawerOpen(false)}>
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-surface py-1.5 pr-2 pl-5">
+            <h2 id={settingsHeadingId} className="text-lg font-bold">
+              {settingsName}
+            </h2>
+            <button
+              type="button"
+              aria-label={intl.formatMessage({ id: "common.close" })}
+              onClick={() => setDrawerOpen(false)}
+              className={iconButtonClass}
+            >
+              <Icon name="close" />
+            </button>
+          </div>
+          <div className="p-5">{settings}</div>
+        </Dialog>
+      )}
 
       {review && (
         <PublishDialog
@@ -1920,7 +2144,7 @@ function DeletedEntryRecovery({ me, held }: { me: Me; held: HeldDraft }) {
       <p className="mt-6 text-lg">
         <FormattedMessage id="editor.deletedHeld" />
       </p>
-      <div className="mt-4 rounded-lg border border-muted p-4">
+      <div className="card mt-4 p-5">
         <p className="font-medium [overflow-wrap:anywhere]">
           {held.draft.title || intl.formatMessage({ id: "list.untitled" })}
         </p>

@@ -5,6 +5,8 @@ import {
   createEntry,
   expect,
   holdRequests,
+  openHistory,
+  openSettings,
   readEntry,
   type Site,
   signIn,
@@ -32,11 +34,6 @@ const postsLink = (page: Page) => page.getByRole("link", { name: "Posts", exact:
 async function openPost(page: Page, site: Site, id: string): Promise<void> {
   await page.goto(`${site.base}/admin/posts/${id}`);
   await expect(body(page)).toBeVisible();
-}
-
-async function openSettings(page: Page): Promise<void> {
-  const summary = page.getByText("Address, summary and more");
-  if ((await page.locator("details[open]").count()) === 0) await summary.click();
 }
 
 async function retype(page: Page, words: string): Promise<void> {
@@ -1206,7 +1203,7 @@ test.describe('the "/" menu and Insert', () => {
   test("tabbing out of the Insert menu closes it", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Insert", body: "" });
     await openPost(page, signedIn, post.id);
-    await page.getByRole("button", { name: "Insert +" }).focus();
+    await page.getByRole("button", { name: "Insert", exact: true }).focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("menu")).toBeVisible();
     await page.keyboard.press("Tab");
@@ -1288,7 +1285,7 @@ test.describe("keyboard focus", () => {
     const post = await createEntry(page, signedIn, { title: "Post", publish: true });
     await page.setViewportSize({ width: 375, height: 700 });
     await openPost(page, signedIn, post.id);
-    await page.getByRole("button", { name: "History" }).click();
+    await openHistory(page);
     const history = page.getByRole("dialog", { name: "History" });
     const row = history.getByRole("button", { name: /Published/ });
     await row.focus();
@@ -1326,13 +1323,13 @@ test.describe("keyboard focus", () => {
     await body(page).click();
     await page.keyboard.type("/");
     const option = page.getByRole("option", { name: "Heading", exact: true });
-    await expect(option).toHaveCSS("background-color", "rgb(29, 36, 32)");
+    await expect(option).toHaveCSS("background-color", "rgb(31, 111, 74)");
     await page.keyboard.press("Escape");
     await page.keyboard.press("Backspace");
     await page.locator("fieldset").getByRole("button", { name: "Bold" }).click();
     await expect(page.locator("fieldset").getByRole("button", { name: "Bold" })).toHaveCSS(
       "background-color",
-      "rgb(29, 36, 32)",
+      "rgb(31, 111, 74)",
     );
   });
 });

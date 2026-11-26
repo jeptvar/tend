@@ -69,6 +69,7 @@ import { type CachedPage, PageCache, type RenderedPage } from "./cache.ts";
 import { readableOn } from "./color.ts";
 import { type FeedItem, robots, rss, type SitemapEntry, sitemap } from "./feeds.ts";
 import { siteMenus } from "./menus.ts";
+import { createPictureKeys } from "./picture-keys.ts";
 import {
   BUSINESS_PLACEHOLDER,
   mediaPlaceholderIds,
@@ -118,6 +119,20 @@ export interface Site {
   preview(input: PreviewInput): Promise<string>;
   /** The homepage with a design that isn't saved yet. */
   previewDesign(design: DesignSettings): Promise<string>;
+  /** The homepage as it is, for a picture of it. */
+  homepage(): Promise<string>;
+  /** What the admin needs for what's written in it to look as it will on the site. */
+  style(): Promise<SiteStyle>;
+  /** Each choice of fonts a theme has, as CSS, by its name. */
+  fontChoices(themeId: string | null): Promise<Record<string, string>>;
+}
+
+export interface SiteStyle {
+  /** The theme's fonts, as CSS that loads them and says what they're for. */
+  css: string;
+  /** The accent colour, and one to use in its place on a dark background. */
+  accent: string | null;
+  accentDark: string | null;
 }
 
 export interface PreviewInput {
@@ -131,6 +146,7 @@ export interface PreviewInput {
 }
 
 const POSTS_PER_PAGE = 10;
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const THEME_SETTLE_MS = 100;
 const FEED_SIZE = 20;
 const FALLBACK_SITE: SiteSettings = {
@@ -149,14 +165,16 @@ const FOREVER = "public, max-age=31536000, immutable";
 /** The same for one person: a browser keeps it, a shared cache never does. */
 const PRIVATELY_FOREVER = "private, max-age=31536000, immutable";
 const VARIANT_FILE = /^(\d{1,5})\.webp$/;
+const FONT = /\.(?:woff2?|ttf|otf)$/i;
 const ICON_FILE = /^icon-(\d{2,3})\.png$/;
 /** The size shared pictures are, when there's one that big: what sharing sites ask for. */
 const SHARE_WIDTH = 1600;
 /**
- * Meadow's dark backgrounds that links sit on, which an accent has to be readable on too: the
- * page itself, and Muted sections, which lay 6% of the light text colour over it.
+ * Meadow's dark backgrounds are made from the accent, so no two sites have quite the same. An
+ * accent that can be read on both of these can be read on every one made from it: the page,
+ * Muted sections, and the cards the business details are on (test/meadow.test.ts).
  */
-const DARK_BACKGROUNDS = ["#141a17", "#212724"];
+const DARK_BACKGROUNDS = ["#161312", "#241f1e"];
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 /** Networks named by Tend. Any other link is named after its site. */
 const SOCIAL_NAMES: Record<string, string> = {
@@ -202,8 +220,7 @@ function trimSlashes(path: string): string {
 
 /**
  * A changed accent's dark-mode version: readable wherever Meadow shows links in dark mode.
- * Readable on the page alone isn't enough, because links in a Muted section sit on a
- * lighter background.
+ * Readable on the page alone isn't enough, because links on a card sit on a lighter one.
  */
 export function darkAccent(accent: string): string {
   return readableOn(accent, DARK_BACKGROUNDS);
@@ -315,6 +332,7 @@ export function createSite(options: SiteOptions): Site {
   const now = options.now ?? Date.now;
   const cache = new PageCache(options.pageCacheBytes);
   const cacheOn = options.pageCacheBytes > 0;
+  const pictureKeys = createPictureKeys();
   // Goes up with every change, so a render that began before one is never stored after it.
   let generation = 0;
   let site = FALLBACK_SITE;
@@ -942,12 +960,17 @@ export function createSite(options: SiteOptions): Site {
   }
 
   /** Who may see the site right now, and so what this visitor gets. */
-  async function access(c: Context): Promise<Access> {
+  async function whoCanSee(): Promise<VisibilitySettings["mode"]> {
     visibility ??= await settingValue(orm, "visibility");
-    if (visibility.mode === "public") return "public";
+    return visibility.mode;
+  }
+
+  async function access(c: Context): Promise<Access> {
+    const mode = await whoCanSee();
+    if (mode === "public") return "public";
     const user = await currentUser(c, orm, options.address.secure, now());
     if (user) return "signedIn";
-    return visibility.mode === "coming_soon" ? "comingSoon" : "private";
+    return mode === "coming_soon" ? "comingSoon" : "private";
   }
 
   async function cachedPage(
@@ -1035,7 +1058,12 @@ export function createSite(options: SiteOptions): Site {
     // Forever only if the address names the current file. An old or made-up hash mustn't get
     // a stale copy stuck in someone's browser.
     const current = hash === theme.assetHash(relative(theme.assetsDir, file));
-    return (await themeFiles.send(c, file, current ? FOREVER : "no-cache")) ?? fileNotFound(c);
+    const sent = await themeFiles.send(c, file, current ? FOREVER : "no-cache");
+    if (!sent) return fileNotFound(c);
+    // A preview in the admin is shut off from the site, so its fonts come from somewhere else
+    // as far as the browser knows, and it only uses those that say anyone may.
+    if (FONT.test(file)) sent.headers.set("Access-Control-Allow-Origin", "*");
+    return sent;
   });
 
   /**
@@ -1186,10 +1214,11 @@ export function createSite(options: SiteOptions): Site {
    */
   async function mediaAccess(c: Context, item: Media): Promise<"everyone" | "signedIn" | "no"> {
     const who = await access(c);
-    if (who === "public" || who === "comingSoon" || visibility?.mode !== "private") {
+    if (who === "public" || who === "comingSoon" || (await whoCanSee()) !== "private") {
       return "everyone";
     }
     if (who === "signedIn") return "signedIn";
+    if (pictureKeys.opens(c.req.query("key"), item.id, now())) return "signedIn";
     const design = await settingValue(orm, "design");
     return item.id === design.logoId || item.id === siteIconId(design) ? "everyone" : "no";
   }
@@ -1230,9 +1259,9 @@ export function createSite(options: SiteOptions): Site {
   });
 
   app.get("/robots.txt", async (c) => {
-    visibility ??= await settingValue(orm, "visibility");
+    const open = (await whoCanSee()) === "public";
     await loadSite();
-    return c.text(robots({ origin: originOf(c), open: visibility.mode === "public" }), 200, {
+    return c.text(robots({ origin: originOf(c), open }), 200, {
       "Cache-Control": "public, max-age=0, must-revalidate",
     });
   });
@@ -1332,12 +1361,13 @@ export function createSite(options: SiteOptions): Site {
   }
 
   /** Links in a preview do nothing rather than wandering off to the real site. */
-  function asPreview(rendered: string): string {
+  async function asPreview(rendered: string): Promise<string> {
     // The frame showing this isn't allowed to open a new window, so _blank goes nowhere.
     const head = '<base target="_blank">';
-    return /<head[^>]*>/i.test(rendered)
+    const html = /<head[^>]*>/i.test(rendered)
       ? rendered.replace(/<head[^>]*>/i, (tag) => `${tag}${head}`)
       : `${head}${rendered}`;
+    return (await whoCanSee()) === "private" ? pictureKeys.addTo(html, now()) : html;
   }
 
   async function preview(input: PreviewInput): Promise<string> {
@@ -1369,12 +1399,14 @@ export function createSite(options: SiteOptions): Site {
     await loadSite();
     const base = await pageBase(undefined, entryFacts(entry), { preview: true });
     const more = { [input.type === "post" ? "post" : "page"]: liveJson(entry) };
-    return asPreview(await renderTemplate(input.isHome === 1 ? "home" : input.type, base, more));
+    return await asPreview(
+      await renderTemplate(input.isHome === 1 ? "home" : input.type, base, more),
+    );
   }
 
   async function previewDesign(design: DesignSettings): Promise<string> {
     try {
-      return asPreview(await homeWith(design));
+      return await asPreview(await homeWith(design));
     } catch (error) {
       if (!(error instanceof ThemeMistake)) throw error;
       throw new ApiError(400, "theme_mistake", `This theme has a mistake in it: ${error.message}`, {
@@ -1384,11 +1416,17 @@ export function createSite(options: SiteOptions): Site {
     }
   }
 
-  async function homeWith(design: DesignSettings): Promise<string> {
+  async function homepage(): Promise<string> {
+    return asPreview(await homeWith());
+  }
+
+  /** The homepage, with a design that isn't saved, or with the one that is. */
+  async function homeWith(unsaved?: DesignSettings): Promise<string> {
     await loadSite();
+    const extra = { ...(unsaved ? { design: unsaved } : {}), preview: true };
     const home = await findLiveHome(orm);
     if (home) {
-      const base = await pageBase(undefined, entryFacts(home), { design, preview: true });
+      const base = await pageBase(undefined, entryFacts(home), extra);
       return renderTemplate("home", base, { page: liveJson(home) });
     }
     const facts: PageFacts = {
@@ -1399,8 +1437,38 @@ export function createSite(options: SiteOptions): Site {
       imageId: null,
       noindex: true,
     };
-    const base = await pageBase(undefined, facts, { design, preview: true });
+    const base = await pageBase(undefined, facts, extra);
     return renderTemplate("home", base, await postsContext(1, "/"));
+  }
+
+  async function fontsCss(theme: Theme, chosen: Record<string, string>): Promise<string> {
+    const css = await drawn({ theme, strict: false }, "fonts", (drawing) =>
+      drawing.renderPartial("fonts", { design: drawing.designValues(chosen) }),
+    );
+    return css.trim();
+  }
+
+  async function fontChoices(themeId: string | null): Promise<Record<string, string>> {
+    const theme = themes.chosen(themeId);
+    const setting = theme.settings.find(({ id }) => id === "fonts");
+    if (setting?.type !== "select") return {};
+    const choices: Record<string, string> = {};
+    for (const { value } of setting.options) {
+      choices[value] = await fontsCss(theme, { fonts: value });
+    }
+    return choices;
+  }
+
+  async function style(): Promise<SiteStyle> {
+    const chosen = await settingValue(orm, "design");
+    const theme = themes.chosen(chosen.themeId);
+    const { accent = "" } = theme.designValues(chosen.theme);
+    const isColor = HEX_COLOR.test(accent);
+    return {
+      css: await fontsCss(theme, chosen.theme),
+      accent: isColor ? accent : null,
+      accentDark: isColor ? darkAccent(accent) : null,
+    };
   }
 
   let watched: { theme: Theme; close: () => void } | undefined;
@@ -1438,5 +1506,5 @@ export function createSite(options: SiteOptions): Site {
   }
   if (options.watchTheme) inBackground(watchTheme);
 
-  return { app, themes, changed, preview, previewDesign };
+  return { app, themes, changed, preview, previewDesign, homepage, style, fontChoices };
 }

@@ -8,27 +8,36 @@ A **post** has a date and goes on your blog, with the newest first. A **page** s
 2. Type a title, press Enter, and write.
 3. Everything is saved as you go. The status at the top says **Saved**.
 
-What you write stays off your site until you publish it.
+What you write stays off your site until you publish it. While you write, it's in your site's own fonts and colour, so it looks much as it will there.
 
 ## Formatting
 
-- Select some words for bold, italic, a link and so on. The same things are in the toolbar above.
-- On an empty line, type `/` to add a heading, a list, a quote, a picture, a button, a divider or a section. **Insert +** offers the same.
+- Select some words for bold, italic, a link and so on. The toolbar has the most used, at the top of the page or, on a phone, at the bottom.
+- The menu in the toolbar that says **Text** makes a line a heading, and back.
+- On an empty line, type `/` to add a heading, a list, a quote, a picture, a button, a divider or a section. **Insert** offers the same.
 - Markdown works as you type: `## ` makes a heading, `- ` a list, `> ` a quote.
 - **Ctrl+K** (⌘K on a Mac) adds a link. Type the name of one of your pages, or paste an address. A link to your own page follows it if it moves.
 - Pasting from Google Docs or Word keeps the formatting. If something had to be changed, such as a table, Tend says so.
 
-**Sections** are for pages: **Big intro**, **Picture and text**, and **Contact & hours**. Each has two layouts, three backgrounds and two alignments, above it when it's selected. Contact & hours shows the business details from Settings, so you change them in one place.
+**Sections** are for pages: **Big intro**, **Picture and text**, and **Contact & hours**. Each has two layouts, three backgrounds and two alignments, in the bar above it. **Add a photo** gives a Big intro the photo the page opens with, beside the words or behind them. Contact & hours shows the business details from Settings, so you change them in one place.
 
 ## Photos
 
 Drag a photo in, paste it, or choose **Image**. Tend makes the sizes each screen needs, turns it the right way up, and removes what the camera wrote in it, such as where you were.
 
-Then describe it, for people who can't see it. If it's only decoration, tick **Image is decorative**. Tend asks again before you publish if you missed one.
+Point at a picture, or tap it, for its width, its description, another picture in its place, or to remove it. Its caption is under it.
+
+Describe each one, for people who can't see it. If it's only decoration, tick **Image is decorative**. Tend asks again before you publish if you missed one.
 
 JPG, PNG, WebP, GIF and AVIF work, up to 20 MB and 50 megapixels, and so do PDFs.
 
 **iPhone photos (HEIC):** most browsers can't show them, so Tend asks for another kind. On the iPhone, open **Settings**, then **Camera**, then **Formats**, and choose **Most Compatible**: new photos are JPGs. For one you have already, [the error's page](errors/heic_photo.md) has steps.
+
+## Its address, summary and more
+
+**Post settings** (or **Page settings**) has the featured image, the address, the summary, tags, and how it shows in search results and when it's shared. All of it is filled in for you until you change it. On a wide window it's beside what you're writing. On any other, and whenever it's hidden, the button at the top right opens it.
+
+**Duplicate**, **Unpublish** and **Move to Trash** are there too.
 
 ## Publish
 
@@ -44,9 +53,9 @@ Later changes are saved as you make them, and stay off your site too. The status
 
 ## Get something back
 
-- **Undo** and **Redo** are at the top of the editor.
+- **Undo** and **Redo** are in the toolbar.
 - After most changes, a message offers **Undo** for a few seconds. It waits while the pointer is on it.
-- **History** has earlier versions. Choose one, look at it, and **Restore this version**. It comes back as a change, and nothing on your site moves until you publish it.
+- **History** has earlier versions. It's beside Preview, or on a phone in the settings. Choose one, look at it, and **Restore this version**. It comes back as a change, and nothing on your site moves until you publish it.
 - **Move to Trash** takes something off your site. It stays in the Trash for 30 days, and comes back as a draft.
 
 ## If the connection goes

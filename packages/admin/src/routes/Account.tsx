@@ -12,7 +12,8 @@ import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { useLocation } from "wouter";
 import { AdminLayout, SignedIn } from "../components/AdminLayout.tsx";
 import { primaryButtonClass, secondaryButtonClass } from "../components/AuthLayout.tsx";
-import { Field, PasswordField } from "../components/fields.tsx";
+import { Disclosure } from "../components/Disclosure.tsx";
+import { Field, optionClass, PasswordField, radioClass } from "../components/fields.tsx";
 import { NewPasswordField, tooShort } from "../components/NewPasswordField.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
@@ -54,11 +55,11 @@ function FormProblem({ error, fields }: { error: unknown; fields: string[] }) {
 function Section({ heading, children }: { heading: string; children: ReactNode }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="mt-10 grid max-w-md gap-4">
-      <h2 id={id} className="text-xl font-semibold">
+    <section aria-labelledby={id} className="card mt-5 p-5 sm:p-7">
+      <h2 id={id} className="text-xl font-bold">
         <FormattedMessage id={heading} />
       </h2>
-      {children}
+      <div className="mt-4 grid max-w-xl grid-cols-1 gap-4">{children}</div>
     </section>
   );
 }
@@ -66,12 +67,9 @@ function Section({ heading, children }: { heading: string; children: ReactNode }
 /** A part of an account that's changed now and then, so its form waits behind its name. */
 function Later({ summary, children }: { summary: ReactNode; children: ReactNode }) {
   return (
-    <details className="rounded-lg border border-muted">
-      <summary className="flex min-h-11 cursor-pointer items-center px-3 font-medium focus-visible:outline-3 focus-visible:outline-brand">
-        {summary}
-      </summary>
-      <div className="border-t border-muted p-3">{children}</div>
-    </details>
+    <Disclosure summary={summary} className="rounded-2xl border border-line">
+      {children}
+    </Disclosure>
   );
 }
 
@@ -304,15 +302,12 @@ function AppearanceSection() {
   const [chosen, setChosen] = useState<Appearance>(appearance);
   return (
     <Section heading="account.appearance">
-      <fieldset className="grid gap-2">
+      <fieldset className="grid gap-3 sm:grid-cols-3">
         <legend className="sr-only">
           <FormattedMessage id="account.appearance" />
         </legend>
         {(["system", "light", "dark"] as const).map((option) => (
-          <label
-            key={option}
-            className={`flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 ${chosen === option ? "border-brand" : "border-muted"}`}
-          >
+          <label key={option} className={`${optionClass} font-semibold`}>
             <input
               type="radio"
               name={name}
@@ -321,7 +316,7 @@ function AppearanceSection() {
                 setChosen(option);
                 setAppearance(option);
               }}
-              className="h-5 w-5 accent-brand"
+              className={radioClass}
             />
             {intl.formatMessage({ id: `account.appearance.${option}` })}
           </label>
@@ -372,7 +367,7 @@ function KitCodes({
       <ol
         aria-label={intl.formatMessage({ id: "kit.codes" })}
         onCopy={saved}
-        className="grid w-fit grid-cols-2 gap-x-8 gap-y-1 font-mono text-lg tracking-wide"
+        className="grid w-fit max-w-full grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-x-8 gap-y-2 rounded-2xl bg-sunken px-6 py-5 font-mono text-lg tracking-wide sm:grid-cols-2 print:bg-transparent print:p-0"
       >
         {kit.codes.map((code) => (
           <li key={code}>{code}</li>
@@ -457,8 +452,11 @@ function KitSection({
   }
 
   return (
-    <section aria-labelledby="account-kit" className="mt-10">
-      <h2 id="account-kit" className="text-xl font-semibold">
+    <section
+      aria-labelledby="account-kit"
+      className="card mt-5 p-5 sm:p-7 print:border-0 print:p-0 print:shadow-none"
+    >
+      <h2 id="account-kit" className="text-xl font-bold">
         <FormattedMessage id="kit.heading" />
       </h2>
       {shown ? (

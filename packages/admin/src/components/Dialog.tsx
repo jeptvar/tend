@@ -1,4 +1,7 @@
 import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { useIntl } from "react-intl";
+import { iconButtonClass } from "./AuthLayout.tsx";
+import { Icon } from "./icons.tsx";
 import { DialogToasts } from "./Toast.tsx";
 
 /** The control last pressed with a mouse, finger or pen, and when. */
@@ -32,9 +35,11 @@ function opener(): HTMLElement | undefined {
 }
 
 const SIZES = {
-  md: "m-auto max-h-[90dvh] max-w-lg rounded-lg p-4 sm:p-6",
-  full: "m-auto h-dvh max-h-none max-w-none p-4 sm:p-6",
-  side: "my-0 mr-auto ml-0 h-dvh max-h-none max-w-72",
+  md: "m-auto max-h-[90dvh] max-w-lg rounded-2xl bg-surface p-5 text-ink sm:p-7",
+  lg: "m-auto max-h-[90dvh] max-w-3xl rounded-2xl bg-surface p-5 text-ink sm:p-7",
+  full: "m-auto h-dvh max-h-none max-w-none bg-paper p-4 text-ink sm:p-6",
+  side: "side my-0 mr-auto ml-0 h-dvh max-h-none max-w-72",
+  drawer: "my-0 mr-0 ml-auto h-dvh max-h-none max-w-104 bg-surface text-ink",
 };
 
 /**
@@ -50,8 +55,8 @@ export function Dialog({
 }: {
   labelledBy: string;
   onClose: () => void;
-  /** "side" fills the side of the screen, for the menu on phones. */
-  size?: "md" | "full" | "side";
+  /** "side" fills the side of the screen, for the menu on phones, and "drawer" the other one. */
+  size?: keyof typeof SIZES;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -86,10 +91,38 @@ export function Dialog({
         event.preventDefault();
         onClose();
       }}
-      className={`w-full bg-paper text-ink shadow-xl backdrop:bg-black/50 ${SIZES[size]}`}
+      className={`w-full shadow-xl backdrop:bg-black/50 ${SIZES[size]}`}
     >
       {children}
       <DialogToasts />
     </dialog>
+  );
+}
+
+/** A dialog's heading, with the way out beside it. */
+export function DialogHeading({
+  id,
+  onClose,
+  children,
+}: {
+  id: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const intl = useIntl();
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <h2 id={id} className="min-w-0 pt-2 text-xl font-bold [overflow-wrap:anywhere]">
+        {children}
+      </h2>
+      <button
+        type="button"
+        aria-label={intl.formatMessage({ id: "common.close" })}
+        onClick={onClose}
+        className={`${iconButtonClass} -mr-2`}
+      >
+        <Icon name="close" />
+      </button>
+    </div>
   );
 }

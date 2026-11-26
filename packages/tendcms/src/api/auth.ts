@@ -23,11 +23,12 @@ import {
   verifyPassword,
 } from "../auth/passwords.ts";
 import { AccountBackoff, TokenBuckets, WorkGate } from "../auth/ratelimit.ts";
-import { completeSetup, loadStarter, SetupClosedError } from "../auth/setup.ts";
+import { completeSetup, SetupClosedError } from "../auth/setup.ts";
 import { type SetupCodeSource, setupCodeMatches } from "../auth/setup-code.ts";
 import type { RestoreTarget } from "../backups/restore.ts";
 import type { Platform } from "../config.ts";
 import { isLocale, settingValue } from "../content/settings.ts";
+import { keepPictures, loadStarter, removePictures } from "../content/starters.ts";
 import type { Orm } from "../db/client.ts";
 import {
   createSessionIfPasswordUnchanged,
@@ -44,6 +45,7 @@ import {
   upgradePasswordHash,
 } from "../db/repo/users.ts";
 import { pictureError } from "../media/process.ts";
+import type { MediaStore } from "../media/store.ts";
 import type { SiteAddress } from "../site-address.ts";
 import type { DataRiskDetails } from "../volume.ts";
 import { registerAccountRoutes } from "./accounts.ts";
@@ -58,6 +60,8 @@ export interface AuthOptions extends SetupCodeSource {
   /** How many made-up emails to remember. Only tests change this. */
   unknownEmailKeys?: number;
   themeDir: string;
+  /** Where the pictures a starting point comes with are kept. */
+  store: MediaStore;
   onSiteChanged: () => void;
   /** Where Tend runs, which decides how to give the site a domain. */
   platform?: Platform | undefined;
@@ -339,16 +343,22 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     if (problem) throw new ApiError(400, "needs_fixing", problem, { field: "owner.password" });
 
     const passwordHash = await hashPassword(owner.password);
+    const start = { themeDir: options.themeDir, starter, siteName: site.name, now: now() };
+    let content = loadStarter({ ...start, pictures: true });
+    if (!keepPictures(options.store, content.pictures)) {
+      content = loadStarter({ ...start, pictures: false });
+    }
     let userId: string;
     try {
       userId = completeSetup(orm, {
         site,
         owner: { name: owner.name, email: owner.email, passwordHash },
         starter,
-        starterEntries: loadStarter(options.themeDir, starter, site.name),
+        content,
         now: now(),
       });
     } catch (error) {
+      removePictures(options.store, content.pictures);
       if (error instanceof SetupClosedError) await requireSetupOpen();
       throw error;
     }

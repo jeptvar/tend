@@ -310,6 +310,7 @@ describe("parseDoc", () => {
 const ID_A = "0190b5d0-0000-7000-8000-00000000000a";
 
 describe("rendering every kind of content", () => {
+  const picture = (size: string) => ({ type: "image", attrs: { mediaId: ID_A, size } });
   const everything = inDoc(
     { type: "heading", attrs: { level: 2 }, content: [text("Two")] },
     { type: "heading", attrs: { level: 3 }, content: [text("Three")] },
@@ -346,6 +347,22 @@ describe("rendering every kind of content", () => {
       attrs: { kind: "intro", preset: "1", tone: "muted", align: "center" },
       content: [{ type: "paragraph", content: [text("Hi")] }],
     },
+    ...["1", "2"].map((preset) => ({
+      type: "section",
+      attrs: { kind: "intro", preset, tone: "accent", align: "left" },
+      content: [picture("wide"), picture("wide")],
+    })),
+    {
+      type: "section",
+      attrs: { kind: "pictureText", preset: "2", tone: "none", align: "left" },
+      content: [picture("full"), { type: "paragraph", content: [text("Beside")] }],
+    },
+    {
+      type: "section",
+      attrs: { kind: "contact", preset: "1", tone: "none", align: "left" },
+      content: [{ type: "paragraph", content: [text("Come by")] }],
+    },
+    picture("wide"),
   );
 
   test("a change to what the renderer makes comes with a new RENDER_VERSION", () => {
@@ -360,7 +377,7 @@ describe("rendering every kind of content", () => {
       .update(made.text)
       .digest("hex")
       .slice(0, 16);
-    const madeBy: Record<number, string> = { 1: "b36765501ca69a07" };
+    const madeBy: Record<number, string> = { 2: "bd601bc6c0b68c68" };
     expect(fingerprint, `RENDER_VERSION is ${RENDER_VERSION}`).toBe(madeBy[RENDER_VERSION]);
   });
 

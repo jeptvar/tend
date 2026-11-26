@@ -146,7 +146,7 @@ function ToastRegion({ hidden }: { hidden: boolean }) {
             }
           }}
           onBlur={() => setFocused(false)}
-          className="pointer-events-auto flex max-w-xl flex-wrap items-center gap-3 rounded-lg border border-ink/20 bg-paper px-4 py-2 shadow-lg"
+          className="pointer-events-auto flex max-w-xl flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface py-2 pr-2 pl-5 font-medium shadow-raised"
         >
           <span>{toast.message}</span>
           {toast.action && (

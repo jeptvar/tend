@@ -27,9 +27,8 @@ test("a theme of your own is previewed and chosen in Design, and Undo takes it b
   await expect(picker.getByRole("radio", { name: /^Meadow/ })).toBeChecked();
   await picker.getByRole("radio", { name: /^My theme/ }).check();
 
-  await page.getByRole("button", { name: "Preview" }).click();
-  await expect(page.frameLocator("iframe").getByText("Made by us")).toBeVisible();
-  await page.getByRole("button", { name: "Close" }).click();
+  const preview = page.getByRole("region", { name: "Preview" });
+  await expect(preview.frameLocator("iframe").last().getByText("Made by us")).toBeVisible();
   // A preview changes nothing on the site.
   const visitor = await page.context().newPage();
   await visitor.goto(`${signedIn.base}/`);
@@ -57,10 +56,8 @@ test("a mistake in your theme is said in Design, and visitors still get the page
   const dir = copyTheme(signedIn);
   await page.goto(`${signedIn.base}/admin/design`);
   const picker = page.getByRole("group", { name: "Theme", exact: true });
-  await picker.getByRole("radio", { name: /^My theme/ }).check();
-
   writeFileSync(join(dir, "templates", "home.liquid"), "{{ page.title | nonsense }}");
-  await page.getByRole("button", { name: "Preview" }).click();
+  await picker.getByRole("radio", { name: /^My theme/ }).check();
   await expect(page.getByText(/This theme has a mistake in it: undefined filter/)).toBeVisible();
   await page.getByRole("button", { name: "Save design" }).click();
   await expect(page.getByText("Design saved")).toBeVisible();

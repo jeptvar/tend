@@ -14,8 +14,9 @@ import {
   uploadFile,
   uploadWords,
 } from "../lib/media.ts";
-import { primaryButtonClass, secondaryButtonClass, textLinkClass } from "./AuthLayout.tsx";
-import { Dialog } from "./Dialog.tsx";
+import { primaryButtonClass, secondaryButtonClass } from "./AuthLayout.tsx";
+import { Dialog, DialogHeading } from "./Dialog.tsx";
+import { Icon } from "./icons.tsx";
 import { Problem } from "./Problem.tsx";
 
 const SEARCH_DELAY_MS = 250;
@@ -89,16 +90,11 @@ export function MediaPicker({
   }
 
   return (
-    <Dialog labelledBy={headingId} onClose={onClose}>
-      <div className="grid gap-4">
-        <div className="flex items-start justify-between gap-3">
-          <h2 id={headingId} className="text-xl font-semibold">
-            {heading}
-          </h2>
-          <button type="button" onClick={onClose} className={`${textLinkClass} shrink-0`}>
-            <FormattedMessage id="common.close" />
-          </button>
-        </div>
+    <Dialog labelledBy={headingId} onClose={onClose} size="lg">
+      <div className="grid grid-cols-1 gap-4">
+        <DialogHeading id={headingId} onClose={onClose}>
+          {heading}
+        </DialogHeading>
         <input
           ref={picker}
           type="file"
@@ -115,7 +111,7 @@ export function MediaPicker({
             else void upload(files[0] as File);
           }}
         />
-        <div>
+        <div className="dashed grid justify-items-center px-5 py-6">
           <button
             type="button"
             aria-disabled={progress !== null}
@@ -124,6 +120,7 @@ export function MediaPicker({
             }}
             className={`${primaryButtonClass} aria-disabled:opacity-60`}
           >
+            <Icon name="upload" className="size-4.5" />
             <FormattedMessage id={progress === null ? "picker.upload" : "picker.uploading"} />
           </button>
         </div>
@@ -143,13 +140,18 @@ export function MediaPicker({
           <label htmlFor={searchId} className="font-medium">
             <FormattedMessage id="picker.search" />
           </label>
-          <input
-            id={searchId}
-            type="search"
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-            className="min-h-11 w-full rounded-lg border border-muted bg-white px-3 text-lg text-[#1d2420] focus-visible:outline-3 focus-visible:outline-brand"
-          />
+          <div className="relative">
+            <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-muted">
+              <Icon name="search" />
+            </span>
+            <input
+              id={searchId}
+              type="search"
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+              className="min-h-11 w-full rounded-xl border border-edge bg-field pr-3 pl-11 focus-visible:outline-3 focus-visible:outline-brand"
+            />
+          </div>
         </div>
         {list.isPending && (
           <p className="text-muted">
@@ -161,24 +163,22 @@ export function MediaPicker({
             <FormattedMessage id={search ? "media.noMatches" : "picker.empty"} />
           </p>
         )}
-        <ul className="grid grid-cols-2 gap-3 empty:hidden sm:grid-cols-3">
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-5 empty:hidden sm:grid-cols-3 md:grid-cols-4">
           {items?.map((item) => (
             <li key={item.id} className="min-w-0">
               <button
                 type="button"
                 onClick={() => onPick(item)}
-                className="group grid w-full min-w-0 gap-1 rounded-lg text-left focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                className="group grid w-full min-w-0 gap-1.5 rounded-xl text-left focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-brand"
               >
                 <img
                   src={item.thumbUrl ?? undefined}
                   alt=""
                   loading="lazy"
                   style={{ backgroundColor: item.dominantColor ?? undefined }}
-                  className="aspect-[4/3] w-full rounded-lg object-cover"
+                  className="aspect-[4/3] w-full rounded-xl object-cover ring-brand group-hover:ring-3"
                 />
-                <span className="truncate text-sm font-medium group-hover:underline">
-                  {item.alt || item.name}
-                </span>
+                <span className="truncate text-sm font-medium">{item.alt || item.name}</span>
               </button>
             </li>
           ))}

@@ -2,7 +2,9 @@
 
 ## Design
 
-**Design** has your logo, site icon, accent colour, fonts, header, footer text and social links. **Preview** shows your site with them before you save. After **Save design** there's an **Undo**.
+**Design** has your logo, site icon, accent colour, fonts, header, footer text and social links. On a wide window your site is beside them, as a computer or a phone shows it, and follows what you change. On any other, **Preview** shows it. Nothing changes for visitors until **Save design**, and after that there's an **Undo**.
+
+The accent colour makes all the others: softer backgrounds, links, buttons and the bottom of the page. With **Clean** fonts, your site uses the ones on each visitor's device. **Classic** and **Friendly** come with Tend, and your site sends them itself.
 
 If a colour is hard to read where links are, Tend says so and suggests one close to it.
 
@@ -22,7 +24,7 @@ A page that isn't on your site any more leaves the menu by itself, and comes bac
 
 ## Business details
 
-**Settings**, then **Business details**: your address, phone, email, opening hours and a link to a map. They show at the bottom of every page and in every Contact & hours section, and search engines are told. Change them once, here.
+**Settings**, then **Business details**: your address, phone, email, opening hours and a link to a map. They show at the bottom of every page, in every Contact & hours section, and right under the Big intro on your homepage, and search engines are told. Your phone number is at the top of every page, too. Change them once, here.
 
 ## Who can see it
 
@@ -34,7 +36,7 @@ A page that isn't on your site any more leaves the menu by itself, and comes bac
 
 ## Search and sharing
 
-Titles, descriptions, the picture for sharing, the sitemap and the feed are filled in for you. **Settings**, then **Search & social** has the description of the site and the picture used when a page has none. Each post and page has its own under **Address, summary and more**.
+Titles, descriptions, the picture for sharing, the sitemap and the feed are filled in for you. **Settings**, then **Search & social** has the description of the site and the picture used when a page has none. Each post and page has its own under **Search and sharing** in its settings.
 
 ## Addresses
 
