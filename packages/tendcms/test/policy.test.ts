@@ -27,6 +27,7 @@ const ALL_ACTIONS: Action[] = [
   "people:manage",
   "ownership:transfer",
   "backup:download",
+  "backup:restore",
 ];
 const ADMIN_ONLY: Action[] = [
   "entry:delete",
@@ -35,7 +36,7 @@ const ADMIN_ONLY: Action[] = [
   "settings:manage",
   "people:manage",
 ];
-const OWNER_ONLY: Action[] = ["backup:download", "ownership:transfer"];
+const OWNER_ONLY: Action[] = ["backup:download", "backup:restore", "ownership:transfer"];
 
 function actor(role: Actor["role"], id = "me"): Actor {
   return { id, role, isOwner: 0 };
@@ -57,7 +58,7 @@ describe("can", () => {
     }
   });
 
-  test("only the Owner can download a backup, or hand the site over", () => {
+  test("only the Owner can download or restore a backup, or hand the site over", () => {
     for (const action of OWNER_ONLY) {
       expect(can({ id: "me", role: "admin", isOwner: 1 }, action)).toBe(true);
       expect(can(actor("admin"), action)).toBe(false);

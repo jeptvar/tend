@@ -32,9 +32,11 @@ A photo you delete forever stays on the disk for up to six weeks while a copy st
 ## Put a backup back
 
 - **Into a new Tend:** choose **Start from a backup** when you set it up. This is also how you [move](move-your-site.md).
-- **Over a site that's here:** [from the command line](#restore-from-the-command-line). Doing it from the admin comes in a later version.
+- **Over a site that's here:** **Settings**, then **Backups**. Choose a backup file under **Put the site back as it was**, or **Restore** beside one of the copies. Only the Owner can, with their password. Or [from the command line](#restore-from-the-command-line).
 
-Everything is checked before anything changes: each file against what the backup says it should be, and the whole database. What was there before is saved first.
+Everything is checked before anything changes: each file against what the backup says it should be, and the whole database. What was there before is saved first, as the copy called **Before a restore**. Restoring that copy undoes it.
+
+From Settings, the site stays at the address it has now, and everyone is signed out. Each person signs in again with the email and password they had when the backup was made. If you can't, see [Locked out](locked-out.md).
 
 ## Restore from the command line
 

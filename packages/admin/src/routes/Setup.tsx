@@ -23,7 +23,7 @@ import { Field, PasswordField } from "../components/fields.tsx";
 import { Icon } from "../components/icons.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
-import { looksLikeABackup, restoreBackup, sendBackup } from "../lib/backup-upload.ts";
+import { looksLikeABackup, restoreBackup, sendBackup, setupParts } from "../lib/backup-upload.ts";
 import { suggestPassphrase } from "../lib/passphrase.ts";
 import {
   confirmSignedIn,
@@ -644,7 +644,7 @@ export function SetupBackup() {
       const stop = new AbortController();
       stopRef.current = stop;
       setSent(0);
-      await sendBackup(chosen, setup.code ?? "", setSent, stop.signal);
+      await sendBackup(chosen, setupParts(setup.code ?? ""), setSent, stop.signal);
       setSent(null);
       return restoreBackup(setup.code ?? "", chosen.size, stop.signal);
     },

@@ -19,6 +19,6 @@ The first version, a developer preview.
 - **Site menu**, redirects (by themselves when an address changes), who can see the site (everyone, nobody yet, or only people who can sign in), search and sharing details, `sitemap.xml`, `rss.xml` and `robots.txt`.
 - **Business details:** the address, phone, hours and map link, changed in one place and shown everywhere.
 - **People:** Admins and Editors, invited with a link. Recovery codes get you back in without email.
-- **Backups:** the whole site as one file, a copy of the data every day, and a check on how full the disk is. A backup starts a new site anywhere.
+- **Backups:** the whole site as one file, a copy of the data every day, and a check on how full the disk is. A backup starts a new site anywhere, and the Owner can put the site back as it was from Settings → Backups.
 - **The command line:** `tendcms start`, `backup`, `restore`, `doctor`, `setup-code`, `reset-password` and `theme copy`.
 - Public pages have no JavaScript, and neither they nor the admin ask anything of anyone else's server.

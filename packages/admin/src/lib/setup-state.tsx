@@ -56,9 +56,13 @@ interface SetupContextValue {
   setRestored: (restored: Restored) => void;
 }
 
-/** A site brought back from a backup, by name if Tend said which. */
+/**
+ * A site brought back from a backup, by name if Tend said which. From Settings → Backups, it
+ * also says when what was restored had been saved.
+ */
 export interface Restored {
   site: string | null;
+  savedAt?: string | undefined;
 }
 
 const SetupContext = createContext<SetupContextValue | null>(null);

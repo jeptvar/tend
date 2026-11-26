@@ -50,7 +50,7 @@ import type { SiteAddress } from "../site-address.ts";
 import type { DataRiskDetails } from "../volume.ts";
 import { registerAccountRoutes } from "./accounts.ts";
 import { ApiError, type ApiErrorDetails, tendIsBusy, tooManyTries } from "./errors.ts";
-import { registerSetupBackupRoutes } from "./setup-backup.ts";
+import { type Restoring, registerRestoreRoutes } from "./restores.ts";
 
 export interface AuthOptions extends SetupCodeSource {
   orm: Orm;
@@ -67,8 +67,10 @@ export interface AuthOptions extends SetupCodeSource {
   platform?: Platform | undefined;
   /** Why this site could be lost with its container, if it could. See volume.ts. */
   dataRisk?: DataRiskDetails | undefined;
-  /** The data folder, which Start from a backup restores into. Absent in some tests. */
+  /** The data folder, which a backup is restored into. Absent in some tests. */
   dataFolder?: RestoreTarget | undefined;
+  /** Whether a backup is being restored, which the admin's routes ask too. */
+  restoring?: Restoring | undefined;
 }
 
 const SETUP_CODE_ATTEMPTS_PER_MINUTE = 5;
@@ -392,13 +394,16 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     publicUser,
   });
 
-  const setupBackup = registerSetupBackupRoutes(app, {
+  const setupBackup = registerRestoreRoutes(app, {
     orm,
     secretKey,
     dataFolder: options.dataFolder,
+    restoring: options.restoring ?? { now: false },
     onSiteChanged: options.onSiteChanged,
     requireSetupOpen,
     requireSetupCode,
+    requireUser,
+    confirmPassword,
   });
 
   app.post("/login", async (c) => {

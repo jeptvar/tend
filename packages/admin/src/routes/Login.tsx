@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useRef, useState } from "react";
-import { FormattedMessage, useIntl } from "react-intl";
+import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useLocation } from "wouter";
 import {
   AuthLayout,
@@ -91,7 +91,15 @@ export function Login() {
       )}
       {setup.restored && (
         <p className="mt-3 text-lg text-muted">
-          {setup.restored.site ? (
+          {setup.restored.savedAt ? (
+            <FormattedMessage
+              id="login.restoredHere"
+              values={{
+                site: setup.restored.site,
+                date: <FormattedDate value={setup.restored.savedAt} dateStyle="long" />,
+              }}
+            />
+          ) : setup.restored.site ? (
             <FormattedMessage id="login.restored" values={{ site: setup.restored.site }} />
           ) : (
             <FormattedMessage id="login.restoredUnnamed" />
