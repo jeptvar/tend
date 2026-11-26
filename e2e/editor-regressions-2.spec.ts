@@ -661,7 +661,7 @@ test.describe("the editor itself", () => {
     expect(await fits()).toBe(true);
   });
 
-  test("pasted table rows stay readable", async ({ page, signedIn }) => {
+  test("a pasted table stays a table, row by row and cell by cell", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "T", body: "" });
     await openPost(page, signedIn, post.id);
     await body(page).click();
@@ -669,8 +669,8 @@ test.describe("the editor itself", () => {
       page,
       "<table><tr><td>Mon</td><td>9-5</td></tr><tr><td>Tue</td><td>9-5</td></tr></table>",
     );
-    await expect(body(page).locator("p").nth(0)).toHaveText("Mon · 9-5");
-    await expect(body(page).locator("p").nth(1)).toHaveText("Tue · 9-5");
+    await expect(body(page).locator("table tr")).toHaveCount(2);
+    await expect(body(page).locator("td")).toHaveText(["Mon", "9-5", "Tue", "9-5"]);
   });
 
   test("dismissing a notice puts focus back in the writing, where it was", async ({

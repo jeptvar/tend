@@ -1,6 +1,7 @@
 import { type Extensions, textblockTypeInputRule } from "@tiptap/core";
 import { Document } from "@tiptap/extension-document";
 import { Heading } from "@tiptap/extension-heading";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { Placeholder } from "@tiptap/extensions";
 import StarterKit from "@tiptap/starter-kit";
 import { isAllowedHref } from "../lib/doc.ts";
@@ -23,6 +24,13 @@ const TendHeading = Heading.extend({
     ];
   },
 });
+
+/**
+ * A table holds words, a paragraph or more to a cell: prices, or a week's hours (PLAN.md v0.2).
+ * A list or a picture in a cell would be a page inside a page.
+ */
+const TendTableCell = TableCell.extend({ content: "paragraph+" });
+const TendTableHeader = TableHeader.extend({ content: "paragraph+" });
 
 /** Exactly what the server allows, and nothing else: it can't be typed or pasted in here. */
 export function editorExtensions(options: {
@@ -51,6 +59,10 @@ export function editorExtensions(options: {
     Document.extend({ content: options.allowSections ? "(block | section)+" : "block+" }),
     TendHeading.configure({ levels: [...LEVELS] }),
     Placeholder.configure({ placeholder: options.placeholder }),
+    Table.configure({ resizable: false }),
+    TableRow,
+    TendTableHeader,
+    TendTableCell,
     ButtonNode.configure({ onEdit: options.onEditButton }),
     ImageNode.configure({
       onDescribe: options.onDescribeImage,

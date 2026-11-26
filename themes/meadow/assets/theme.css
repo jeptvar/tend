@@ -634,6 +634,54 @@ h5 {
   color: inherit;
 }
 
+.t-table {
+  width: 100%;
+  margin-block: 0.75em 1.5em;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.t-table :is(th, td) {
+  padding-block: 0.6em;
+  padding-inline: 0 1em;
+  border-block-end: 1px solid var(--tend-line);
+  overflow-wrap: anywhere;
+  text-align: start;
+  vertical-align: top;
+}
+
+.t-table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.t-table thead th {
+  border-block-end: 2px solid currentcolor;
+}
+
+.t-table tbody th {
+  font-weight: 600;
+}
+
+.t-table p {
+  margin: 0;
+}
+
+.t-table p + p {
+  margin-block-start: 0.4em;
+}
+
+.t-tone-accent .t-table :is(th, td) {
+  border-color: color-mix(in srgb, currentcolor 35%, transparent);
+}
+
+/* On a phone the columns share the width equally, so no ordinary word is broken in the middle
+   to make room for a longer one beside it. */
+@media (width < 40rem) {
+  .t-table {
+    table-layout: fixed;
+  }
+}
+
 .t-body > hr {
   width: 6rem;
   margin: 2.5em auto;

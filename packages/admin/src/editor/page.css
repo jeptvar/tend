@@ -191,6 +191,58 @@
   line-height: 1.35;
 }
 
+.tend-prose table {
+  width: 100%;
+  margin-block: 0.75em 1.5em;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.tend-prose :is(th, td) {
+  position: relative;
+  padding: 0.5em 0.6em;
+  border: 1px solid color-mix(in srgb, currentcolor 22%, transparent);
+  overflow-wrap: anywhere;
+  text-align: start;
+  vertical-align: top;
+}
+
+.tend-prose th {
+  background: color-mix(in srgb, currentcolor 5%, transparent);
+  font-weight: 700;
+}
+
+.tend-prose :is(th, td) > p {
+  margin: 0;
+}
+
+.tend-prose :is(th, td) > p + p {
+  margin-block-start: 0.4em;
+}
+
+/* Narrow, the columns share the width equally: shared out by how much each says, a short
+   column got too little, and "Weight" broke in the middle. Only a word too long for any
+   column is broken now. */
+@media (width < 40rem) {
+  .tend-prose table {
+    table-layout: fixed;
+  }
+
+  /* Less room around the words, as on the site, so "Sourdough" fits a third of a phone. */
+  .tend-prose :is(th, td) {
+    padding: 0.4em 0.35em;
+  }
+}
+
+/* Cells chosen together, to be changed at once. */
+.tend-prose .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--tend-accent) 18%, transparent);
+  pointer-events: none;
+}
+
 .tend-prose pre {
   overflow-x: auto;
   border-radius: 0.75rem;

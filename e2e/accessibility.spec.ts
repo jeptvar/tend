@@ -47,6 +47,25 @@ function text(value: string, marks?: unknown[]) {
   return { type: "text", text: value, ...(marks ? { marks } : {}) };
 }
 
+function tableCell(type: "tableCell" | "tableHeader", words: string) {
+  return { type, content: [{ type: "paragraph", content: [text(words)] }] };
+}
+
+/** Headings over the columns and beside each row, and a name too long for a phone's width. */
+const TABLE = {
+  type: "table",
+  content: [
+    ["Bread", "Weight", "Price"],
+    ["Rye", "750 g", "4.50"],
+    ["Wholemealsourdoughwithtoastedseeds", "1 kg", "5.00"],
+  ].map((words, row) => ({
+    type: "tableRow",
+    content: words.map((each, column) =>
+      tableCell(row === 0 || column === 0 ? "tableHeader" : "tableCell", each),
+    ),
+  })),
+};
+
 const EVERYTHING = [
   { type: "heading", attrs: { level: 2 }, content: [text("Heading")] },
   { type: "heading", attrs: { level: 3 }, content: [text("Subheading")] },
@@ -73,6 +92,7 @@ const EVERYTHING = [
   { type: "blockquote", content: [{ type: "paragraph", content: [text("A quote")] }] },
   { type: "codeBlock", content: [text("some code")] },
   { type: "horizontalRule" },
+  TABLE,
   { type: "button", attrs: { href: "https://example.com", label: "A button" } },
 ];
 

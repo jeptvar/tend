@@ -11,7 +11,7 @@ The first version, a developer preview.
 - **Install:** `npm create tend@latest my-site` on your computer, a Docker image for a server of your own, and a template for Railway. Nothing has to be set up first.
 - **Setup** in the browser: a name, an account and a starting point (Blog, Business, Portfolio or Blank, all but Blank with pictures), or a backup of another site.
 - **The admin** works on a computer, a tablet and a phone, in light and dark. Overview starts with a picture of your site and what isn't on it yet.
-- **Writing:** an editor for posts and pages in your site's own fonts and colour, with pictures, links, lists, quotes, code, buttons and three kinds of section (Big intro, Picture and text, Contact & hours). It saves by itself, on the server and on your device, and works through a lost connection.
+- **Writing:** an editor for posts and pages in your site's own fonts and colour, with pictures, links, lists, tables, quotes, code, buttons and three kinds of section (Big intro, Picture and text, Contact & hours). It saves by itself, on the server and on your device, and works through a lost connection.
 - **Publishing:** a review before anything goes on your site, with the address, how it looks when shared, and what may be worth another look. Later changes stay off the site until you publish them.
 - **Getting things back:** earlier versions of every post and page, a Trash that keeps things for 30 days, and Undo for what can be taken back.
 - **Media:** photos made ready for every screen size, with their camera details and location removed, and PDFs. JPG, PNG, WebP, GIF and AVIF. A photo too big for Tend is made smaller as it's added, and Safari makes HEIC photos JPEGs. Each picture can say what stays in sight where it's cropped.

@@ -94,6 +94,7 @@ const DRAWINGS = {
   ),
   code: <path d="m8.5 8-4.5 4 4.5 4M15.5 8l4.5 4-4.5 4" />,
   divider: <path d="M4 12h16M8 6.5h8M8 17.5h8" />,
+  table: <path d="M4 5h16v14H4zM4 10h16M4 14.5h16M10 5v14" />,
   button: (
     <path d="M6 8h12a3 3 0 0 1 3 3v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a3 3 0 0 1 3-3zM8 12h8" />
   ),

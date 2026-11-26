@@ -99,6 +99,21 @@ function cleanNode(node: DocNode): DocNode | null {
     }
     case "horizontalRule":
       return { type: "horizontalRule" };
+    case "table":
+    case "tableRow":
+      return withContent({ type: node.type });
+    case "tableCell":
+    case "tableHeader": {
+      const span = (value: unknown) =>
+        Number.isSafeInteger(value) && (value as number) > 1 ? Math.min(value as number, 20) : null;
+      const colspan = span(node.attrs?.colspan);
+      const rowspan = span(node.attrs?.rowspan);
+      const spans = { ...(colspan ? { colspan } : {}), ...(rowspan ? { rowspan } : {}) };
+      return withContent({
+        type: node.type,
+        ...(Object.keys(spans).length > 0 ? { attrs: spans } : {}),
+      });
+    }
     case "button": {
       const href = typeof node.attrs?.href === "string" ? node.attrs.href.trim() : "";
       return {
@@ -174,7 +189,17 @@ function nodeText(node: DocNode): string {
   return node.text ?? (node.content ?? []).map(nodeText).join("");
 }
 
-const CONTAINERS = new Set(["bulletList", "orderedList", "listItem", "blockquote", "section"]);
+const CONTAINERS = new Set([
+  "bulletList",
+  "orderedList",
+  "listItem",
+  "blockquote",
+  "section",
+  "table",
+  "tableRow",
+  "tableCell",
+  "tableHeader",
+]);
 
 function blocksText(nodes: DocNode[]): string[] {
   return nodes.flatMap((node) =>

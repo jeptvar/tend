@@ -556,19 +556,53 @@ test.describe("formatting", () => {
     await expect(body(page).locator("h2")).toHaveText("Intro words");
   });
 
-  test("a table's own notice shows when only a table is pasted", async ({ page, signedIn }) => {
+  test("a table inside a table has a notice of its own", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Pasted", body: "" });
     await openPost(page, signedIn, post.id);
     await body(page).click();
     await page.evaluate(() => {
       const data = new DataTransfer();
-      data.setData("text/html", "<table><tr><td>Cell one</td></tr></table>");
+      data.setData(
+        "text/html",
+        "<table><tr><td><table><tr><td>Cell one</td></tr></table></td></tr></table>",
+      );
       document
         .querySelector('[role="textbox"][contenteditable]')
         ?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
     });
-    await expect(page.getByText("A table was turned into text")).toBeVisible();
+    await expect(page.getByText(/^A table inside another table was turned into/)).toBeVisible();
     await expect(body(page)).toContainText("Cell one");
+  });
+
+  test("a table is added from Insert, filled in with Tab, grown from its menu, and published", async ({
+    page,
+    signedIn,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Prices", body: "" });
+    await openPost(page, signedIn, post.id);
+    await clickInto(body(page));
+    await page.getByRole("button", { name: "Insert", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Table" }).click();
+    for (const [index, words] of ["Bread", "Price", "Rye", "4.50", "Seeded", "5.00"].entries()) {
+      if (index > 0) await page.keyboard.press("Tab");
+      await page.keyboard.type(words);
+    }
+    // In a table, its own menu takes the place of the list, which can't go in a cell.
+    await expect(page.getByRole("button", { name: "Bulleted list" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Change this table" }).click();
+    await page.getByRole("menuitem", { name: "Add row below" }).click();
+    await page.keyboard.press("Tab");
+    await page.keyboard.type("Spelt");
+    await expect(body(page).locator("table tr")).toHaveCount(4);
+    await expect(body(page).locator("th")).toHaveText(["Bread", "Price"]);
+
+    await page.getByRole("button", { name: "Publish post" }).click();
+    await page.getByRole("button", { name: "Publish post now" }).click();
+    await page.getByRole("dialog", { name: "Your post is on your site." }).waitFor();
+    const live = await readEntry(page, signedIn, post.id);
+    const site = await (await page.request.get(`${signedIn.base}${live.url}`)).text();
+    expect(site).toContain('<thead><tr><th scope="col"><p>Bread</p></th>');
+    expect(site).toContain("<td><p>Spelt</p></td>");
   });
 });
 

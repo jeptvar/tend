@@ -12,7 +12,7 @@ interface Sample {
   notices?: string[];
 }
 
-const TABLE = "A table was turned into text";
+const TABLE = "A table inside another table was turned into lines of text";
 const PICTURE = "Pictures from another website were left out";
 const EMBED = "A video or something else from another website was left out";
 
@@ -50,14 +50,19 @@ const SAMPLES: Sample[] = [
   {
     name: "Google Docs: a table and a picture",
     html: `<b style="font-weight:normal;"><div dir="ltr"><table><tbody><tr><td><p><span>Mon</span></p></td><td><p><span>9–5</span></p></td></tr><tr><td><p><span>Tue</span></p></td><td><p><span>Closed</span></p></td></tr></tbody></table></div><br /><p><span><span><img src="https://lh7-rt.googleusercontent.com/docsz/x" width="602" height="401"></span></span></p><p><span>After</span></p></b>`,
-    becomes: ["p Mon · 9–5", "p Tue · Closed", "p After"],
-    notices: [TABLE, PICTURE],
+    becomes: ["table Mon | 9–5 / Tue | Closed", "p After"],
+    notices: [PICTURE],
+  },
+  {
+    name: "a table with a table, and a list, in its cells",
+    html: `<table><tr><td><p>Hours</p><table><tr><td>Mon</td><td>9–5</td></tr></table></td><td><ul><li>Rye</li><li>Spelt</li></ul></td></tr></table><p>After</p>`,
+    becomes: ["table Hours ; Mon · 9–5 | Rye ; Spelt", "p After"],
+    notices: [TABLE],
   },
   {
     name: "Google Sheets: cells",
     html: `<google-sheets-html-origin><table xmlns="http://www.w3.org/1999/xhtml" dir="ltr"><tbody><tr><td data-sheets-value="x">Loaf</td><td>4.50</td></tr></tbody></table></google-sheets-html-origin>`,
-    becomes: ["p Loaf · 4.50"],
-    notices: [TABLE],
+    becomes: ["table Loaf | 4.50"],
   },
   {
     name: "Word: a title, and lists it writes as paragraphs",
@@ -148,7 +153,18 @@ function outline(page: Page): Promise<string[]> {
     for (const block of body?.children ?? []) {
       const tag = block.tagName.toLowerCase();
       if (tag === "ul" || tag === "ol") list(block, 0);
-      else if (tag === "pre") lines.push(`code ${block.textContent}`);
+      else if (block.querySelector("table") || tag === "table") {
+        // A row at a time, a cell at a time, its paragraphs apart, and # for a heading.
+        const rows = [...block.querySelectorAll("tr")].map((row) =>
+          [...row.children]
+            .map((cell) => {
+              const paragraphs = [...cell.children].map(words).join(" ; ");
+              return cell.tagName === "TH" ? `# ${paragraphs}` : paragraphs;
+            })
+            .join(" | "),
+        );
+        lines.push(`table ${rows.join(" / ")}`);
+      } else if (tag === "pre") lines.push(`code ${block.textContent}`);
       else if (tag === "blockquote") lines.push(`quote ${words(block)}`.trim());
       else if (block.querySelector("hr") || tag === "hr") lines.push("rule");
       else lines.push(`${tag} ${words(block)}`.trim());
