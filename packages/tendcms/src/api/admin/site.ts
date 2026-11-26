@@ -28,6 +28,7 @@ import {
   visibilitySchema,
   writeSetting,
 } from "../../content/settings.ts";
+import { statsSchema } from "../../content/stats.ts";
 import { countLivePostsWithTag, createTag, findTag, listTags } from "../../content/tags.ts";
 import { getSetting, type SiteSettings } from "../../db/repo/settings.ts";
 import { describeMenuItems, type MenuName, menuSetting } from "../../site/menus.ts";
@@ -56,6 +57,7 @@ const SETTINGS = {
   visibility: visibilitySchema,
   seo: seoSchema,
   code: codeSchema,
+  stats: statsSchema,
 } as const;
 type SettingsName = keyof typeof SETTINGS;
 const STORED_AS: Record<SettingsName, SettingKey> = {
@@ -64,6 +66,7 @@ const STORED_AS: Record<SettingsName, SettingKey> = {
   visibility: "visibility",
   seo: "seo",
   code: "code_injection",
+  stats: "visitor_stats",
 };
 
 const tagSchema = z.object({

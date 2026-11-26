@@ -25,6 +25,7 @@ const TOLD: Record<Exclude<SettingKey, never>, "everyone" | "admins"> = {
   seo: "admins",
   design: "admins",
   code_injection: "admins",
+  visitor_stats: "admins",
 };
 
 export interface Activity {

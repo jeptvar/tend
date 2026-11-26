@@ -13,6 +13,7 @@ import { Dialog } from "../components/Dialog.tsx";
 import { Field, optionClass, PasswordField, radioClass } from "../components/fields.tsx";
 import { Icon, type IconName } from "../components/icons.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
+import { OutLink } from "../components/OutLink.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
@@ -25,6 +26,7 @@ import {
   sendBackup,
 } from "../lib/backup-upload.ts";
 import { bytesText } from "../lib/bytes.ts";
+import { guide } from "../lib/docs.ts";
 import { onThisComputer } from "../lib/hosts.ts";
 import { siteLanguages } from "../lib/languages.ts";
 import { useMediaItems } from "../lib/media.ts";
@@ -43,12 +45,14 @@ import {
   type General,
   type Redirect as RedirectRow,
   type SearchSettings,
+  STATS_SERVICES,
   type Stored,
   settingKey,
   type Visibility,
+  type VisitorStats,
 } from "../lib/site.ts";
 
-const SECTIONS = ["general", "business", "search", "advanced", "backups"] as const;
+const SECTIONS = ["general", "business", "search", "stats", "advanced", "backups"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const inputClass =
@@ -851,6 +855,111 @@ function CodeForm({
   );
 }
 
+/**
+ * Settings → Visitor stats (PLAN.md v0.2): a service that counts visitors without cookies, so
+ * the site needs no banner. What it gives the site is pasted here, or the whole snippet it's in.
+ */
+function StatsForm({
+  value,
+  onSave,
+  busy,
+  error,
+}: {
+  value: VisitorStats;
+  onSave: (value: VisitorStats, done: () => void) => void;
+  busy: boolean;
+  error: unknown;
+}) {
+  const intl = useIntl();
+  const name = useId();
+  const draft = useScreenDraft<VisitorStats>("settings:stats", value);
+  const form = draft.value ?? value;
+  const setForm = draft.set;
+  const { changed } = draft;
+  const { service } = form;
+  return (
+    <form
+      className={formClass}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (changed && !busy) onSave(form, () => draft.saved(form));
+      }}
+    >
+      <fieldset className="grid min-w-0 gap-4">
+        <legend className="mb-2 text-xl font-bold">
+          <FormattedMessage id="stats.heading" />
+        </legend>
+        <p>
+          <FormattedMessage id="stats.body" />
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          {[null, ...STATS_SERVICES].map((choice) => (
+            <label key={choice ?? "none"} className={optionClass}>
+              <input
+                type="radio"
+                name={name}
+                checked={service === choice}
+                onChange={() => setForm({ ...form, service: choice })}
+                className={radioClass}
+              />
+              <span className="font-semibold">
+                {intl.formatMessage({ id: `stats.service.${choice ?? "none"}` })}
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {service && (
+        <Field
+          // A new service starts its box afresh, so what was typed for another isn't sent.
+          key={service}
+          label={intl.formatMessage({ id: `stats.id.${service}` })}
+          hint={intl.formatMessage({ id: `stats.idHint.${service}` })}
+          error={fieldError(error, "id")}
+          value={form.id ?? ""}
+          onChange={(event) => setForm({ ...form, id: event.target.value || null })}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      )}
+      {service === "umami" && (
+        <Field
+          type="url"
+          label={intl.formatMessage({ id: "stats.script" })}
+          hint={intl.formatMessage({ id: "stats.scriptHint" })}
+          error={fieldError(error, "script")}
+          value={form.script ?? ""}
+          onChange={(event) => setForm({ ...form, script: event.target.value || null })}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      )}
+      <p className="text-muted">
+        <FormattedMessage id="stats.noGoogle" />{" "}
+        <OutLink href={guide("visitor-stats")}>
+          <FormattedMessage id="stats.guide" />
+        </OutLink>
+      </p>
+      <SaveRow busy={busy} changed={changed} error={error} fields={["id", "script"]} />
+    </form>
+  );
+}
+
+function StatsSection() {
+  const stats = useSetting<VisitorStats>("stats");
+  if (!stats.query.data) return <Waiting query={stats.query} />;
+  return (
+    <StatsForm
+      value={stats.query.data.value}
+      onSave={(value, done) => stats.save.mutate(value, { onSuccess: done })}
+      busy={stats.save.isPending}
+      error={stats.save.error}
+    />
+  );
+}
+
 function AdvancedSection() {
   const code = useSetting<CodeSettings>("code");
   if (!code.query.data) return <Waiting query={code.query} />;
@@ -1311,6 +1420,7 @@ function SettingsScreen({ me, section }: { me: Me; section: Section }) {
         {section === "general" && <GeneralSection me={me} />}
         {section === "business" && <BusinessSection />}
         {section === "search" && <SearchSection />}
+        {section === "stats" && <StatsSection />}
         {section === "advanced" && <AdvancedSection />}
         {section === "backups" && <BackupsSection me={me} />}
       </div>

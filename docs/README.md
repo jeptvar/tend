@@ -18,6 +18,7 @@ Tend is an easy, fast CMS for a small website that you own. These pages say how 
 - [People](people.md): letting others in, and what each of them can do.
 - [Locked out](locked-out.md)
 - [Back up and restore](backups.md)
+- [Visitor stats](visitor-stats.md): counting visitors without cookies.
 - [Privacy](privacy.md): what Tend keeps about visitors and the people who sign in.
 
 ## Online

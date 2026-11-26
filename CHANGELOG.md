@@ -17,6 +17,7 @@ The first version, a developer preview.
 - **Media:** photos made ready for every screen size, with their camera details and location removed, and PDFs. JPG, PNG, WebP, GIF and AVIF.
 - **Design:** the Meadow theme, with a logo, a site icon, an accent colour that makes the whole palette and is checked for contrast, three pairs of fonts (two of them its own), a header style, footer text, social links and CSS of your own. Your site is beside the form as you change it. Photos behind words, readable on any photo. `tendcms theme copy` starts a theme of your own.
 - **Site menu**, redirects (by themselves when an address changes), who can see the site (everyone, nobody yet, or only people who can sign in), search and sharing details, `sitemap.xml`, `rss.xml` and `robots.txt`.
+- **Visitor stats** from Plausible, Fathom, Umami or Cloudflare Web Analytics, which count without cookies, by pasting what the service gives your site.
 - **Business details:** the address, phone, hours and map link, changed in one place and shown everywhere.
 - **People:** Admins and Editors, invited with a link. Recovery codes get you back in without email.
 - **Backups:** the whole site as one file, a copy of the data every day, and a check on how full the disk is. A backup starts a new site anywhere, and the Owner can put the site back as it was from Settings → Backups.

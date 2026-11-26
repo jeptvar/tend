@@ -697,6 +697,7 @@ describe("search engines and sharing", () => {
       hasFeed: false,
       themeCss: null,
       customCss: null,
+      stats: null,
       extraHead: null,
       prefetch: true,
     });

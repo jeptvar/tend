@@ -31,6 +31,8 @@ export interface HeadInput {
   /** The theme's choices, as rules for the page. */
   themeCss: string | null;
   customCss: string | null;
+  /** Settings, Visitor stats: the service's script tag. Never in a preview. */
+  stats: string | null;
   /** Settings, Advanced, "Add code to every page". Never in a preview. */
   extraHead: string | null;
   /** Whether browsers may fetch a page as its link is pointed at. Not in a preview. */
@@ -144,6 +146,7 @@ export function buildHead(input: HeadInput): string {
   const rules = [VIEW_TRANSITIONS, input.themeCss].filter(Boolean).join(" ");
   parts.push(`<style>${cssForStyle(rules)}</style>`);
   if (input.customCss) parts.push(`<style>${cssForStyle(input.customCss)}</style>`);
+  if (input.stats) parts.push(input.stats);
   if (input.extraHead) parts.push(input.extraHead);
   return parts.join("\n");
 }
