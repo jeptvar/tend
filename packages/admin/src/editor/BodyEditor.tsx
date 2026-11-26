@@ -276,6 +276,13 @@ function Toolbar({
     const item = items.find((other) => other.id === id);
     if (item) onInsert(item);
   };
+  // Back in the text as the menu goes, not a frame later as Tiptap's focus() does. A key
+  // pressed in between went to the page instead: Tab to the button after the menu, and words
+  // typed nowhere at all.
+  const fromMenu = (choose: (id: string) => void) => (id: string) => {
+    editor.view.focus();
+    choose(id);
+  };
   return (
     <div className="tend-tools tend-sticky">
       <fieldset className="pointer-events-auto flex w-full min-w-0 items-center justify-between md:w-auto md:rounded-2xl md:border md:border-line md:bg-surface md:p-1 md:shadow-raised">
@@ -303,7 +310,7 @@ function Toolbar({
             icon: id,
             chosen: !state.code && id === style,
           }))}
-          onChoose={(id) => {
+          onChoose={fromMenu((id) => {
             const level = STYLES.indexOf(id as (typeof STYLES)[number]) + 1;
             const chain = editor.chain().focus();
             const worked =
@@ -311,7 +318,7 @@ function Toolbar({
                 ? chain.setParagraph().run()
                 : chain.setHeading({ level: level as 2 | 3 | 4 }).run();
             if (!worked) onNotHere();
-          }}
+          })}
           disabled={locked}
           className="max-md:hidden"
         >
@@ -372,7 +379,7 @@ function Toolbar({
         <Gap className="max-md:hidden" />
         <ToolMenu
           choices={items.map(({ id, icon }) => ({ id, icon, name: nameOf(id) }))}
-          onChoose={insert}
+          onChoose={fromMenu(insert)}
           disabled={locked}
           atEnd
           className="rounded-xl bg-mint text-brand-strong"

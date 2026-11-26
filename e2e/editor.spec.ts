@@ -540,6 +540,22 @@ test.describe("formatting", () => {
     await expect(saveStatus(page)).toHaveText("Saved", { timeout: 5000 });
   });
 
+  test("a key pressed as soon as a menu's choice is made goes into the writing", async ({
+    page,
+    signedIn,
+  }) => {
+    const post = await createEntry(page, signedIn, { title: "Menus", body: "" });
+    await openPost(page, signedIn, post.id);
+    await clickInto(body(page));
+    await page.keyboard.type("Intro");
+    // The choice, then more words at once: a person can't be that quick, but a slow phone can be
+    // that slow to put the keyboard back.
+    await page.getByRole("button", { name: "Text style: Text" }).click();
+    await page.getByRole("menuitemradio", { name: "Heading", exact: true }).click();
+    await page.keyboard.type(" words");
+    await expect(body(page).locator("h2")).toHaveText("Intro words");
+  });
+
   test("a table's own notice shows when only a table is pasted", async ({ page, signedIn }) => {
     const post = await createEntry(page, signedIn, { title: "Pasted", body: "" });
     await openPost(page, signedIn, post.id);
