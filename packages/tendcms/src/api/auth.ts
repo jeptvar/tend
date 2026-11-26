@@ -71,6 +71,8 @@ export interface AuthOptions extends SetupCodeSource {
   dataFolder?: RestoreTarget | undefined;
   /** Whether a backup is being restored, which the admin's routes ask too. */
   restoring?: Restoring | undefined;
+  /** Waits before a restore changes anything. Only tests use it, to see what happens meanwhile. */
+  beforeRestore?: (() => Promise<void>) | undefined;
 }
 
 const SETUP_CODE_ATTEMPTS_PER_MINUTE = 5;
@@ -406,6 +408,7 @@ export function createAuthRoutes(options: AuthOptions): Hono {
     requireSetupCode,
     requireUser,
     confirmPassword,
+    beforeRestore: options.beforeRestore,
   });
 
   app.post("/login", async (c) => {

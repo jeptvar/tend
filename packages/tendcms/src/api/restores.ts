@@ -65,6 +65,8 @@ export interface RestoreOptions {
   requireSetupCode: (c: Context, code: string) => void;
   requireUser: (c: Context) => Promise<User>;
   confirmPassword: (c: Context, user: User, password: string) => Promise<void>;
+  /** Waits before a restore changes anything. Only tests use it, to see what happens meanwhile. */
+  beforeRestore?: (() => Promise<void>) | undefined;
 }
 
 /** How a restore went, kept for whoever started it to ask about. */
@@ -237,7 +239,8 @@ export function registerRestoreRoutes(
     const id = randomBytes(16).toString("base64url");
     const job = { id, outcome: { state: "restoring" } as Outcome };
     latest = job;
-    void work()
+    void Promise.resolve(options.beforeRestore?.())
+      .then(() => work())
       .then((outcome) => {
         job.outcome = outcome;
       })
@@ -351,6 +354,8 @@ export function registerRestoreRoutes(
         fix: "Choose a backup file, or one of the copies kept here.",
       });
     }
+    // Before the password, which takes a while to check, and needn't be when the answer is no.
+    if (restoring.now) throw restoringNow();
     await options.confirmPassword(c, user, password);
     const folder = dataFolder();
     if (restoring.now) throw restoringNow();

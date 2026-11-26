@@ -267,7 +267,12 @@ describe("Restore from Settings → Backups", () => {
   });
 
   test("the admin's changes wait while a backup becomes the site", async () => {
-    const made = await makeApp();
+    // Held until the test says, however quick a small copy is to restore on a fast machine.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const made = await makeApp({ beforeRestore: () => held });
     const owner = await setUp(made);
     const copy = await saveCopy(owner);
     const started = await owner.post("/api/auth/restore", { password: GOOD_PASSWORD, copy });
@@ -276,6 +281,7 @@ describe("Restore from Settings → Backups", () => {
     expect((await meanwhile.json()).error.code).toBe("restoring");
     const twice = await owner.post("/api/auth/restore", { password: GOOD_PASSWORD, copy });
     expect(twice.status).toBe(409);
+    release();
     expect((await outcome(made, started)).status).toBe(200);
   });
 
