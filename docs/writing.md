@@ -29,9 +29,9 @@ Point at a picture, or tap it, for its width, its description, another picture i
 
 Describe each one, for people who can't see it. If it's only decoration, tick **Image is decorative**. Tend asks again before you publish if you missed one.
 
-JPG, PNG, WebP, GIF and AVIF work, up to 20 MB and 50 megapixels, and so do PDFs.
+JPG, PNG, WebP, GIF and AVIF work, and so do PDFs, up to 20 MB and 50 megapixels. A photo bigger than that is made smaller as it's added, rather than refused: to 16 megapixels, which is more than visitors ever get.
 
-**iPhone photos (HEIC):** most browsers can't show them, so Tend asks for another kind. On the iPhone, open **Settings**, then **Camera**, then **Formats**, and choose **Most Compatible**: new photos are JPGs. For one you have already, [the error's page](errors/heic_photo.md) has steps.
+**iPhone photos (HEIC):** Safari makes them JPGs as they're added. Most other browsers can't read them, so there Tend asks for another kind. On the iPhone, open **Settings**, then **Camera**, then **Formats**, and choose **Most Compatible**: new photos are JPGs. For one you have already, [the error's page](errors/heic_photo.md) has steps.
 
 ## Its address, summary and more
 

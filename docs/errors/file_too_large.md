@@ -4,7 +4,7 @@
 
 ## What happened
 
-Tend keeps the file it's given and makes the sizes visitors get from it, all on your server.
+Tend keeps the file it's given and makes the sizes visitors get from it, all on your server. A photo over 20 MB is made smaller as it's added, so this is a PDF, a GIF, which may move, or a photo this browser couldn't read.
 
 ## What to do
 

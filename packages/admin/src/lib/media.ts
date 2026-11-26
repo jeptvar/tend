@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { IntlShape } from "react-intl";
 import { ApiError, api, errorText, OFFLINE } from "./api.ts";
+import { MAX_FILE_BYTES, mayBeMadeSmaller, preparePhoto } from "./prepare-photo.ts";
 
 export interface MediaItem {
   id: string;
@@ -76,7 +77,6 @@ export function mediaItemKey(id: string) {
 export const ACCEPTED_FILES =
   "image/jpeg,image/png,image/webp,image/gif,image/avif,application/pdf";
 export const ACCEPTED_PICTURES = "image/jpeg,image/png,image/webp,image/gif,image/avif";
-export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 /**
  * Files sent at once from this window. Tend makes them ready two at a time, and only takes a
  * few at once from everyone together, so sending more at once would only make them wait.
@@ -202,17 +202,32 @@ function turnToSend(signal: AbortSignal | undefined): Promise<() => void> {
   });
 }
 
+function tooBig(): ApiError {
+  return new ApiError(
+    413,
+    "file_too_large",
+    "That file is bigger than 20 MB, which is the most Tend can take.",
+    undefined,
+    "Make it smaller first. For a photo, export it at a smaller size or as a JPEG.",
+  );
+}
+
 /**
- * Sends one file as it is, reporting how much has gone. If Tend is busy with other uploads,
- * it waits as long as Tend asks and sends it again, so a pile of files dropped at once all
- * arrive without anyone having to press Try again.
+ * Sends one file, reporting how much has gone. A photo is got ready first: a HEIC one becomes a
+ * JPEG where this browser can read it, and one too big is made smaller. If Tend is busy with
+ * other uploads, it waits as long as Tend asks and sends it again, so a pile of files dropped at
+ * once all arrive without anyone having to press Try again.
  */
 export async function uploadFile(file: File, options: UploadOptions = {}): Promise<MediaItem> {
   const handOn = await turnToSend(options.signal);
   try {
+    // While it's this one's turn, so only a couple of big photos are held at once.
+    const ready = await preparePhoto(file);
+    if (options.signal?.aborted) throw stopped();
+    if (ready.size > MAX_FILE_BYTES) throw tooBig();
     for (let tries = 1; ; tries++) {
       try {
-        return await sendFile(file, options);
+        return await sendFile(ready, options);
       } catch (error) {
         if (!(error instanceof BusyError) || tries >= BUSY_TRIES) throw error;
         options.onProgress?.(0);
@@ -289,9 +304,12 @@ export async function lookUpMedia(ids: readonly string[]): Promise<MediaItem[]> 
   return found;
 }
 
-/** Refused before it's sent, so nobody waits for 30 MB to upload only to hear it's too big. */
+/**
+ * Refused before it's sent, so nobody waits for 30 MB to upload only to hear it's too big. A
+ * photo isn't: it may be made smaller first.
+ */
 export function tooBigToUpload(file: File): boolean {
-  return file.size > MAX_FILE_BYTES;
+  return file.size > MAX_FILE_BYTES && !mayBeMadeSmaller(file);
 }
 
 /**

@@ -167,6 +167,50 @@ test.describe("pictures in the editor (J2)", () => {
     await expect(body(page)).toContainText("Words stay.");
   });
 
+  test("photos too big for Tend are made smaller as they're added, rather than refused", async ({
+    page,
+    signedIn,
+  }) => {
+    const found = async (name: string) => {
+      const reply = await page.request.get(`${signedIn.base}/api/admin/media?q=${name}`);
+      return (await reply.json()).media[0];
+    };
+    await page.goto(`${signedIn.base}/admin/media`);
+    const input = page.locator('input[type="file"][multiple]');
+    // 54 megapixels, where Tend takes 50.
+    const wide = await photo(page, 9000, 6000);
+    await input.setInputFiles({ name: "DSC_0001.JPG", mimeType: "image/jpeg", buffer: wide });
+    await expect(page.getByText("Uploaded DSC_0001.jpg.")).toBeVisible({ timeout: 60_000 });
+    const smaller = await found("DSC_0001");
+    expect(smaller.width / smaller.height).toBeCloseTo(1.5, 2);
+    expect(smaller.width * smaller.height).toBeLessThanOrEqual(16_000_000);
+
+    // Over 20 MB, because noise doesn't compress. It's made in the page, so that much doesn't
+    // travel through the test as well.
+    const sent = await input.evaluate(async (element: HTMLInputElement) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 5000;
+      canvas.height = 4000;
+      const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+      const pixels = context.createImageData(canvas.width, canvas.height);
+      const values = new Uint32Array(pixels.data.buffer);
+      for (let at = 0; at < values.length; at++)
+        values[at] = (Math.random() * 0xffffff) | 0xff000000;
+      context.putImageData(pixels, 0, 0);
+      const blob = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((made) => resolve(made as Blob), "image/jpeg", 1),
+      );
+      const files = new DataTransfer();
+      files.items.add(new File([blob], "NOISE.JPG", { type: "image/jpeg" }));
+      element.files = files.files;
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return blob.size;
+    });
+    expect(sent).toBeGreaterThan(20 * 1024 * 1024);
+    await expect(page.getByText("Uploaded NOISE.jpg.")).toBeVisible({ timeout: 60_000 });
+    expect((await found("NOISE")).sizeBytes).toBeLessThanOrEqual(20 * 1024 * 1024);
+  });
+
   test("the featured image is chosen in settings, and shows on the blog list", async ({
     page,
     signedIn,
