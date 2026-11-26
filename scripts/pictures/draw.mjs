@@ -16,7 +16,7 @@ const sharp = createRequire(join(root, "packages", "tendcms", "package.json"))("
 const out = join(root, "themes", "meadow", "starters", "pictures");
 /** Small ones for choosing a starting point in Setup. */
 const small = join(root, "packages", "admin", "src", "routes", "setup");
-const SMALL = { table: [560, 315], coffee: [560, 300] };
+const SMALL = { table: [560, 315], coffee: [560, 300], bowl: [400, 300], leaves: [400, 300] };
 const scene = readFileSync(join(import.meta.dirname, "scene.glsl"), "utf8");
 
 const vec = (x, y, z) => `vec3(${[x, y, z].map((value) => value.toFixed(3)).join(", ")})`;

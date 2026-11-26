@@ -28,7 +28,16 @@ export interface OverviewRouteOptions extends AdminOptions {
   homepage?: (() => Promise<string>) | undefined;
 }
 
-export type StepId = "home" | "business" | "post" | "logo" | "photo" | "kit" | "online" | "domain";
+export type StepId =
+  | "home"
+  | "business"
+  | "post"
+  | "work"
+  | "logo"
+  | "photo"
+  | "kit"
+  | "online"
+  | "domain";
 
 export interface Step {
   id: StepId;
@@ -60,6 +69,10 @@ export function registerOverviewRoutes(routing: Routing, options: OverviewRouteO
       });
     }
     if (setup?.starter === "blog") list.push({ id: "post", done: ownPostPublished(orm) });
+    // The pictures it starts with count as the Owner's, so only ones added since do.
+    if (setup?.starter === "portfolio") {
+      list.push({ id: "work", done: hasUploaded(orm, user.id, setup.completed_at) });
+    }
     const design = await settingValue(orm, "design");
     list.push({ id: "logo", done: design.logoId !== null }, kit);
     const { url } = address;

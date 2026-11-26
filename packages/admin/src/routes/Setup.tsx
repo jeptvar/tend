@@ -33,7 +33,9 @@ import {
 } from "../lib/queries.ts";
 import { holdFreshKit } from "../lib/recovery-kit.ts";
 import { type Starter, useSetup } from "../lib/setup-state.tsx";
+import bowl from "./setup/bowl.webp";
 import coffee from "./setup/coffee.webp";
+import leaves from "./setup/leaves.webp";
 import table from "./setup/table.webp";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -445,7 +447,7 @@ export function SetupAccount() {
   );
 }
 
-const STARTERS: Starter[] = ["blog", "business", "blank"];
+const STARTERS: Starter[] = ["blog", "business", "portfolio", "blank"];
 
 /**
  * A small picture of the starting point, with the person's own site name on it, and the photo it
@@ -493,6 +495,17 @@ function StarterPreview({ starter, siteName }: { starter: Starter; siteName: str
             <span className="h-[4cqw] w-[58cqw] rounded-full bg-[#2b2117]/70" />
             <span className={`${line} w-[78cqw]`} />
             <span className={`${line} w-[64cqw]`} />
+          </div>
+        )}
+        {starter === "portfolio" && (
+          <div className="grid min-h-0 flex-1 grid-cols-3 gap-[2.5cqw] px-[6cqw] pb-[5cqw]">
+            {[bowl, leaves, table].map((picture) => (
+              <span
+                key={picture}
+                className="rounded-[2.5cqw] bg-cover bg-center"
+                style={{ backgroundImage: `url("${picture}")` }}
+              />
+            ))}
           </div>
         )}
         {starter === "blank" && (
@@ -569,7 +582,7 @@ export function SetupStart() {
           <FormattedMessage id="setup.start.intro" />
         </p>
         <form onSubmit={onSubmit} className="mt-8 grid gap-6">
-          <fieldset className="grid gap-4 sm:grid-cols-3 lg:gap-5">
+          <fieldset className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
             <legend className="sr-only">
               <FormattedMessage id="setup.start.title" />
             </legend>

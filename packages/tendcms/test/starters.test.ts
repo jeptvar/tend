@@ -36,7 +36,7 @@ function filesIn(folder: string): string[] {
 describe("the pictures starting points come with", () => {
   test("are the size and colour they're said to be, described, and small to send", async () => {
     const said = new Map<string, { alt: string; width: number; height: number; color: string }>();
-    for (const name of ["blog", "business", "blank"]) {
+    for (const name of ["blog", "business", "portfolio", "blank"]) {
       const { pictures = {} } = JSON.parse(readFileSync(join(STARTERS, `${name}.json`), "utf8"));
       for (const { file, ...rest } of Object.values<{ file: string }>(pictures)) {
         said.set(file, rest as never);
@@ -100,18 +100,44 @@ describe("a site set up from a starting point", () => {
     expect(blank.orm.select().from(media).all()).toEqual([]);
   });
 
+  test("Portfolio opens with a photo beside its words, and has Work, About and Contact", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made, { starter: "portfolio" });
+    const home = await html(made, "/");
+    expect(home).toContain('href="/work"');
+    expect(home).toContain("Show one piece here");
+    expect(home).not.toContain("{picture");
+    const work = await html(made, "/work");
+    expect(work.match(/<figure class="t-image/g)).toHaveLength(3);
+    expect(work).toContain("<figcaption>White vase</figcaption>");
+    expect(await html(made, "/about")).toContain("how you started");
+    // Contact ends with the business details, which are filled in from Settings.
+    expect(await html(made, "/contact")).toContain("To ask about a piece");
+    // Its three pictures are in Media once, however many times they're shown.
+    const { media: list } = await (await owner.get("/api/admin/media")).json();
+    expect(list).toHaveLength(3);
+    // And the site menu has its pages, home first.
+    const { entries } = await (await owner.get("/api/admin/entries?type=page")).json();
+    expect(entries.map((entry: { slug: string }) => entry.slug).sort()).toEqual([
+      "about",
+      "contact",
+      "home",
+      "work",
+    ]);
+  });
+
   test("has the same pages without pictures when they can't be kept", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     // A file where the uploads folder should be, as good as a disk that can't be written to.
     const blocked = join(tempDir(), "uploads");
     writeFileSync(blocked, "not a folder");
-    for (const starter of ["business", "blog"]) {
+    for (const starter of ["business", "blog", "portfolio"]) {
       const made = await makeApp({ uploadsDir: blocked });
       await setUp(made, { starter });
       const home = await html(made, "/");
       expect(home).not.toContain("<img");
       expect(home).not.toContain("{picture");
-      expect(home).toContain("Welcome to Rise Bakery");
+      if (starter !== "portfolio") expect(home).toContain("Welcome to Rise Bakery");
       if (starter === "business") {
         // Every section is still there, and still says what it said.
         expect(home.match(/<section /g)).toHaveLength(4);

@@ -9,7 +9,7 @@ The first version, a developer preview.
 ### Added
 
 - **Install:** `npm create tend@latest my-site` on your computer, a Docker image for a server of your own, and a template for Railway. Nothing has to be set up first.
-- **Setup** in the browser: a name, an account and a starting point (Blog, Business or Blank, the first two with pictures), or a backup of another site.
+- **Setup** in the browser: a name, an account and a starting point (Blog, Business, Portfolio or Blank, all but Blank with pictures), or a backup of another site.
 - **The admin** works on a computer, a tablet and a phone, in light and dark. Overview starts with a picture of your site and what isn't on it yet.
 - **Writing:** an editor for posts and pages in your site's own fonts and colour, with pictures, links, lists, quotes, code, buttons and three kinds of section (Big intro, Picture and text, Contact & hours). It saves by itself, on the server and on your device, and works through a lost connection.
 - **Publishing:** a review before anything goes on your site, with the address, how it looks when shared, and what may be worth another look. Later changes stay off the site until you publish them.

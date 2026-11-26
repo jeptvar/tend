@@ -14,7 +14,7 @@ import { SETUP_STATUS_KEY, useSetupStatus } from "./queries.ts";
 import { forgetSetupCode, readSetupCode, storeSetupCode } from "./setup-code.ts";
 
 export type CodeState = "none" | "checking" | "ok";
-export type Starter = "blog" | "business" | "blank";
+export type Starter = "blog" | "business" | "portfolio" | "blank";
 
 export interface SiteDraft {
   name: string;

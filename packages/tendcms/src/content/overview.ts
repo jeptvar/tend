@@ -203,9 +203,13 @@ export function ownPostPublished(orm: Orm, authorId?: string): boolean {
   return post !== undefined;
 }
 
-export function hasUploaded(orm: Orm, userId: string): boolean {
+export function hasUploaded(orm: Orm, userId: string, after = Number.NEGATIVE_INFINITY): boolean {
   return (
-    orm.select({ id: media.id }).from(media).where(eq(media.uploadedBy, userId)).limit(1).get() !==
-    undefined
+    orm
+      .select({ id: media.id })
+      .from(media)
+      .where(and(eq(media.uploadedBy, userId), gt(media.createdAt, after)))
+      .limit(1)
+      .get() !== undefined
   );
 }

@@ -12,7 +12,7 @@ export interface SiteSettings {
   timezone: string;
 }
 
-export type Starter = "blog" | "business" | "blank";
+export type Starter = "blog" | "business" | "portfolio" | "blank";
 
 export interface SetupSettings {
   /** Which starting content to create once pages and themes exist. */

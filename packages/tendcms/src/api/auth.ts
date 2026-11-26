@@ -129,7 +129,9 @@ const setupSchema = z.object({
       ),
     password: z.string({ error: "Choose a password." }),
   }),
-  starter: z.enum(["blog", "business", "blank"], { error: "Pick a starting point." }),
+  starter: z.enum(["blog", "business", "portfolio", "blank"], {
+    error: "Pick a starting point.",
+  }),
 });
 
 const loginSchema = z.object({
