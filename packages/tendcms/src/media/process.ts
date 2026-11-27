@@ -174,9 +174,9 @@ function heicPhoto(): ApiError {
   return new ApiError(
     415,
     "heic_photo",
-    "That's a HEIC photo, the kind iPhones take, and Tend can't use those yet.",
+    "That's a HEIC photo, the kind iPhones take, and this browser can't make it into one Tend can use.",
     {
-      fix: "On the iPhone, open Settings, then Camera, then Formats, and choose Most Compatible before taking it again. On a Mac, open it in Preview, choose File, then Export, and pick JPEG.",
+      fix: "Add it from Safari, which makes it a JPEG as it's added. Or on a Mac, open it in Preview, choose File, then Export, and pick JPEG. On the iPhone, open Settings, then Camera, then Formats, and choose Most Compatible before taking it again.",
     },
   );
 }

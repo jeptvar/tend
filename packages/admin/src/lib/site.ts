@@ -176,6 +176,16 @@ export interface CodeSettings {
   bodyEnd: string | null;
 }
 
+export const STATS_SERVICES = ["plausible", "fathom", "umami", "cloudflare"] as const;
+
+/** Settings → Visitor stats: a service that counts visitors without cookies, and its ID. */
+export interface VisitorStats {
+  service: (typeof STATS_SERVICES)[number] | null;
+  id: string | null;
+  /** Umami on a server of someone's own: where its script is. */
+  script: string | null;
+}
+
 export interface Redirect {
   fromPath: string;
   toPath: string;

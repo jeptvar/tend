@@ -113,3 +113,31 @@ test("screens for Admins send an Editor to Overview, and a mistyped address says
   await page.getByRole("link", { name: "Go to Overview" }).click();
   await expect(page.getByRole("heading", { name: GREETING, level: 1 })).toBeVisible();
 });
+
+test("visitor stats are set up by pasting what the service gives, with Undo", async ({
+  page,
+  signedIn,
+}) => {
+  const homeHtml = async () => (await page.request.get(`${signedIn.base}/`)).text();
+  await page.goto(`${signedIn.base}/admin/settings/stats`);
+  await expect(page.getByRole("heading", { name: "Visitor stats", level: 1 })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "None" })).toBeChecked();
+
+  await page.getByRole("radio", { name: "Fathom" }).check();
+  const id = page.getByLabel("Site ID");
+  // A mistake is said under the box it's in.
+  await id.fill("AB");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText(/^Type the Site ID from Fathom/)).toBeVisible();
+  // The whole snippet works too.
+  await id.fill(
+    '<script src="https://cdn.usefathom.com/script.js" data-site="PQRSTUVW" defer></script>',
+  );
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Saved.", { exact: false })).toBeVisible();
+  expect(await homeHtml()).toContain('data-site="PQRSTUVW"');
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.getByRole("radio", { name: "None" })).toBeChecked();
+  expect(await homeHtml()).not.toContain("usefathom");
+});

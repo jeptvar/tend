@@ -459,6 +459,11 @@ export interface RunningSite extends RestoreTarget {
   secretKey: Buffer;
   migrationsDir: string;
   appVersion: string;
+  /**
+   * Keeps the key in use beside the copy saved first, when the backup brings another, so
+   * restoring that copy puts both back. At setup there's no need: the site was empty.
+   */
+  keepKey?: boolean | undefined;
 }
 
 /**
@@ -480,6 +485,9 @@ export async function restoreRunning(
     site.backupsDir,
     `before-restore-${stamp}.db.gz`,
   );
+  if (site.keepKey && !site.secretKey.equals(checked.key)) {
+    keepKeyBeside(site.backupsDir, site.secretKey, `before-restore-${stamp}.secret.key`);
+  }
   moveOriginals(checked, site.uploadsDir);
   try {
     await copyInto(join(checked.folder, DATABASE_ENTRY), site.dbPath);
@@ -499,6 +507,14 @@ export async function restoreRunning(
   }
   site.secretKey.set(checked.key);
   return { snapshotPath };
+}
+
+/** Keeps a key beside the copy saved before a restore, where restoring that copy finds it. */
+function keepKeyBeside(backupsDir: string, key: Buffer, name: string): void {
+  const kept = join(backupsDir, name);
+  writeFileSync(kept, secretKeyText(key), { mode: 0o600 });
+  fsyncFile(kept);
+  fsyncDir(backupsDir);
 }
 
 /** Copies a database file's data into the one at `dbPath`, which may be open elsewhere. */

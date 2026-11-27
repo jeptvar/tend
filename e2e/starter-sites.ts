@@ -5,7 +5,7 @@ import { expect, OWNER, type Site, upload } from "./fixtures.ts";
 // would, for the checks that measure what visitors get: e2e/budgets.spec.ts on every pull
 // request, and e2e/lighthouse.spec.ts nightly.
 
-export const STARTERS = ["blog", "business", "blank"] as const;
+export const STARTERS = ["blog", "business", "portfolio", "blank"] as const;
 export type Starter = (typeof STARTERS)[number];
 
 interface Summary {
@@ -157,8 +157,10 @@ export async function buildStarterSite(
   expect(setup.status()).toBe(201);
   const home = `${site.base}/`;
   if (starter === "blank") return [home];
+  const work = async () => `${site.base}${(await find(page, site, "page", "work")).url}`;
   if (state === "as it comes") {
     if (starter === "business") return [home];
+    if (starter === "portfolio") return [home, await work()];
     return [home, `${site.base}${(await find(page, site, "post", "welcome")).url}`];
   }
 
@@ -195,6 +197,19 @@ export async function buildStarterSite(
       },
     }));
     return [home];
+  }
+  if (starter === "portfolio") {
+    await publish(page, site, await find(page, site, "page", "work"), (doc) => ({
+      doc: {
+        type: "doc",
+        content: [
+          { type: "image", attrs: { mediaId: loaves, size: "wide", caption: "Loaves, on a rack" } },
+          { type: "image", attrs: { mediaId: counter, caption: "The counter, in the morning" } },
+          ...doc.content,
+        ],
+      },
+    }));
+    return [home, await work()];
   }
 
   const post = await publish(page, site, await find(page, site, "post", "welcome"), () => ({

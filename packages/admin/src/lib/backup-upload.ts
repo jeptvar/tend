@@ -1,9 +1,10 @@
 import { ApiError, api, OFFLINE } from "./api.ts";
 import type { SetupStatus } from "./queries.ts";
 
-// Start from a backup (PLAN.md J10). The file goes a part at a time, so a big one survives a
-// slow connection and a proxy's limit on request size. Then Tend checks and restores it on
-// its own, which can take minutes, while this asks how it's going.
+// Restoring a backup: at setup, to start from one (PLAN.md J10), or from Settings → Backups.
+// The file goes a part at a time, so a big one survives a slow connection and a proxy's limit
+// on request size. Then Tend checks and restores it on its own, which can take minutes, while
+// this asks how it's going.
 
 /** As much as Tend takes in one part. */
 const PART_BYTES = 8 * 1024 * 1024;
@@ -49,10 +50,22 @@ export async function looksLikeABackup(file: File): Promise<boolean> {
   return ZIP_START.every((byte, at) => start[at] === byte);
 }
 
+/** Where the parts go: at setup, with its code, or from Settings → Backups, as the Owner. */
+export interface PartsTo {
+  path: string;
+  headers?: Record<string, string>;
+}
+
+export function setupParts(code: string): PartsTo {
+  return { path: "/api/auth/setup/backup/part", headers: { "X-Setup-Code": code } };
+}
+
+export const OWNER_PARTS: PartsTo = { path: "/api/auth/restore/part" };
+
 /** Sends the whole file, a part at a time, reporting how much of it has gone. */
 export async function sendBackup(
   file: File,
-  code: string,
+  to: PartsTo,
   onProgress: (fraction: number) => void,
   signal: AbortSignal,
 ): Promise<void> {
@@ -60,11 +73,7 @@ export async function sendBackup(
     const start = offset;
     const part = file.slice(start, start + PART_BYTES);
     const report = (sent: number) => onProgress((start + sent) / file.size);
-    offset = await sendPartPatiently(
-      { part, offset: start, total: file.size, code },
-      report,
-      signal,
-    );
+    offset = await sendPartPatiently({ part, offset: start, total: file.size, to }, report, signal);
     if (offset !== start + part.size) {
       throw new ApiError(409, "upload_out_of_step", "Part of the backup went missing on the way.");
     }
@@ -75,7 +84,7 @@ interface Part {
   part: Blob;
   offset: number;
   total: number;
-  code: string;
+  to: PartsTo;
 }
 
 /** Sends one part, and sends it again if the connection drops before Tend answers. */
@@ -102,7 +111,7 @@ async function sendPartPatiently(
  * than fetch, because only it can say how an upload is going.
  */
 function sendPart(
-  { part, offset, total, code }: Part,
+  { part, offset, total, to }: Part,
   onSent: (bytes: number) => void,
   signal: AbortSignal,
 ): Promise<number> {
@@ -123,9 +132,11 @@ function sendPart(
       signal.removeEventListener("abort", stop);
     };
 
-    request.open("POST", "/api/auth/setup/backup/part");
+    request.open("POST", to.path);
     request.setRequestHeader("Content-Type", "application/octet-stream");
-    request.setRequestHeader("X-Setup-Code", code);
+    for (const [name, value] of Object.entries(to.headers ?? {})) {
+      request.setRequestHeader(name, value);
+    }
     request.setRequestHeader("X-Offset", String(offset));
     request.setRequestHeader("X-Backup-Bytes", String(total));
     request.responseType = "json";
@@ -164,11 +175,42 @@ function sendPart(
   });
 }
 
-type Progress = { state: "restoring" } | { state: "restored"; site: string };
+/** A restore that's over: the site's name, and when what was restored was saved. */
+export interface Restored {
+  site: string;
+  savedAt?: string;
+}
+
+type Progress = { state: "restoring" } | ({ state: "restored" } & Restored);
 
 /**
- * Asks Tend to restore what was sent, then waits until it has. Answers with the restored
- * site's name, or null if Tend restarted meanwhile and the site turned out to be back anyway.
+ * Asks how the restore Tend answered with is going, until it's over. Calls `unknown` if Tend
+ * has forgotten it, because it restarted, and answers with what that says.
+ */
+async function finished(
+  path: string,
+  signal: AbortSignal,
+  unknown: (error: ApiError) => Promise<Restored | null>,
+): Promise<Restored | null> {
+  let answeredAt = Date.now();
+  for (;;) {
+    await wait(ASK_EVERY_MS, signal);
+    try {
+      const progress = await api<Progress>(path);
+      if (progress.state === "restored") return { site: progress.site, savedAt: progress.savedAt };
+      answeredAt = Date.now();
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "restore_unknown") return unknown(error);
+      const offlineTooLong = Date.now() - answeredAt > RESTORE_PATIENCE_MS;
+      if (!(error instanceof ApiError && error.code === OFFLINE) || offlineTooLong) throw error;
+    }
+  }
+}
+
+/**
+ * Asks Tend to restore what was sent at setup, then waits until it has. Answers with the
+ * restored site's name, or null if Tend restarted meanwhile and the site turned out to be back
+ * anyway.
  */
 export async function restoreBackup(
   code: string,
@@ -179,23 +221,41 @@ export async function restoreBackup(
     method: "POST",
     body: { code, bytes },
   });
-  let answeredAt = Date.now();
-  for (;;) {
-    await wait(ASK_EVERY_MS, signal);
-    try {
-      const progress = await api<Progress>(`/auth/setup/backup/restore/${restore}`);
-      if (progress.state === "restored") return progress.site;
-      answeredAt = Date.now();
-    } catch (error) {
-      if (error instanceof ApiError && error.code === "restore_unknown") {
-        // Tend restarted, which forgets how a restore went. If it finished, the site
-        // no longer needs setting up.
-        const status = await api<SetupStatus>("/auth/setup/status");
-        if (!status.needsSetup) return null;
-        throw error;
-      }
-      const offlineTooLong = Date.now() - answeredAt > RESTORE_PATIENCE_MS;
-      if (!(error instanceof ApiError && error.code === OFFLINE) || offlineTooLong) throw error;
-    }
-  }
+  const restored = await finished(
+    `/auth/setup/backup/restore/${restore}`,
+    signal,
+    async (error) => {
+      // Tend restarted, which forgets how a restore went. If it finished, the site no longer
+      // needs setting up.
+      const status = await api<SetupStatus>("/auth/setup/status");
+      if (!status.needsSetup) return null;
+      throw error;
+    },
+  );
+  return restored?.site ?? null;
+}
+
+/** Checks the Owner's password before a backup is sent, which can take minutes. */
+export function checkOwnerPassword(password: string): Promise<unknown> {
+  return api("/auth/restore/check", { method: "POST", body: { password } });
+}
+
+/**
+ * Asks Tend to put the site back as it was, from what was sent or from a copy kept there, then
+ * waits until it has. By then everyone is signed out.
+ */
+export async function restoreAsOwner(
+  what: { password: string; bytes?: number; copy?: string },
+  signal: AbortSignal,
+): Promise<Restored> {
+  const { restore } = await api<{ restore: string }>("/auth/restore", {
+    method: "POST",
+    body: what,
+  });
+  const restored = await finished(`/auth/restore/${restore}`, signal, async (error) => {
+    // Tend restarted, so how it went is lost. Whoever reloads finds out.
+    throw error;
+  });
+  if (!restored) throw new ApiError(404, "restore_unknown", "Tend isn't restoring that backup.");
+  return restored;
 }

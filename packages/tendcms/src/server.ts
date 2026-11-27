@@ -5,7 +5,13 @@ import { createAdminRoutes } from "./api/admin/index.ts";
 import { notSignedIn } from "./api/admin/routing.ts";
 import { type AuthOptions, createAuthRoutes } from "./api/auth.ts";
 import { ApiError } from "./api/errors.ts";
-import { BACKUP_PART_BYTES, BACKUP_PART_PATH } from "./api/setup-backup.ts";
+import {
+  BACKUP_PART_BYTES,
+  BACKUP_PART_PATH,
+  OWNER_PART_PATH,
+  type Restoring,
+  restoringNow,
+} from "./api/restores.ts";
 import { isForeignRequest } from "./auth/csrf.ts";
 import { currentUser } from "./auth/current-user.ts";
 import { MAX_UPLOAD_BYTES } from "./media/process.ts";
@@ -63,9 +69,9 @@ function isUpload(method: string, path: string): boolean {
   return method === "POST" && UPLOAD_ROUTE.test(path);
 }
 
-/** A part of a backup sent at setup, which is a file as it is too. */
+/** A part of a backup being restored, which is a file as it is too. */
 function isBackupPart(method: string, path: string): boolean {
-  return method === "POST" && path === BACKUP_PART_PATH;
+  return method === "POST" && (path === BACKUP_PART_PATH || path === OWNER_PART_PATH);
 }
 
 function needsLength(): ApiError {
@@ -180,6 +186,7 @@ export function createApp(options: AppOptions): Hono {
   const app = new Hono();
   const now = options.now ?? Date.now;
   const address = new SiteAddress(options.orm, options);
+  const restoring: Restoring = { now: false };
 
   app.use("*", async (c, next) => {
     await next();
@@ -297,6 +304,8 @@ export function createApp(options: AppOptions): Hono {
   app.use("/api/admin/*", async (c, next) => {
     const user = await currentUser(c, options.orm, address.secure, now());
     if (!user) throw notSignedIn();
+    // Whatever changed while a backup becomes the site would be lost, or mixed into it.
+    if (restoring.now && UNSAFE_METHODS.has(c.req.method)) throw restoringNow();
     if (isUpload(c.req.method, c.req.path)) await receiveUpload(c, user.id, next);
     else await next();
   });
@@ -325,7 +334,10 @@ export function createApp(options: AppOptions): Hono {
     site.changed(path);
   };
 
-  app.route("/api/auth", createAuthRoutes({ ...options, address, store, onSiteChanged }));
+  app.route(
+    "/api/auth",
+    createAuthRoutes({ ...options, address, store, onSiteChanged, restoring }),
+  );
   app.route(
     "/api/admin",
     createAdminRoutes({

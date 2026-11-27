@@ -16,6 +16,9 @@ const SIMPLE_MARKS = new Set(["bold", "italic", "underline", "strike", "code"]);
 const IMAGE_SIZES = new Set(["normal", "wide", "full"]);
 const MEDIA_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const IMAGE_TEXT_LIMIT = 1000;
+/** Plenty for a price list or a week's hours, and few enough to read on a phone. */
+const TABLE_COLUMNS = 20;
+const TABLE_SPAN = 20;
 
 export type Mark =
   | { type: "bold" | "italic" | "underline" | "strike" | "code" }
@@ -35,7 +38,24 @@ export type BlockNode =
   | { type: "horizontalRule" }
   | { type: "button"; attrs: { href: string; label: string } }
   | { type: "image"; attrs: ImageAttrs }
+  | { type: "table"; content: TableRow[] }
   | { type: "section"; attrs: SectionAttrs; content: BlockNode[] };
+
+export interface TableRow {
+  type: "tableRow";
+  content: TableCell[];
+}
+
+/** Anything a document can hold, at any depth, for walking all of it. */
+type AnyNode = BlockNode | InlineNode | ListItem | TableRow | TableCell;
+
+export interface TableCell {
+  type: "tableCell" | "tableHeader";
+  /** Only for one that spans more than one column or row. */
+  attrs?: { colspan?: number; rowspan?: number };
+  /** Paragraphs: a table is for prices or opening hours, not a page inside a page. */
+  content: BlockNode[];
+}
 
 export interface ImageAttrs {
   mediaId: string;
@@ -221,6 +241,44 @@ class Validator {
     });
   }
 
+  rows(value: unknown, depth: number): TableRow[] {
+    if (!Array.isArray(value) || value.length === 0) throw new DocProblem("a table needs rows");
+    return value.map((row): TableRow => {
+      this.#count(depth);
+      if (!isObject(row) || row.type !== "tableRow" || !Array.isArray(row.content)) {
+        throw new DocProblem("bad table row");
+      }
+      if (row.content.length === 0 || row.content.length > TABLE_COLUMNS) {
+        throw new DocProblem("a table row needs 1 to 20 cells");
+      }
+      return { type: "tableRow", content: row.content.map((cell) => this.cell(cell, depth + 1)) };
+    });
+  }
+
+  cell(value: unknown, depth: number): TableCell {
+    this.#count(depth);
+    if (!isObject(value) || (value.type !== "tableCell" && value.type !== "tableHeader")) {
+      throw new DocProblem("bad table cell");
+    }
+    const attrs = isObject(value.attrs) ? value.attrs : {};
+    const span = (n: unknown) =>
+      Number.isSafeInteger(n) && (n as number) > 1 ? Math.min(n as number, TABLE_SPAN) : undefined;
+    const colspan = span(attrs.colspan);
+    const rowspan = span(attrs.rowspan);
+    const content = this.blocks(value.content ?? [], depth + 1);
+    if (content.some((block) => block.type !== "paragraph")) {
+      throw new DocProblem("a table cell holds paragraphs");
+    }
+    return {
+      type: value.type,
+      ...(colspan || rowspan
+        ? { attrs: { ...(colspan ? { colspan } : {}), ...(rowspan ? { rowspan } : {}) } }
+        : {}),
+      // Every cell has a paragraph, even an empty one, as the editor makes them.
+      content: content.length > 0 ? content : [{ type: "paragraph" }],
+    };
+  }
+
   /** A node, cleaned up, or nothing for one that can be left out without losing words. */
   block(node: unknown, depth: number): BlockNode | undefined {
     this.#count(depth);
@@ -263,6 +321,8 @@ class Validator {
       }
       case "horizontalRule":
         return { type: "horizontalRule" };
+      case "table":
+        return { type: "table", content: this.rows(node.content, depth + 1) };
       case "button": {
         const { href, label } = attrs;
         if (typeof href !== "string" || typeof label !== "string" || label.length > 200) {
@@ -331,10 +391,10 @@ export function parseFeaturedImage(value: unknown): FeaturedImage | null {
 /** Every picture a version shows: in its text, as its featured image or for sharing. */
 export function shownMediaIds(data: Pick<EntryData, "doc" | "featuredImage" | "seo">): string[] {
   const found = new Set<string>();
-  const visit = (nodes: readonly (BlockNode | ListItem)[]) => {
+  const visit = (nodes: readonly AnyNode[]) => {
     for (const node of nodes) {
       if (node.type === "image") found.add(node.attrs.mediaId);
-      if ("content" in node && node.content) visit(node.content as (BlockNode | ListItem)[]);
+      if ("content" in node && node.content) visit(node.content);
     }
   };
   visit(data.doc.content);
@@ -354,11 +414,11 @@ export function usedMediaIds(data: Pick<EntryData, "doc" | "featuredImage" | "se
 
 /** The first picture in the text, which stands in when no featured image is chosen. */
 export function firstImageId(doc: Doc): string | null {
-  const find = (nodes: readonly (BlockNode | ListItem)[]): string | null => {
+  const find = (nodes: readonly AnyNode[]): string | null => {
     for (const node of nodes) {
       if (node.type === "image") return node.attrs.mediaId;
       if ("content" in node && node.content) {
-        const found = find(node.content as (BlockNode | ListItem)[]);
+        const found = find(node.content);
         if (found) return found;
       }
     }
@@ -369,7 +429,7 @@ export function firstImageId(doc: Doc): string | null {
 
 /** Calls back with the address of every link and button in a document. */
 function eachHref(doc: Doc, visit: (href: string) => void): void {
-  const walk = (nodes: readonly (BlockNode | InlineNode | ListItem)[]) => {
+  const walk = (nodes: readonly AnyNode[]) => {
     for (const node of nodes) {
       if (node.type === "button") visit(node.attrs.href);
       if ("marks" in node) {

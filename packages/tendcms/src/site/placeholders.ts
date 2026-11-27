@@ -63,6 +63,13 @@ function altText(attributes: Map<string, string>, item: Media): string {
   return item.decorative === 1 ? "" : escapeHtml(item.alt ?? "");
 }
 
+/** Where a cropped picture is placed: nothing for the middle, which is where it goes anyway. */
+export function focalPosition(item: Pick<Media, "focalX" | "focalY">): string {
+  const percent = (value: number) => `${Math.round(Math.min(1, Math.max(0, value)) * 1000) / 10}%`;
+  if (item.focalX === 0.5 && item.focalY === 0.5) return "";
+  return `object-position:${percent(item.focalX)} ${percent(item.focalY)}`;
+}
+
 function srcsetOf(item: Media, widths: number[], origin: string): string {
   return widths.map((width) => `${origin}${variantUrl(item, width)} ${width}w`).join(", ");
 }
@@ -120,11 +127,13 @@ export function resolveMediaPlaceholders(
     if (size !== "logo") first = false;
     const priority = eager ? ' fetchpriority="high"' : size === "logo" ? "" : ' loading="lazy"';
     // A colour to show while it loads. Media keeps none for a picture with see-through parts,
-    // and the logo never gets one, so the header always shows through it.
-    const background =
-      item.dominantColor && size !== "logo"
-        ? ` style="background-color:${item.dominantColor}"`
-        : "";
+    // and the logo never gets one, so the header always shows through it. Where a theme crops a
+    // picture to fit, its focal point stays in sight.
+    const style = [
+      item.dominantColor && size !== "logo" ? `background-color:${item.dominantColor}` : "",
+      size !== "logo" ? focalPosition(item) : "",
+    ].filter(Boolean);
+    const background = style.length > 0 ? ` style="${style.join(";")}"` : "";
     const className = IN_TEXT.has(size) ? "" : ` class="t-img-${size}"`;
     const image = `<img${className} src="${src}" srcset="${srcset}" sizes="${sizes}" width="${item.width}" height="${item.height}" alt="${alt}"${priority} decoding="async"${background}>`;
     if (!IN_TEXT.has(size)) return image;

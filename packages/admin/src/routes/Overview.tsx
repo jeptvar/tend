@@ -23,7 +23,16 @@ import { onThisComputer } from "../lib/hosts.ts";
 import type { EntrySummary, Me } from "../lib/queries.ts";
 import { BACKUPS_KEY, type BackupsInfo } from "../lib/site.ts";
 
-type StepId = "home" | "business" | "post" | "logo" | "photo" | "kit" | "online" | "domain";
+type StepId =
+  | "home"
+  | "business"
+  | "post"
+  | "work"
+  | "logo"
+  | "photo"
+  | "kit"
+  | "online"
+  | "domain";
 
 interface Activity {
   id: string;
@@ -335,6 +344,7 @@ function Steps({
     home: homeId === null ? "/pages" : `/pages/${homeId}`,
     business: "/settings/business",
     post: null,
+    work: "/media",
     logo: "/design",
     photo: "/media",
     kit: "/account",

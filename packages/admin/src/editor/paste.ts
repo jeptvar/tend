@@ -45,12 +45,17 @@ export function tidyPasted(html: string): Pasted {
   for (const empty of body.querySelectorAll("o\\:p")) empty.replaceWith(...empty.childNodes);
   wordLists(parsed);
 
-  const tables = body.querySelectorAll("table");
-  if (tables.length > 0) notices.push("paste.table");
+  // A table's cells hold words, so one inside another becomes lines of text.
+  const nested = [...body.querySelectorAll("table")].filter((table) =>
+    table.parentElement?.closest("table"),
+  );
+  if (nested.length > 0) notices.push("paste.table");
   if (body.querySelector(PICTURES)) notices.push("paste.image");
   if (body.querySelector(EMBEDS)) notices.push("paste.embed");
   for (const dropped of body.querySelectorAll(`${PICTURES}, ${EMBEDS}`)) drop(dropped);
-  for (const table of tables) tableAsLines(table, parsed);
+  // From the innermost out, so each is gone before the one around it is looked at.
+  for (const table of nested.reverse()) tableAsLines(table, parsed);
+  for (const cell of body.querySelectorAll("td, th")) cellAsParagraphs(cell, parsed);
 
   headings(parsed);
   spacingBreaks(body);
@@ -80,9 +85,46 @@ function headings(parsed: Document): void {
   for (const small of parsed.body.querySelectorAll("h5, h6")) become(small, "h4");
 }
 
+/** Elements that hold lines of their own, rather than words within a line. */
+const HOLDS_LINES =
+  /^(P|DIV|LI|UL|OL|DL|DT|DD|H[1-6]|BLOCKQUOTE|PRE|FIGURE|SECTION|ARTICLE|HEADER|FOOTER)$/;
+
+/** What's inside, a line at a time: the words between blocks, and each block's own lines. */
+function linesIn(element: Element): Node[][] {
+  const lines: Node[][] = [];
+  let line: Node[] = [];
+  for (const child of [...element.childNodes]) {
+    if (child instanceof Element && HOLDS_LINES.test(child.tagName)) {
+      if (line.length > 0) lines.push(line);
+      line = [];
+      lines.push(...linesIn(child));
+    } else {
+      line.push(child);
+    }
+  }
+  if (line.length > 0) lines.push(line);
+  return lines;
+}
+
 /**
- * A table becomes a line per row, with its cells kept apart, so opening hours stay readable
- * ("Mon · 9–5") rather than running together.
+ * A cell holds words: a list or a heading in one becomes a paragraph for each of its lines.
+ * Left as it was, the editor would put it after the table, cutting the table in two.
+ */
+function cellAsParagraphs(cell: Element, parsed: Document): void {
+  if (![...cell.children].some((child) => HOLDS_LINES.test(child.tagName))) return;
+  const paragraphs = linesIn(cell)
+    .filter((line) => line.some((node) => node.textContent?.trim()))
+    .map((line) => {
+      const paragraph = parsed.createElement("p");
+      paragraph.append(...line);
+      return paragraph;
+    });
+  cell.replaceChildren(...paragraphs);
+}
+
+/**
+ * A table inside a table becomes a line per row, with its cells kept apart, so opening hours
+ * stay readable ("Mon · 9–5") rather than running together.
  */
 function tableAsLines(table: Element, parsed: Document): void {
   const lines = [...table.querySelectorAll("tr")]

@@ -34,6 +34,7 @@ import {
   settingValue,
   type VisibilitySettings,
 } from "../content/settings.ts";
+import type { StatsSettings } from "../content/stats.ts";
 import {
   countLivePostsWithTag,
   findTag,
@@ -76,6 +77,7 @@ import {
   resolveMediaPlaceholders,
 } from "./placeholders.ts";
 import { buildHead, type SharedImage } from "./seo.ts";
+import { statsTag } from "./stats.ts";
 import type { Theme } from "./theme.ts";
 import { createThemes, mistakeIn, type Themes } from "./themes.ts";
 
@@ -296,6 +298,7 @@ interface SiteData {
   business: BusinessSettings;
   seo: { description: string | null; imageId: string | null };
   code: { head: string | null; bodyEnd: string | null };
+  stats: StatsSettings;
   menus: Awaited<ReturnType<typeof siteMenus>>;
   hasPosts: boolean;
 }
@@ -399,6 +402,7 @@ export function createSite(options: SiteOptions): Site {
       business: await settingValue(orm, "business"),
       seo: await settingValue(orm, "seo"),
       code: await settingValue(orm, "code_injection"),
+      stats: await settingValue(orm, "visitor_stats"),
       menus: await siteMenus(orm),
       hasPosts: (await countLivePosts(orm)) > 0,
     };
@@ -558,7 +562,9 @@ export function createSite(options: SiteOptions): Site {
         .filter(Boolean)
         .join(" "),
       customCss: design.customCss,
-      // Code someone added for every page never runs in a preview inside the admin.
+      // Code someone added for every page never runs in a preview inside the admin, and a
+      // preview isn't a visit.
+      stats: extra.preview ? null : statsTag(data.stats),
       extraHead: extra.preview ? null : data.code.head,
       prefetch: extra.preview !== true,
     });

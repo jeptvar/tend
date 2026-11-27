@@ -43,6 +43,9 @@ const patchSchema = z.object({
   decorative: z.boolean().optional(),
   caption: z.string().max(1000, "Use 1,000 characters or fewer.").nullable().optional(),
   credit: z.string().max(1000, "Use 1,000 characters or fewer.").nullable().optional(),
+  /** What stays in sight where a picture is cropped: 0 to 1, across and down. */
+  focalX: z.number().min(0).max(1).optional(),
+  focalY: z.number().min(0).max(1).optional(),
 });
 
 /**
@@ -140,6 +143,8 @@ export function registerMediaRoutes(routing: Routing, options: AdminOptions): vo
       decorative: item.decorative === 1,
       caption: item.caption,
       credit: item.credit,
+      focalX: item.focalX,
+      focalY: item.focalY,
       dominantColor: item.dominantColor,
       url: originalUrl(item),
       thumbUrl: widths[0] === undefined ? null : variantUrl(item, widths[0]),

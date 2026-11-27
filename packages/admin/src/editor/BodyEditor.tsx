@@ -1,4 +1,4 @@
-import type { Editor } from "@tiptap/core";
+import type { ChainedCommands, Editor } from "@tiptap/core";
 import type { Node as PmNode } from "@tiptap/pm/model";
 import { NodeSelection, PluginKey } from "@tiptap/pm/state";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
@@ -229,6 +229,21 @@ function ToolMenu({
   );
 }
 
+/** What can be done to the table the cursor's in. */
+const TABLE_CHANGES: {
+  id: string;
+  icon: IconName;
+  run: (chain: ChainedCommands) => ChainedCommands;
+}[] = [
+  { id: "rowBelow", icon: "add", run: (chain) => chain.addRowAfter() },
+  { id: "rowAbove", icon: "add", run: (chain) => chain.addRowBefore() },
+  { id: "columnAfter", icon: "add", run: (chain) => chain.addColumnAfter() },
+  { id: "columnBefore", icon: "add", run: (chain) => chain.addColumnBefore() },
+  { id: "removeRow", icon: "close", run: (chain) => chain.deleteRow() },
+  { id: "removeColumn", icon: "close", run: (chain) => chain.deleteColumn() },
+  { id: "remove", icon: "close", run: (chain) => chain.deleteTable() },
+];
+
 /** How a line of words looks, biggest first but for the usual one. */
 const STYLES = ["text", "heading2", "heading3", "heading4"] as const;
 
@@ -262,6 +277,7 @@ function Toolbar({
       italic: current.isActive("italic"),
       link: current.isActive("link"),
       list: current.isActive("bulletList"),
+      table: current.isActive("table"),
       quote: current.isActive("blockquote"),
       code: current.isActive("codeBlock"),
       style: ([2, 3, 4] as const).find((level) => current.isActive("heading", { level })),
@@ -275,6 +291,13 @@ function Toolbar({
   const insert = (id: string) => {
     const item = items.find((other) => other.id === id);
     if (item) onInsert(item);
+  };
+  // Back in the text as the menu goes, not a frame later as Tiptap's focus() does. A key
+  // pressed in between went to the page instead: Tab to the button after the menu, and words
+  // typed nowhere at all.
+  const fromMenu = (choose: (id: string) => void) => (id: string) => {
+    editor.view.focus();
+    choose(id);
   };
   return (
     <div className="tend-tools tend-sticky">
@@ -303,7 +326,7 @@ function Toolbar({
             icon: id,
             chosen: !state.code && id === style,
           }))}
-          onChoose={(id) => {
+          onChoose={fromMenu((id) => {
             const level = STYLES.indexOf(id as (typeof STYLES)[number]) + 1;
             const chain = editor.chain().focus();
             const worked =
@@ -311,7 +334,7 @@ function Toolbar({
                 ? chain.setParagraph().run()
                 : chain.setHeading({ level: level as 2 | 3 | 4 }).run();
             if (!worked) onNotHere();
-          }}
+          })}
           disabled={locked}
           className="max-md:hidden"
         >
@@ -344,14 +367,35 @@ function Toolbar({
           <Icon name="link" />
         </Tool>
         <Gap className="max-md:hidden" />
-        <Tool
-          label={nameOf("bulletList")}
-          pressed={state.list}
-          disabled={locked}
-          onClick={() => insert("bulletList")}
-        >
-          <Icon name="bulletList" />
-        </Tool>
+        {state.table ? (
+          <ToolMenu
+            label={intl.formatMessage({ id: "table.change" })}
+            choices={TABLE_CHANGES.map(({ id, icon }) => ({
+              id,
+              icon,
+              name: intl.formatMessage({ id: `table.${id}` }),
+            }))}
+            onChoose={fromMenu((id) => {
+              const change = TABLE_CHANGES.find((each) => each.id === id);
+              if (change && !change.run(editor.chain().focus()).run()) onNotHere();
+            })}
+            disabled={locked}
+            // From its end, like Insert's: on a phone it's near the right, and would go off it.
+            atEnd
+            className=""
+          >
+            <Icon name="table" />
+          </ToolMenu>
+        ) : (
+          <Tool
+            label={nameOf("bulletList")}
+            pressed={state.list}
+            disabled={locked}
+            onClick={() => insert("bulletList")}
+          >
+            <Icon name="bulletList" />
+          </Tool>
+        )}
         <Tool
           label={nameOf("quote")}
           pressed={state.quote}
@@ -372,7 +416,7 @@ function Toolbar({
         <Gap className="max-md:hidden" />
         <ToolMenu
           choices={items.map(({ id, icon }) => ({ id, icon, name: nameOf(id) }))}
-          onChoose={insert}
+          onChoose={fromMenu(insert)}
           disabled={locked}
           atEnd
           className="rounded-xl bg-mint text-brand-strong"

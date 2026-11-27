@@ -1,5 +1,6 @@
 import type { Page, Request } from "@playwright/test";
 import {
+  clickInto,
   createEntry,
   expect,
   holdRequests,
@@ -44,7 +45,7 @@ test.describe("pictures in the editor (J2)", () => {
     });
     const picture = await photo(page);
     await page.goto(`${signedIn.base}/admin/posts/${post.id}`);
-    await body(page).click();
+    await clickInto(body(page));
     await page.keyboard.press("ControlOrMeta+End");
 
     await page.getByRole("button", { name: "Insert", exact: true }).click();
@@ -164,6 +165,80 @@ test.describe("pictures in the editor (J2)", () => {
     await expect(page.getByText(/Most Compatible/)).toBeVisible();
     await page.getByRole("button", { name: "Remove" }).click();
     await expect(body(page)).toContainText("Words stay.");
+  });
+
+  test("photos too big for Tend are made smaller as they're added, rather than refused", async ({
+    page,
+    signedIn,
+  }) => {
+    const found = async (name: string) => {
+      const reply = await page.request.get(`${signedIn.base}/api/admin/media?q=${name}`);
+      return (await reply.json()).media[0];
+    };
+    await page.goto(`${signedIn.base}/admin/media`);
+    const input = page.locator('input[type="file"][multiple]');
+    // 54 megapixels, where Tend takes 50.
+    const wide = await photo(page, 9000, 6000);
+    await input.setInputFiles({ name: "DSC_0001.JPG", mimeType: "image/jpeg", buffer: wide });
+    await expect(page.getByText("Uploaded DSC_0001.jpg.")).toBeVisible({ timeout: 60_000 });
+    const smaller = await found("DSC_0001");
+    expect(smaller.width / smaller.height).toBeCloseTo(1.5, 2);
+    expect(smaller.width * smaller.height).toBeLessThanOrEqual(16_000_000);
+
+    // Over 20 MB, because noise doesn't compress. It's made in the page, so that much doesn't
+    // travel through the test as well.
+    const sent = await input.evaluate(async (element: HTMLInputElement) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 5000;
+      canvas.height = 4000;
+      const context = canvas.getContext("2d") as CanvasRenderingContext2D;
+      const pixels = context.createImageData(canvas.width, canvas.height);
+      const values = new Uint32Array(pixels.data.buffer);
+      for (let at = 0; at < values.length; at++)
+        values[at] = (Math.random() * 0xffffff) | 0xff000000;
+      context.putImageData(pixels, 0, 0);
+      const blob = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((made) => resolve(made as Blob), "image/jpeg", 1),
+      );
+      const files = new DataTransfer();
+      files.items.add(new File([blob], "NOISE.JPG", { type: "image/jpeg" }));
+      element.files = files.files;
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return blob.size;
+    });
+    expect(sent).toBeGreaterThan(20 * 1024 * 1024);
+    await expect(page.getByText("Uploaded NOISE.jpg.")).toBeVisible({ timeout: 60_000 });
+    expect((await found("NOISE")).sizeBytes).toBeLessThanOrEqual(20 * 1024 * 1024);
+  });
+
+  test("what stays in sight of a cropped picture is chosen by pressing on it, or by keyboard", async ({
+    page,
+    signedIn,
+  }) => {
+    const picture = await upload(page, signedIn, await photo(page), "Shop front.jpg");
+    await page.goto(`${signedIn.base}/admin/media`);
+    await page.getByRole("button", { name: /Shop front\.jpg/ }).click();
+    const details = page.getByRole("dialog", { name: "Shop front.jpg" });
+    const across = details.getByRole("slider", { name: "From the left" });
+    const down = details.getByRole("slider", { name: "From the top" });
+    await expect(across).toHaveValue("50");
+
+    // It has no description yet, so it isn't an image to a screen reader.
+    const shown = details.locator("img").first();
+    const box = (await shown.boundingBox()) as { width: number; height: number };
+    await shown.click({ position: { x: box.width * 0.25, y: box.height * 0.75 } });
+    await expect(across).toHaveValue("25");
+    await expect(down).toHaveValue("75");
+    // And by keyboard, a step at a time.
+    await across.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(across).toHaveValue("26");
+    await details.getByRole("button", { name: "Save" }).click();
+    await expect(details.getByText(/^Saved\./)).toBeVisible();
+    const saved = await (
+      await page.request.get(`${signedIn.base}/api/admin/media/${picture.id}`)
+    ).json();
+    expect([saved.focalX, saved.focalY]).toEqual([0.26, 0.75]);
   });
 
   test("the featured image is chosen in settings, and shows on the blog list", async ({

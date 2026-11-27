@@ -4,7 +4,7 @@
 
 ## What happened
 
-Opening a picture takes memory for every pixel, however small its file.
+Opening a picture takes memory for every pixel, however small its file. The admin makes a photo over 50 megapixels smaller as it's added, so this one is a GIF, which may move, or a photo the browser couldn't read.
 
 ## What to do
 

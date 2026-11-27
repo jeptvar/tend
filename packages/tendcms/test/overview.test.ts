@@ -129,6 +129,21 @@ describe("the checklist", () => {
     expect((await stepsOf(owner)).post).toBe(true);
   });
 
+  test("asks a Portfolio for photos of its own, which the ones it comes with aren't", async () => {
+    const made = await makeApp();
+    const owner = await setUp(made, { starter: "portfolio" });
+    expect(await stepsOf(owner)).toEqual({
+      home: false,
+      work: false,
+      logo: false,
+      kit: false,
+      online: false,
+    });
+    later(made);
+    await upload(owner, "#884422");
+    expect((await stepsOf(owner)).work).toBe(true);
+  });
+
   test("counts a post someone wrote themselves once it's on the site", async () => {
     const made = await makeApp();
     const owner = await setUp(made, { starter: "blog" });

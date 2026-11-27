@@ -31,6 +31,7 @@ const DIALOGS: Record<string, { is: string; asks?: string }[]> = {
     { is: "removing someone", asks: "Remove person" },
     { is: "handing the site over", asks: "Transfer ownership" },
   ],
+  "routes/Settings.tsx": [{ is: "putting the site back as it was", asks: "Restore backup" }],
   "routes/SiteMenu.tsx": [{ is: "adding a link to the menu" }],
 };
 
@@ -61,7 +62,12 @@ describe("the admin's dialogs", () => {
     const asked = new Set(
       Object.values(DIALOGS).flatMap((dialogs) => dialogs.flatMap(({ asks }) => asks ?? [])),
     );
-    expect([...asked].sort()).toEqual(["Delete forever", "Remove person", "Transfer ownership"]);
+    expect([...asked].sort()).toEqual([
+      "Delete forever",
+      "Remove person",
+      "Restore backup",
+      "Transfer ownership",
+    ]);
     for (const question of asked) expect(MAY_ASK_FIRST).toContain(question);
     expect(MAY_ASK_FIRST.length).toBeLessThanOrEqual(5);
   });

@@ -5,6 +5,7 @@ import {
   isAllowedHref,
   isMediaId,
   type Mark,
+  type TableCell,
 } from "./doc.ts";
 
 const ESCAPES: Record<string, string> = {
@@ -126,6 +127,15 @@ function imagePlaceholder(
   return `<tend-image ${parts.join(" ")}></tend-image>`;
 }
 
+/** A cell's span, from a whole number that was checked when it was saved, and is again here. */
+function spanAttributes(cell: TableCell): string {
+  const span = (name: string, value: unknown) =>
+    Number.isSafeInteger(value) && (value as number) > 1 && (value as number) <= 20
+      ? ` ${name}="${value}"`
+      : "";
+  return span("colspan", cell.attrs?.colspan) + span("rowspan", cell.attrs?.rowspan);
+}
+
 /**
  * Turns a document into the HTML visitors get. Stored documents are validated when saved,
  * but this still only knows the node types it can make safe. Anything else is dropped, so
@@ -199,6 +209,34 @@ function renderBlocks(
       case "horizontalRule":
         html.push("<hr>");
         break;
+      case "table": {
+        const rows = (block.content ?? []).filter((row) => row.type === "tableRow");
+        // A first row of headings heads the columns. Any other heading heads its row.
+        const head = rows[0]?.content?.every((cell) => cell.type === "tableHeader")
+          ? rows[0]
+          : undefined;
+        let words = false;
+        const row = (cells: readonly TableCell[] | undefined, inHead: boolean) =>
+          `<tr>${(cells ?? [])
+            .map((cell) => {
+              const tag = cell.type === "tableHeader" ? "th" : "td";
+              const inner = child(cell.content);
+              if (inner !== "") words = true;
+              const scope = tag === "th" ? ` scope="${inHead ? "col" : "row"}"` : "";
+              return `<${tag}${scope}${spanAttributes(cell)}>${inner}</${tag}>`;
+            })
+            .join("")}</tr>`;
+        const parts = [
+          head ? `<thead>${row(head.content, true)}</thead>` : "",
+          `<tbody>${rows
+            .filter((each) => each !== head)
+            .map((each) => row(each.content, false))
+            .join("")}</tbody>`,
+        ];
+        // A table with nothing in it is left behind from editing, like an empty paragraph.
+        if (words) html.push(`<table class="t-table">${parts.join("")}</table>`);
+        break;
+      }
       case "button": {
         const { href, label } = block.attrs ?? { href: "", label: "" };
         if (!label || !isAllowedHref(href)) break;

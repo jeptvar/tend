@@ -1035,11 +1035,17 @@ test.describe("links and buttons", () => {
     await expect(page.getByText("Tend couldn't save that content.")).toHaveCount(0);
   });
 
-  test("pasting a table and a picture together mentions both", async ({ page, signedIn }) => {
+  test("pasting a table inside a table and a picture together mentions both", async ({
+    page,
+    signedIn,
+  }) => {
     const post = await createEntry(page, signedIn, { title: "Paste", body: "" });
     await openPost(page, signedIn, post.id);
-    await paste(page, '<table><tr><td>Cell</td></tr></table><img src="https://example.com/x.png">');
-    await expect(page.getByText("A table was turned into text")).toBeVisible();
+    await paste(
+      page,
+      '<table><tr><td><table><tr><td>Cell</td></tr></table></td></tr></table><img src="https://example.com/x.png">',
+    );
+    await expect(page.getByText(/^A table inside another table was turned into/)).toBeVisible();
     await expect(page.getByText("Pictures from another website were left out")).toBeVisible();
   });
 });

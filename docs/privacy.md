@@ -8,7 +8,7 @@ A site made with Tend, as it comes:
 - **Has no JavaScript**, and no fonts, pictures or anything else from another company's server.
 - **Doesn't count or record visits.** Tend keeps no log of who visits. Your host, or a proxy in front, may keep one of its own.
 
-That changes with what you add: code in **Settings**, then **Advanced**, or a page that links to something elsewhere. A visitor counter needs whatever notice your visitors' laws ask for.
+That changes with what you add: a service in **Settings**, then [**Visitor stats**](visitor-stats.md), code in **Settings**, then **Advanced**, or a page that links to something elsewhere. A visitor counter needs whatever notice your visitors' laws ask for.
 
 ## Photos
 

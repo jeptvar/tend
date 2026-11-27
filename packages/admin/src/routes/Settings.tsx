@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { FormattedDate, FormattedMessage, useIntl } from "react-intl";
 import { Link, Redirect, useParams } from "wouter";
 import { AddressChoice } from "../components/AddressChoice.tsx";
@@ -9,19 +9,30 @@ import {
   secondaryButtonClass,
   textLinkClass,
 } from "../components/AuthLayout.tsx";
-import { Field, optionClass, radioClass } from "../components/fields.tsx";
+import { Dialog } from "../components/Dialog.tsx";
+import { Field, optionClass, PasswordField, radioClass } from "../components/fields.tsx";
 import { Icon, type IconName } from "../components/icons.tsx";
 import { MediaPicker } from "../components/MediaPicker.tsx";
+import { OutLink } from "../components/OutLink.tsx";
 import { Problem } from "../components/Problem.tsx";
 import { showToast } from "../components/Toast.tsx";
 import { Waiting } from "../components/Waiting.tsx";
 import { ApiError, api, errorText } from "../lib/api.ts";
+import {
+  checkOwnerPassword,
+  looksLikeABackup,
+  OWNER_PARTS,
+  restoreAsOwner,
+  sendBackup,
+} from "../lib/backup-upload.ts";
 import { bytesText } from "../lib/bytes.ts";
+import { guide } from "../lib/docs.ts";
 import { onThisComputer } from "../lib/hosts.ts";
 import { siteLanguages } from "../lib/languages.ts";
 import { useMediaItems } from "../lib/media.ts";
-import { ME_KEY, type Me } from "../lib/queries.ts";
+import { ME_KEY, type Me, SETUP_STATUS_KEY } from "../lib/queries.ts";
 import { settleScreenDraft, useScreenDraft } from "../lib/screen-drafts.ts";
+import { useSetup } from "../lib/setup-state.tsx";
 import {
   BACKUP_DOWNLOAD_URL,
   BACKUPS_KEY,
@@ -34,12 +45,14 @@ import {
   type General,
   type Redirect as RedirectRow,
   type SearchSettings,
+  STATS_SERVICES,
   type Stored,
   settingKey,
   type Visibility,
+  type VisitorStats,
 } from "../lib/site.ts";
 
-const SECTIONS = ["general", "business", "search", "advanced", "backups"] as const;
+const SECTIONS = ["general", "business", "search", "stats", "advanced", "backups"] as const;
 type Section = (typeof SECTIONS)[number];
 
 const inputClass =
@@ -842,6 +855,111 @@ function CodeForm({
   );
 }
 
+/**
+ * Settings → Visitor stats (PLAN.md v0.2): a service that counts visitors without cookies, so
+ * the site needs no banner. What it gives the site is pasted here, or the whole snippet it's in.
+ */
+function StatsForm({
+  value,
+  onSave,
+  busy,
+  error,
+}: {
+  value: VisitorStats;
+  onSave: (value: VisitorStats, done: () => void) => void;
+  busy: boolean;
+  error: unknown;
+}) {
+  const intl = useIntl();
+  const name = useId();
+  const draft = useScreenDraft<VisitorStats>("settings:stats", value);
+  const form = draft.value ?? value;
+  const setForm = draft.set;
+  const { changed } = draft;
+  const { service } = form;
+  return (
+    <form
+      className={formClass}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (changed && !busy) onSave(form, () => draft.saved(form));
+      }}
+    >
+      <fieldset className="grid min-w-0 gap-4">
+        <legend className="mb-2 text-xl font-bold">
+          <FormattedMessage id="stats.heading" />
+        </legend>
+        <p>
+          <FormattedMessage id="stats.body" />
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          {[null, ...STATS_SERVICES].map((choice) => (
+            <label key={choice ?? "none"} className={optionClass}>
+              <input
+                type="radio"
+                name={name}
+                checked={service === choice}
+                onChange={() => setForm({ ...form, service: choice })}
+                className={radioClass}
+              />
+              <span className="font-semibold">
+                {intl.formatMessage({ id: `stats.service.${choice ?? "none"}` })}
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {service && (
+        <Field
+          // A new service starts its box afresh, so what was typed for another isn't sent.
+          key={service}
+          label={intl.formatMessage({ id: `stats.id.${service}` })}
+          hint={intl.formatMessage({ id: `stats.idHint.${service}` })}
+          error={fieldError(error, "id")}
+          value={form.id ?? ""}
+          onChange={(event) => setForm({ ...form, id: event.target.value || null })}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      )}
+      {service === "umami" && (
+        <Field
+          type="url"
+          label={intl.formatMessage({ id: "stats.script" })}
+          hint={intl.formatMessage({ id: "stats.scriptHint" })}
+          error={fieldError(error, "script")}
+          value={form.script ?? ""}
+          onChange={(event) => setForm({ ...form, script: event.target.value || null })}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+      )}
+      <p className="text-muted">
+        <FormattedMessage id="stats.noGoogle" />{" "}
+        <OutLink href={guide("visitor-stats")}>
+          <FormattedMessage id="stats.guide" />
+        </OutLink>
+      </p>
+      <SaveRow busy={busy} changed={changed} error={error} fields={["id", "script"]} />
+    </form>
+  );
+}
+
+function StatsSection() {
+  const stats = useSetting<VisitorStats>("stats");
+  if (!stats.query.data) return <Waiting query={stats.query} />;
+  return (
+    <StatsForm
+      value={stats.query.data.value}
+      onSave={(value, done) => stats.save.mutate(value, { onSuccess: done })}
+      busy={stats.save.isPending}
+      error={stats.save.error}
+    />
+  );
+}
+
 function AdvancedSection() {
   const code = useSetting<CodeSettings>("code");
   if (!code.query.data) return <Waiting query={code.query} />;
@@ -871,6 +989,7 @@ function BackupsSection({ me }: { me: Me }) {
   const diskId = useId();
   const copiesId = useId();
   const queryClient = useQueryClient();
+  const [restoring, setRestoring] = useState<RestoreSource | null>(null);
   const query = useQuery({
     queryKey: BACKUPS_KEY,
     queryFn: () => api<BackupsInfo>("/admin/backups"),
@@ -999,17 +1118,30 @@ function BackupsSection({ me }: { me: Me }) {
                     />
                   </span>
                   {me.user.isOwner && (
-                    <a
-                      href={copyDownloadUrl(snapshot.id)}
-                      download
-                      aria-label={intl.formatMessage(
-                        { id: "backups.copies.downloadNamed" },
-                        { date: when },
-                      )}
-                      className={textLinkClass}
-                    >
-                      <FormattedMessage id="backups.copies.download" />
-                    </a>
+                    <span className="flex flex-wrap gap-x-4">
+                      <a
+                        href={copyDownloadUrl(snapshot.id)}
+                        download
+                        aria-label={intl.formatMessage(
+                          { id: "backups.copies.downloadNamed" },
+                          { date: when },
+                        )}
+                        className={textLinkClass}
+                      >
+                        <FormattedMessage id="backups.copies.download" />
+                      </a>
+                      <button
+                        type="button"
+                        aria-label={intl.formatMessage(
+                          { id: "backups.copies.restoreNamed" },
+                          { date: when },
+                        )}
+                        onClick={() => setRestoring({ copy: snapshot })}
+                        className={textLinkClass}
+                      >
+                        <FormattedMessage id="backups.copies.restoreThis" />
+                      </button>
+                    </span>
                   )}
                 </li>
               );
@@ -1017,7 +1149,243 @@ function BackupsSection({ me }: { me: Me }) {
           </ul>
         )}
       </section>
+
+      {me.user.isOwner && <RestoreFile onChoose={(file) => setRestoring({ file })} />}
+      {restoring && <RestoreDialog source={restoring} onClose={() => setRestoring(null)} />}
     </div>
+  );
+}
+
+type Copy = BackupsInfo["snapshots"][number];
+type RestoreSource = { file: File } | { copy: Copy };
+
+/** A backup that was downloaded, chosen to put the site back as it was. Only for the Owner. */
+function RestoreFile({ onChoose }: { onChoose: (file: File) => void }) {
+  const intl = useIntl();
+  const headingId = useId();
+  const inputId = useId();
+  const hintId = useId();
+  const errorId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [problem, setProblem] = useState<string>();
+
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    const found = !file
+      ? "backups.restore.fileRequired"
+      : (await looksLikeABackup(file))
+        ? null
+        : "backups.restore.notABackup";
+    setProblem(found ? intl.formatMessage({ id: found }) : undefined);
+    if (found || !file) inputRef.current?.focus();
+    else onChoose(file);
+  }
+
+  return (
+    <section aria-labelledby={headingId} className={cardClass}>
+      <h2 id={headingId} className="text-xl font-bold">
+        <FormattedMessage id="backups.restore.heading" />
+      </h2>
+      <p>
+        <FormattedMessage id="backups.restore.body" />
+      </p>
+      <form onSubmit={onSubmit} noValidate className="grid gap-4">
+        <div className="grid gap-2">
+          <label htmlFor={inputId} className="font-medium">
+            <FormattedMessage id="backups.restore.file" />
+          </label>
+          <input
+            ref={inputRef}
+            id={inputId}
+            type="file"
+            accept=".zip,application/zip"
+            aria-describedby={`${hintId} ${errorId}`}
+            aria-invalid={problem ? true : undefined}
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              setProblem(undefined);
+            }}
+            className="dashed w-full p-4 file:mr-4 file:min-h-11 file:cursor-pointer file:rounded-xl file:border file:border-line file:bg-surface file:px-4 file:font-semibold file:text-ink hover:file:border-brand focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          />
+          <p id={hintId} className="text-sm text-muted">
+            <FormattedMessage id="backups.restore.fileHint" />
+          </p>
+          {/* Always mounted: screen readers can miss a live region added along with its text. */}
+          <p id={errorId} role="alert" className="text-sm font-medium text-danger empty:sr-only">
+            {problem}
+          </p>
+        </div>
+        <div>
+          <button type="submit" className={smallButtonClass}>
+            <FormattedMessage id="backups.restore.choose" />
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+/**
+ * Puts the whole site back as it was (PLAN.md v0.2), from a downloaded backup or a copy kept
+ * here. Everyone's accounts go back too, so the Owner says their password again. Once it's
+ * done everyone is signed out, and sign-in says why.
+ */
+function RestoreDialog({ source, onClose }: { source: RestoreSource; onClose: () => void }) {
+  const intl = useIntl();
+  const queryClient = useQueryClient();
+  const setup = useSetup();
+  const headingId = useId();
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const [password, setPassword] = useState("");
+  const [missing, setMissing] = useState(false);
+  // How much of the file has been sent, or null while nothing is being sent.
+  const [sent, setSent] = useState<number | null>(null);
+  const stopRef = useRef<AbortController | null>(null);
+
+  // Closing stops sending. Once Tend has all of it, the restore goes on without this page.
+  useEffect(() => () => stopRef.current?.abort(), []);
+
+  const restore = useMutation({
+    mutationFn: async () => {
+      const stop = new AbortController();
+      stopRef.current = stop;
+      if ("copy" in source) return restoreAsOwner({ password, copy: source.copy.id }, stop.signal);
+      await checkOwnerPassword(password);
+      setSent(0);
+      await sendBackup(source.file, OWNER_PARTS, setSent, stop.signal);
+      setSent(null);
+      return restoreAsOwner({ password, bytes: source.file.size }, stop.signal);
+    },
+    onSuccess: (restored) => {
+      setup.setRestored(restored);
+      // Everyone is signed out now. What was on screen belongs to the site as it was.
+      queryClient.removeQueries({
+        predicate: ({ queryKey }) =>
+          queryKey[0] !== ME_KEY[0] && queryKey[0] !== SETUP_STATUS_KEY[0],
+      });
+      queryClient.setQueryData(ME_KEY, null);
+    },
+    onError: () => {
+      setSent(null);
+      passwordRef.current?.focus();
+    },
+  });
+
+  const aboutPassword =
+    restore.error instanceof ApiError && restore.error.field === "password"
+      ? errorText(restore.error, "")
+      : undefined;
+  const failed =
+    restore.isError && !aboutPassword && !(restore.error instanceof DOMException)
+      ? restore.error
+      : null;
+  const when =
+    "copy" in source
+      ? intl.formatDate(source.copy.takenAt, { dateStyle: "long", timeStyle: "short" })
+      : "";
+  const working = sent === null ? "backups.restore.restoring" : "backups.restore.sending";
+
+  return (
+    <Dialog
+      labelledBy={headingId}
+      // Once it's started, the site is changing: the dialog stays until it's done.
+      onClose={() => {
+        if (!restore.isPending) onClose();
+      }}
+    >
+      <form
+        noValidate
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (restore.isPending) return;
+          setMissing(password === "");
+          if (password === "") passwordRef.current?.focus();
+          else restore.mutate();
+        }}
+      >
+        <h2 id={headingId} className="text-xl font-bold [overflow-wrap:anywhere]">
+          {"copy" in source ? (
+            <FormattedMessage id="backups.restore.confirmCopy" values={{ date: when }} />
+          ) : (
+            <FormattedMessage
+              id="backups.restore.confirmFile"
+              values={{ name: source.file.name }}
+            />
+          )}
+        </h2>
+        <ul className="grid list-disc gap-2 pl-5">
+          <li>
+            <FormattedMessage
+              id={"copy" in source ? "backups.restore.whatCopy" : "backups.restore.whatFile"}
+            />
+          </li>
+          <li>
+            <FormattedMessage id="backups.restore.signedOut" />
+          </li>
+          <li>
+            <FormattedMessage id="backups.restore.undo" />
+          </li>
+        </ul>
+        <PasswordField
+          ref={passwordRef}
+          label={intl.formatMessage({ id: "kit.password" })}
+          value={password}
+          error={missing ? intl.formatMessage({ id: "kit.passwordRequired" }) : aboutPassword}
+          autoComplete="current-password"
+          disabled={restore.isPending}
+          onChange={(event) => {
+            setPassword(event.target.value);
+            setMissing(false);
+            restore.reset();
+          }}
+        />
+        {restore.isPending && (
+          <div className="grid gap-2">
+            <progress
+              className="h-2 w-full accent-brand"
+              max={1}
+              // Without a value, it shows something happening without saying how much.
+              value={sent ?? undefined}
+              aria-label={intl.formatMessage({ id: working })}
+            />
+            <p className="text-muted">
+              {sent === null ? (
+                <FormattedMessage id="backups.restore.restoringBody" />
+              ) : (
+                <FormattedMessage
+                  id="backups.restore.sendingBody"
+                  values={{ percent: intl.formatNumber(sent, { style: "percent" }) }}
+                />
+              )}
+            </p>
+          </div>
+        )}
+        {/* Always mounted: screen readers can miss a live region added along with its text. */}
+        <p role="status" className="sr-only">
+          {restore.isPending && <FormattedMessage id={working} />}
+        </p>
+        <p role="alert" className="font-medium text-danger empty:sr-only">
+          {failed && <Problem error={failed} />}
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={restore.isPending}
+            className={primaryButtonClass}
+            onClick={onClose}
+          >
+            <FormattedMessage id="backups.restore.keep" />
+          </button>
+          <button type="submit" disabled={restore.isPending} className={secondaryButtonClass}>
+            <FormattedMessage
+              id={restore.isPending ? "backups.restore.working" : "backups.restore.submit"}
+            />
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -1052,6 +1420,7 @@ function SettingsScreen({ me, section }: { me: Me; section: Section }) {
         {section === "general" && <GeneralSection me={me} />}
         {section === "business" && <BusinessSection />}
         {section === "search" && <SearchSection />}
+        {section === "stats" && <StatsSection />}
         {section === "advanced" && <AdvancedSection />}
         {section === "backups" && <BackupsSection me={me} />}
       </div>

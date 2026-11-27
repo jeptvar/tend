@@ -12,6 +12,9 @@ export default defineConfig({
     // The licences of everything bundled into the admin (PLAN.md §14). It ends up in the
     // published package as dist/admin/THIRD_PARTY_NOTICES.md.
     license: { fileName: "THIRD_PARTY_NOTICES.md" },
+    // Pictures stay files of their own. One under 4 KB would otherwise be written into the
+    // JavaScript every screen loads first, as text a third bigger, for a screen that uses it.
+    assetsInlineLimit: 0,
   },
   server: {
     port: 5173,

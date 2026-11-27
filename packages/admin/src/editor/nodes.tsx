@@ -10,6 +10,7 @@ import {
 } from "@tiptap/react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { Icon, type IconName } from "../components/icons.tsx";
+import { MoveButtons } from "./move.tsx";
 
 const choiceClass =
   "min-h-11 min-w-11 rounded-xl border border-edge bg-field px-2 text-sm focus-visible:outline-3 focus-visible:outline-brand";
@@ -195,6 +196,7 @@ function SectionView({
   extension,
   getPos,
 }: NodeViewProps) {
+  const intl = useIntl();
   const { kind, tone, align, preset } = node.attrs as {
     kind: string;
     tone: string;
@@ -216,62 +218,77 @@ function SectionView({
       data-layout={layout}
     >
       <div contentEditable={false} className="tend-section-bar">
-        <span className="me-auto inline-flex min-h-11 items-center gap-2 text-sm font-semibold">
-          <Icon name={icon} className="size-4.5 text-brand" />
-          <FormattedMessage id={name} />
-        </span>
+        <div className="tend-section-head me-auto flex min-w-0 items-center gap-1">
+          <span className="inline-flex min-h-11 min-w-0 items-center gap-2 text-sm font-semibold">
+            <Icon name={icon} className="size-4.5 shrink-0 text-brand" />
+            <FormattedMessage id={name} />
+          </span>
+          {editable && (
+            <MoveButtons
+              editor={editor}
+              getPos={getPos}
+              labels={{
+                up: intl.formatMessage({ id: "editor.sectionUp" }),
+                down: intl.formatMessage({ id: "editor.sectionDown" }),
+              }}
+              className={sectionButtonClass}
+            />
+          )}
+        </div>
         {editable && (
           <>
-            {kind !== "contact" && !hasPhoto && (
-              <button
-                type="button"
-                className={sectionButtonClass}
-                onClick={() =>
-                  options.onPickImage((mediaId) => {
-                    const position = getPos();
-                    if (typeof position !== "number") return;
-                    // This button goes once there's a photo, so the keyboard goes to the writing.
-                    editor
-                      .chain()
-                      .insertContentAt(position + 1, { type: "image", attrs: { mediaId } })
-                      .setTextSelection(position + 4)
-                      .focus()
-                      .run();
-                  })
-                }
-              >
-                <Icon name="media" className="size-4.5" />
-                <FormattedMessage id="editor.sectionAddPhoto" />
-              </button>
-            )}
-            <Choice
-              label={layouts.label}
-              value={layout}
-              onChange={(value) => updateAttributes({ preset: value })}
-              options={[
-                ["1", layouts.first],
-                ["2", layouts.second],
-              ]}
-            />
-            <Choice
-              label="editor.sectionTone"
-              value={tone}
-              onChange={(value) => updateAttributes({ tone: value })}
-              options={[
-                ["none", "editor.toneNone"],
-                ["muted", "editor.toneMuted"],
-                ["accent", "editor.toneAccent"],
-              ]}
-            />
-            <Choice
-              label="editor.sectionAlign"
-              value={align}
-              onChange={(value) => updateAttributes({ align: value })}
-              options={[
-                ["left", "editor.alignLeft"],
-                ["center", "editor.alignCenter"],
-              ]}
-            />
+            <div className="tend-section-choices">
+              {kind !== "contact" && !hasPhoto && (
+                <button
+                  type="button"
+                  className={sectionButtonClass}
+                  onClick={() =>
+                    options.onPickImage((mediaId) => {
+                      const position = getPos();
+                      if (typeof position !== "number") return;
+                      // This button goes once there's a photo, so the keyboard goes to the writing.
+                      editor
+                        .chain()
+                        .insertContentAt(position + 1, { type: "image", attrs: { mediaId } })
+                        .setTextSelection(position + 4)
+                        .focus()
+                        .run();
+                    })
+                  }
+                >
+                  <Icon name="media" className="size-4.5" />
+                  <FormattedMessage id="editor.sectionAddPhoto" />
+                </button>
+              )}
+              <Choice
+                label={layouts.label}
+                value={layout}
+                onChange={(value) => updateAttributes({ preset: value })}
+                options={[
+                  ["1", layouts.first],
+                  ["2", layouts.second],
+                ]}
+              />
+              <Choice
+                label="editor.sectionTone"
+                value={tone}
+                onChange={(value) => updateAttributes({ tone: value })}
+                options={[
+                  ["none", "editor.toneNone"],
+                  ["muted", "editor.toneMuted"],
+                  ["accent", "editor.toneAccent"],
+                ]}
+              />
+              <Choice
+                label="editor.sectionAlign"
+                value={align}
+                onChange={(value) => updateAttributes({ align: value })}
+                options={[
+                  ["left", "editor.alignLeft"],
+                  ["center", "editor.alignCenter"],
+                ]}
+              />
+            </div>
             <button
               type="button"
               className={sectionButtonClass}

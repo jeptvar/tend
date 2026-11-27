@@ -512,6 +512,11 @@ function MediaScreen({ me }: { me: Me }) {
   );
 }
 
+/** Between 0 and 1, to a thousandth: where in a picture something is. */
+function fraction(value: number): number {
+  return Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000;
+}
+
 /** Everything about one file: its description, where it's used, and what can be done with it. */
 function MediaDetails({
   me,
@@ -533,6 +538,7 @@ function MediaDetails({
   const [alt, setAlt] = useState(item.alt ?? "");
   const [decorative, setDecorative] = useState(item.decorative);
   const [credit, setCredit] = useState(item.credit ?? "");
+  const [focal, setFocal] = useState({ x: item.focalX, y: item.focalY });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const replacePicker = useRef<HTMLInputElement>(null);
   const [replacing, setReplacing] = useState<number | null>(null);
@@ -547,7 +553,9 @@ function MediaDetails({
   const changed =
     alt.trim() !== (item.alt ?? "") ||
     decorative !== item.decorative ||
-    credit.trim() !== (item.credit ?? "");
+    credit.trim() !== (item.credit ?? "") ||
+    focal.x !== item.focalX ||
+    focal.y !== item.focalY;
 
   const usage = useQuery({
     queryKey: [...mediaItemKey(item.id), "usage"],
@@ -563,7 +571,13 @@ function MediaDetails({
     mutationFn: () =>
       api<MediaItem>(`/admin/media/${item.id}`, {
         method: "PATCH",
-        body: { alt: alt.trim() || null, decorative, credit: credit.trim() || null },
+        body: {
+          alt: alt.trim() || null,
+          decorative,
+          credit: credit.trim() || null,
+          focalX: focal.x,
+          focalY: focal.y,
+        },
       }),
     onSuccess: (updated) => {
       done(updated);
@@ -672,16 +686,38 @@ function MediaDetails({
           </button>
         </div>
         {isImage && item.previewUrl ? (
-          <img
-            src={item.previewUrl}
-            srcSet={item.srcset}
-            sizes="(min-width: 32rem) 30rem, 100vw"
-            alt={item.alt ?? ""}
-            width={item.width ?? undefined}
-            height={item.height ?? undefined}
-            style={{ backgroundColor: item.dominantColor ?? undefined }}
-            className="max-h-72 w-full rounded-xl bg-sunken object-contain"
-          />
+          <div className="flex justify-center rounded-xl bg-sunken">
+            {/* As wide as the picture, so where it's pressed is where in the picture that is. */}
+            <div className="relative">
+              {/* biome-ignore lint/a11y/useKeyWithClickEvents: the sliders below are the way by keyboard */}
+              <img
+                src={item.previewUrl}
+                srcSet={item.srcset}
+                sizes="(min-width: 32rem) 30rem, 100vw"
+                alt={item.alt ?? ""}
+                width={item.width ?? undefined}
+                height={item.height ?? undefined}
+                style={{ backgroundColor: item.dominantColor ?? undefined }}
+                onClick={(event) => {
+                  if (trashed) return;
+                  const box = event.currentTarget.getBoundingClientRect();
+                  setFocal({
+                    x: fraction((event.clientX - box.left) / box.width),
+                    y: fraction((event.clientY - box.top) / box.height),
+                  });
+                  setStatus("");
+                }}
+                className={`block h-auto max-h-72 w-auto max-w-full rounded-xl ${trashed ? "" : "cursor-crosshair"}`}
+              />
+              {!trashed && (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-3 border-white shadow-[0_0_0_2px_rgb(0_0_0/0.55)]"
+                  style={{ left: `${focal.x * 100}%`, top: `${focal.y * 100}%` }}
+                />
+              )}
+            </div>
+          </div>
         ) : (
           <Thumbnail item={item} className="h-24 w-24 rounded-lg" />
         )}
@@ -736,6 +772,35 @@ function MediaDetails({
                   />
                   <FormattedMessage id="media.decorative" />
                 </label>
+                <fieldset className="grid gap-2">
+                  <legend className="font-medium">
+                    <FormattedMessage id="media.focal" />
+                  </legend>
+                  <p className="text-sm text-muted">
+                    <FormattedMessage id="media.focalHint" />
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {(["x", "y"] as const).map((axis) => (
+                      <label key={axis} className="grid gap-1">
+                        <FormattedMessage
+                          id={axis === "x" ? "media.focalAcross" : "media.focalDown"}
+                        />
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={Math.round(focal[axis] * 100)}
+                          aria-valuetext={intl.formatNumber(focal[axis], { style: "percent" })}
+                          onChange={(event) =>
+                            setFocal({ ...focal, [axis]: Number(event.target.value) / 100 })
+                          }
+                          className="min-h-11 accent-brand"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
               </>
             )}
             <div className="grid gap-2">

@@ -95,6 +95,58 @@ describe("cleanDoc", () => {
   });
 });
 
+describe("a table", () => {
+  const fromEditor = {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              {
+                type: "tableHeader",
+                attrs: { colspan: 1, rowspan: 1, colwidth: [140] },
+                content: [paragraph(text("Day"))],
+              },
+              {
+                type: "tableCell",
+                attrs: { colspan: 2, rowspan: 1, colwidth: null },
+                content: [paragraph(text("Hours"))],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  test("keeps how far each cell spans, and not the widths the editor would set", () => {
+    expect(cleanDoc(fromEditor as never)).toEqual({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableHeader", content: [paragraph(text("Day"))] },
+                { type: "tableCell", attrs: { colspan: 2 }, content: [paragraph(text("Hours"))] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  test("has its words counted with the rest", () => {
+    expect(docToText(cleanDoc(fromEditor as never))).toBe("Day\n\nHours");
+  });
+});
+
 describe("docToText", () => {
   test("gives every block's words, with blank lines between them", () => {
     const doc = cleanDoc({

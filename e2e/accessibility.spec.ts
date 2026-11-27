@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 import {
+  clickInto,
   copyTheme,
   createEntry,
   expect,
@@ -46,6 +47,25 @@ function text(value: string, marks?: unknown[]) {
   return { type: "text", text: value, ...(marks ? { marks } : {}) };
 }
 
+function tableCell(type: "tableCell" | "tableHeader", words: string) {
+  return { type, content: [{ type: "paragraph", content: [text(words)] }] };
+}
+
+/** Headings over the columns and beside each row, and a name too long for a phone's width. */
+const TABLE = {
+  type: "table",
+  content: [
+    ["Bread", "Weight", "Price"],
+    ["Rye", "750 g", "4.50"],
+    ["Wholemealsourdoughwithtoastedseeds", "1 kg", "5.00"],
+  ].map((words, row) => ({
+    type: "tableRow",
+    content: words.map((each, column) =>
+      tableCell(row === 0 || column === 0 ? "tableHeader" : "tableCell", each),
+    ),
+  })),
+};
+
 const EVERYTHING = [
   { type: "heading", attrs: { level: 2 }, content: [text("Heading")] },
   { type: "heading", attrs: { level: 3 }, content: [text("Subheading")] },
@@ -72,6 +92,7 @@ const EVERYTHING = [
   { type: "blockquote", content: [{ type: "paragraph", content: [text("A quote")] }] },
   { type: "codeBlock", content: [text("some code")] },
   { type: "horizontalRule" },
+  TABLE,
   { type: "button", attrs: { href: "https://example.com", label: "A button" } },
 ];
 
@@ -183,6 +204,7 @@ async function adminScreens(page: Page, site: Site): Promise<[string, string][]>
     ["settings: general", "/admin/settings/general"],
     ["settings: business details", "/admin/settings/business"],
     ["settings: search and social", "/admin/settings/search"],
+    ["settings: visitor stats", "/admin/settings/stats"],
     ["settings: advanced", "/admin/settings/advanced"],
     ["settings: backups", "/admin/settings/backups"],
     ["people", "/admin/people"],
@@ -381,7 +403,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await expectNoViolations(page, "with the Insert menu open");
       await page.keyboard.press("Escape");
 
-      await body.locator("p").last().click();
+      await clickInto(body.locator("p").last());
       await page.keyboard.press("End");
       await page.keyboard.press("Enter");
       await page.keyboard.type("/");
@@ -586,6 +608,7 @@ test.describe("at phone widths", () => {
       "/admin/settings/general",
       "/admin/settings/business",
       "/admin/settings/search",
+      "/admin/settings/stats",
       "/admin/settings/advanced",
       "/admin/settings/backups",
       "/admin/people",
@@ -650,6 +673,7 @@ test.describe("at phone widths", () => {
       "/admin/settings/general",
       "/admin/settings/business",
       "/admin/settings/search",
+      "/admin/settings/stats",
       "/admin/settings/advanced",
       "/admin/settings/backups",
       "/admin/pages",
@@ -744,7 +768,7 @@ test.describe("at phone widths", () => {
     await page.keyboard.press("Escape");
 
     const body = page.getByRole("textbox", { name: "Text" });
-    await body.click();
+    await clickInto(body);
     await page.keyboard.press("End");
     await page.keyboard.type(" more");
     await expect(page.getByRole("button", { name: "Publish changes" })).toBeVisible();

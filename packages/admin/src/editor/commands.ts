@@ -92,6 +92,13 @@ export const INSERT_ITEMS: InsertItem[] = [
     run: (editor) => editor.chain().focus().toggleOrderedList().run(),
   },
   {
+    id: "table",
+    icon: "table",
+    keywords: "table grid rows columns cells prices price list hours timetable",
+    run: (editor) =>
+      editor.chain().focus().insertTable({ rows: 3, cols: 2, withHeaderRow: true }).run(),
+  },
+  {
     id: "quote",
     icon: "quote",
     keywords: "quote blockquote citation said",

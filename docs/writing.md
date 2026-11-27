@@ -14,24 +14,28 @@ What you write stays off your site until you publish it. While you write, it's i
 
 - Select some words for bold, italic, a link and so on. The toolbar has the most used, at the top of the page or, on a phone, at the bottom.
 - The menu in the toolbar that says **Text** makes a line a heading, and back.
-- On an empty line, type `/` to add a heading, a list, a quote, a picture, a button, a divider or a section. **Insert** offers the same.
+- On an empty line, type `/` to add a heading, a list, a table, a quote, a picture, a button, a divider or a section. **Insert** offers the same.
 - Markdown works as you type: `## ` makes a heading, `- ` a list, `> ` a quote.
 - **Ctrl+K** (⌘K on a Mac) adds a link. Type the name of one of your pages, or paste an address. A link to your own page follows it if it moves.
-- Pasting from Google Docs or Word keeps the formatting. If something had to be changed, such as a table, Tend says so.
+- Pasting from Google Docs or Word keeps the formatting, tables too. If something had to be changed, such as a table inside a table, Tend says so.
 
-**Sections** are for pages: **Big intro**, **Picture and text**, and **Contact & hours**. Each has two layouts, three backgrounds and two alignments, in the bar above it. **Add a photo** gives a Big intro the photo the page opens with, beside the words or behind them. Contact & hours shows the business details from Settings, so you change them in one place.
+**Tables** are for prices, opening hours and the like: words, a paragraph or more in each cell. A new one has a row of headings and two columns. **Tab** goes to the next cell, and from the last one adds a row. In a table, the toolbar's table button adds and removes rows and columns, or the whole table. On a phone the columns share the width equally.
+
+**Sections** are for pages: **Big intro**, **Picture and text**, and **Contact & hours**. Each has two layouts, three backgrounds and two alignments, in the bar above it, and the arrows beside its name move it up or down the page. **Add a photo** gives a Big intro the photo the page opens with, beside the words or behind them. Contact & hours shows the business details from Settings, so you change them in one place.
 
 ## Photos
 
 Drag a photo in, paste it, or choose **Image**. Tend makes the sizes each screen needs, turns it the right way up, and removes what the camera wrote in it, such as where you were.
 
-Point at a picture, or tap it, for its width, its description, another picture in its place, or to remove it. Its caption is under it.
+Point at a picture, or tap it, for its width, its description, another picture in its place, arrows that move it up or down, or to remove it. A picture in a section moves within that section. Its caption is under it.
 
 Describe each one, for people who can't see it. If it's only decoration, tick **Image is decorative**. Tend asks again before you publish if you missed one.
 
-JPG, PNG, WebP, GIF and AVIF work, up to 20 MB and 50 megapixels, and so do PDFs.
+Where a picture is cropped to fit, as on a card on the blog or behind a Big intro's words, the middle of it stays in sight. To keep another part in sight, open the picture in **Media** and click or tap that part, under **What stays in sight**. It changes everywhere the picture is used.
 
-**iPhone photos (HEIC):** most browsers can't show them, so Tend asks for another kind. On the iPhone, open **Settings**, then **Camera**, then **Formats**, and choose **Most Compatible**: new photos are JPGs. For one you have already, [the error's page](errors/heic_photo.md) has steps.
+JPG, PNG, WebP, GIF and AVIF work, and so do PDFs, up to 20 MB and 50 megapixels. A photo bigger than that is made smaller as it's added, rather than refused: to 16 megapixels, which is more than visitors ever get.
+
+**iPhone photos (HEIC):** Safari makes them JPGs as they're added. Most other browsers can't read them, so there Tend asks for another kind. On the iPhone, open **Settings**, then **Camera**, then **Formats**, and choose **Most Compatible**: new photos are JPGs. For one you have already, [the error's page](errors/heic_photo.md) has steps.
 
 ## Its address, summary and more
 

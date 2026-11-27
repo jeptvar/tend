@@ -1,7 +1,22 @@
 import { readFileSync } from "node:fs";
-import { expect, pretendDataIsAtRisk, test } from "./fixtures.ts";
+import type { Page } from "@playwright/test";
+import {
+  createEntry,
+  expect,
+  OWNER,
+  pretendDataIsAtRisk,
+  type Site,
+  signIn,
+  test,
+} from "./fixtures.ts";
 
-// Backups (PLAN.md §13, J10): the whole site, downloaded from Settings → Backups.
+// Backups (PLAN.md §13, J10): the whole site, downloaded from Settings → Backups, and put back
+// as it was from there (v0.2).
+
+async function postTitles(page: Page, site: Site): Promise<string[]> {
+  const reply = await page.request.get(`${site.base}/api/admin/entries?type=post`);
+  return (await reply.json()).entries.map((entry: { title: string }) => entry.title);
+}
 
 test("the Owner downloads the whole site from Settings, as a private zip", async ({
   page,
@@ -47,6 +62,60 @@ test("a copy can be saved there and then, and downloaded by the Owner", async ({
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/^rise-bakery-copy-PRIVATE-\d{4}-\d{2}-\d{2}\.db\.gz$/);
   expect(readFileSync(await file.path()).subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
+});
+
+test("the Owner puts the site back as it was in a copy, and everyone signs in again", async ({
+  page,
+  signedIn,
+}) => {
+  await createEntry(page, signedIn, { title: "Kept", body: "" });
+  await page.goto(`${signedIn.base}/admin/settings/backups`);
+  await page.getByRole("button", { name: "Save a copy now" }).click();
+  await expect(page.getByText("Copy saved.")).toBeVisible();
+  await createEntry(page, signedIn, { title: "Written after the copy", body: "" });
+
+  await page.getByRole("button", { name: /^Restore the copy from / }).click();
+  const dialog = page.getByRole("dialog", { name: /^Put the site back as it was on / });
+  await expect(dialog.getByText(/^Everyone is signed out/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(dialog.getByText("Type your password.")).toBeVisible();
+  await dialog.getByLabel("Your password").fill(OWNER.password);
+  await dialog.getByRole("button", { name: "Restore", exact: true }).click();
+
+  // Sign-in says why it's there.
+  await expect(page.getByText(/^Rise Bakery is back as it was on /)).toBeVisible();
+  await signIn(page, signedIn);
+  const titles = await postTitles(page, signedIn);
+  expect(titles).toContain("Kept");
+  expect(titles).not.toContain("Written after the copy");
+  // What was there is a copy too, so this can be undone the same way.
+  await page.goto(`${signedIn.base}/admin/settings/backups`);
+  await expect(page.getByText(/^Before a restore, /)).toBeVisible();
+});
+
+test("a downloaded backup is put back from Settings, once the password is right", async ({
+  page,
+  signedIn,
+}) => {
+  await page.goto(`${signedIn.base}/admin/settings/backups`);
+  const download = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download backup (private)" }).click();
+  const zip = await (await download).path();
+  await createEntry(page, signedIn, { title: "Written after the backup", body: "" });
+
+  await page.getByLabel("Backup file").setInputFiles(zip);
+  await page.getByRole("button", { name: "Restore this backup…" }).click();
+  const dialog = page.getByRole("dialog", { name: /^Put the site back as it is in / });
+  // A mistyped password is caught before any of the file is sent.
+  await dialog.getByLabel("Your password").fill("not-the-password-at-all");
+  await dialog.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(dialog.getByText(/^That isn't your password\./)).toBeVisible();
+  await dialog.getByLabel("Your password").fill(OWNER.password);
+  await dialog.getByRole("button", { name: "Restore", exact: true }).click();
+
+  await expect(page.getByText(/^Rise Bakery is back as it was on /)).toBeVisible();
+  await signIn(page, signedIn);
+  expect(await postTitles(page, signedIn)).not.toContain("Written after the backup");
 });
 
 test("a site that would be lost with its container says so on every screen, backup first", async ({

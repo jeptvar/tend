@@ -5,6 +5,7 @@ import type { Orm } from "../db/client.ts";
 import type { SiteSettings } from "../db/repo/settings.ts";
 import { settings, settingsHistory } from "../db/schema.ts";
 import { uuidv7 } from "../ids.ts";
+import type { StatsSettings } from "./stats.ts";
 
 // Site-wide settings (PLAN.md §8): each is one row, with the last 20 versions kept for Undo.
 
@@ -226,6 +227,7 @@ export interface SettingTypes {
   "menu:main": MenuSettings;
   "menu:footer": MenuSettings;
   code_injection: CodeSettings;
+  visitor_stats: StatsSettings;
 }
 export type SettingKey = keyof SettingTypes;
 
@@ -245,6 +247,7 @@ export const DEFAULTS: { [K in Exclude<SettingKey, "site">]: SettingTypes[K] } =
   "menu:main": { items: [] },
   "menu:footer": { items: [] },
   code_injection: { head: null, bodyEnd: null },
+  visitor_stats: { service: null, id: null, script: null },
 };
 
 export interface StoredSetting<T> {
