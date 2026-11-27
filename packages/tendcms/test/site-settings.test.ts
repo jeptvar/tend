@@ -263,6 +263,31 @@ describe("business details", () => {
     expect(html).toContain('"opens":"08:00"');
   });
 
+  test("new opening hours replace a page the site had kept for visitors", async () => {
+    const made = await makeApp({ pageCacheBytes: 1_000_000 });
+    const owner = await setUp(made);
+    const business = (await (await owner.get("/api/admin/settings/business")).json()).value;
+    const closingAt = (closes: string) => ({
+      ...business,
+      hours: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => ({
+        day,
+        closed: day === "sun",
+        opens: "07:00",
+        closes,
+      })),
+    });
+    await owner.put("/api/admin/settings/business", closingAt("17:00"));
+    await page(made, "/");
+    const kept = await page(made, "/");
+    expect(kept.headers.get("server-timing")).toContain("hit");
+    // The homepage's Contact & hours section has each day's times.
+    expect(kept.html).toContain('<time datetime="17:00">');
+
+    await owner.put("/api/admin/settings/business", closingAt("14:00"));
+    const { html } = await page(made, "/");
+    expect(html).toContain('<time datetime="14:00">');
+  });
+
   test("a phone number becomes a link of digits", () => {
     expect(phoneHref("+63 (2) 555-0100")).toBe("tel:+6325550100");
     expect(phoneHref("0917 555 0100")).toBe("tel:09175550100");

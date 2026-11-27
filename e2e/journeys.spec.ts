@@ -63,6 +63,21 @@ async function goTo(page: Page, name: string): Promise<void> {
   await page.getByRole("dialog", { name: "Menu" }).getByRole("link", { name, exact: true }).click();
 }
 
+/** The site, from the admin's link to it, which opens it in a tab of its own. */
+async function viewSite(page: Page): Promise<Page> {
+  const opened = page.waitForEvent("popup");
+  if ((page.viewportSize()?.width ?? 0) >= 1024) {
+    await page.getByRole("link", { name: "View site", exact: true }).click();
+  } else {
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "Menu" })
+      .getByRole("link", { name: "View site", exact: true })
+      .click();
+  }
+  return opened;
+}
+
 /** Someone else's browser, the size of the first one's. */
 async function anotherPerson(browser: Browser, page: Page): Promise<Page> {
   const context = await browser.newContext({ viewport: page.viewportSize() });
@@ -169,6 +184,58 @@ for (const size of SIZES) {
         "alt",
         "Three loaves cooling on a rack",
       );
+    });
+
+    // The plan's usability task for J2: "Change the opening hours, then check the live site."
+    test("the opening hours are changed, then checked on the site", async ({
+      page,
+      browser,
+      signedIn,
+    }) => {
+      const business = `${signedIn.base}/api/admin/settings/business`;
+      const { value } = await (await page.request.get(business)).json();
+      const week = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((day) => ({
+        day,
+        closed: day === "sun",
+        opens: "07:00",
+        closes: "17:00",
+      }));
+      expect((await page.request.put(business, { data: { ...value, hours: week } })).ok()).toBe(
+        true,
+      );
+      // A customer has the homepage open already. (On this computer's address the site keeps no
+      // copies of its pages, so the server's tests check that a kept one gets the new hours.)
+      const customer = await anotherPerson(browser, page);
+      await customer.goto(`${signedIn.base}/`);
+      await expect(customer.getByRole("row", { name: /^Saturday/ })).toHaveText(
+        /^Saturday\s*7:00\sAM–5:00\sPM$/,
+      );
+      const presses = await countPresses(page);
+      await page.goto(`${signedIn.base}/admin/`);
+      await goTo(page, "Settings");
+      await page
+        .getByRole("navigation", { name: "Settings sections" })
+        .getByRole("link", { name: "Business details" })
+        .click();
+      await page.getByLabel("Saturday: closes").fill("14:00");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page.getByText("Saved.")).toBeVisible();
+
+      // Settings, Business details, Save and View site, and Menu twice on a phone.
+      const own = await viewSite(page);
+      expect(presses()).toBeLessThanOrEqual(6);
+      await customer.reload();
+      for (const visitor of [own, customer]) {
+        // Where the homepage's Contact & hours section has them, a day to a row,
+        await expect(visitor.getByRole("row", { name: /^Saturday/ })).toHaveText(
+          /^Saturday\s*7:00\sAM–2:00\sPM$/,
+        );
+        // and at the foot of every page, with the days that are the same together.
+        const footer = visitor.getByRole("contentinfo");
+        await expect(footer).toContainText(/Monday – Friday: 7:00\sAM–5:00\sPM/);
+        await expect(footer).toContainText(/Saturday: 7:00\sAM–2:00\sPM/);
+        await expect(footer).toContainText("Sunday: Closed");
+      }
     });
 
     test("J4: a page goes in the site menu, and where it's wanted", async ({ page, signedIn }) => {
